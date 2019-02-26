@@ -1,0 +1,38 @@
+# Binary files
+bin/
+build/
+target/
+
+# Eclipse projects & settings
+.project
+.classpath
+.settings/*
+
+# local gradle files and settings
+.gradle
+gradle.properties
+
+# IntelliJ project files -- create by `gradle idea` - do not commit!
+.idea
+*.ipr
+*.iws
+*.iml
+*.class
+
+# Vulkan Validation Layers
+VkLayer_*.json
+VkLayer_*.dll
+VkLayer_*.so
+VkLayer_*.dylib
+
+# log files and metadata
+Thumbs.db
+.DS_Store
+hs_err_pid*
+log.txt
+*.log
+*.log.xz
+*.log.gz
+
+# demo models
+models/
