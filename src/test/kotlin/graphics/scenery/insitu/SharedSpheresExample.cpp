@@ -20,7 +20,7 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
 
     printf("paramter rec: %d", worldRank);
      // ftok to generate unique key 
-    key_t key = ftok("/tmp",0);
+    key_t key = ftok("/tmp",worldRank);
   
     // shmget returns an identifier in shmid 
     shmid = shmget(key,2024,0666|IPC_CREAT); 

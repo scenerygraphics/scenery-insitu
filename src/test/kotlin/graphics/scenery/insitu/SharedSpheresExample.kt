@@ -60,6 +60,18 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
     @Test
     override fun main() {
+
+        val nullArg = arrayOfNulls<String>(0)
+        MPI.Init(nullArg)
+
+        val myrank = MPI.COMM_WORLD.rank
+        val size = MPI.COMM_WORLD.size
+        val pName = MPI.COMM_WORLD.name
+        if (myrank == 0)
+            println("Hi, I am Aryaman's MPI example")
+        else
+            println("Hello world from $pName rank $myrank of $size")
+
         System.loadLibrary("shmSpheresTrial")
         val log = LoggerFactory.getLogger("JavaMPI")
         log.info("Hi, I am Aryaman's shared memory example")
@@ -67,7 +79,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         try {
             val a = this.sayHello()
             log.info(a.toString());
-            val bb = this.getSimData(5)
+            val bb = this.getSimData(myrank)
             bb.order(ByteOrder.nativeOrder())
 
             result = bb.asFloatBuffer()

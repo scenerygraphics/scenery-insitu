@@ -10,16 +10,7 @@ import org.junit.Test
 
 class DistributedSpheresExample : SceneryBase("DistributedSpheresExample") {
     override fun init() {
-        val nullArg = arrayOfNulls<String>(0)
-        MPI.Init(nullArg)
 
-        val myrank = MPI.COMM_WORLD.rank
-        val size = MPI.COMM_WORLD.size
-        val pName = MPI.COMM_WORLD.name
-        if (myrank == 0)
-            println("Hi, I am Aryaman's MPI example")
-        else
-            println("Hello world from $pName rank $myrank of $size")
 
         renderer = hub.add(SceneryElement.Renderer,
                 Renderer.createRenderer(hub, applicationName, scene, 512, 512))
@@ -53,6 +44,16 @@ class DistributedSpheresExample : SceneryBase("DistributedSpheresExample") {
 
     @Test
     override fun main() {
+        val nullArg = arrayOfNulls<String>(0)
+        MPI.Init(nullArg)
+
+        val myrank = MPI.COMM_WORLD.rank
+        val size = MPI.COMM_WORLD.size
+        val pName = MPI.COMM_WORLD.name
+        if (myrank == 0)
+            println("Hi, I am Aryaman's MPI example")
+        else
+            println("Hello world from $pName rank $myrank of $size")
         super.main()
     }
 }
