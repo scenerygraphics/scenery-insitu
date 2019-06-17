@@ -30,7 +30,7 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
 
     std::cout<<"Hello! We are in SimData! Data read from memory:" <<str[0]; 
 
-    jobject bb = (env)->NewDirectByteBuffer((void*) str, 10000);
+    jobject bb = (env)->NewDirectByteBuffer((void*) str, 1000);
 
     return bb;
 }

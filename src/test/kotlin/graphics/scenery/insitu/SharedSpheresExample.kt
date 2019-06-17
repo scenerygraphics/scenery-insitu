@@ -17,16 +17,19 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
     lateinit var result: FloatBuffer
 
     override fun init() {
+        settings.set("Input.SlowMovementSpeed", 0.5f)
+        settings.set("Input.FastMovementSpeed", 1.0f)
+
         renderer = hub.add(SceneryElement.Renderer,
                 Renderer.createRenderer(hub, applicationName, scene, 512, 512))
 
 
-
-        while(result.remaining() > 3) {
+        // while(result.remaining() > 3) { // TODO getting segfaults
+        for (i in 1..30 step 3) {
             val s = Sphere(Random.randomFromRange(0.04f, 0.2f), 10)
-            val x = result.get()
-            val y = result.get()
-            val z = result.get()
+            val x = result.get()/10
+            val y = result.get()/10
+            val z = result.get()/10
             println("x is $x y is $y z is $z")
             s.position = GLVector(x, y, z)
             scene.addChild(s)
@@ -78,15 +81,20 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
         try {
             val a = this.sayHello()
-            log.info(a.toString());
+            log.info(a.toString())
             val bb = this.getSimData(myrank)
             bb.order(ByteOrder.nativeOrder())
 
             result = bb.asFloatBuffer()
 
-            while(result.hasRemaining())
-                println(message = "Java says: ${result.get()}")
+            println(result.remaining())
+
+            //while(result.hasRemaining())
+            for (i in 1..30)
+                println(message = "Java says: ${result.get()} (${result.remaining()})")
+            println("Printed all")
             result.rewind()
+            println("Rewound")
 
             //this.deleteShm()
 
