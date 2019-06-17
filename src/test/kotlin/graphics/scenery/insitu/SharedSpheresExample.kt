@@ -11,10 +11,12 @@ import java.nio.charset.StandardCharsets;
 import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.numerics.Random
+import kotlin.concurrent.*
 
 class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
     lateinit var result: FloatBuffer
+    lateinit var spheres: ArrayList<Sphere>
 
     override fun init() {
         settings.set("Input.SlowMovementSpeed", 0.5f)
@@ -23,16 +25,17 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         renderer = hub.add(SceneryElement.Renderer,
                 Renderer.createRenderer(hub, applicationName, scene, 512, 512))
 
-
+        spheres = ArrayList()
         // while(result.remaining() > 3) { // TODO getting segfaults
         for (i in 1..30 step 3) {
             val s = Sphere(Random.randomFromRange(0.04f, 0.2f), 10)
-            val x = result.get()/10
-            val y = result.get()/10
-            val z = result.get()/10
+            val x = result.get()
+            val y = result.get()
+            val z = result.get()
             println("x is $x y is $y z is $z")
             s.position = GLVector(x, y, z)
             scene.addChild(s)
+            spheres.add(s)
         }
 
         val box = Box(GLVector(10.0f, 10.0f, 10.0f), insideNormals = true)
@@ -53,6 +56,21 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             active = true
 
             scene.addChild(this)
+        }
+
+        fixedRateTimer(initialDelay = 5, period = 5) {
+            update()
+        }
+    }
+
+    private fun update() {
+        result.rewind()
+        for (s in spheres) {
+            val x = result.get()
+            val y = result.get()
+            val z = result.get()
+            //println("x is $x y is $y z is $z")
+            s.position = GLVector(x, y, z)
         }
     }
 
@@ -92,9 +110,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             //while(result.hasRemaining())
             for (i in 1..30)
                 println(message = "Java says: ${result.get()} (${result.remaining()})")
-            println("Printed all")
             result.rewind()
-            println("Rewound")
 
             //this.deleteShm()
 
