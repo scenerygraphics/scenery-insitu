@@ -10,6 +10,8 @@ import org.junit.Test
 
 class DistributedSpheresExample : SceneryBase("DistributedSpheresExample") {
     override fun init() {
+        settings.set("Input.SlowMovementSpeed", 0.5f) // needed to add
+        settings.set("Input.FastMovementSpeed", 1.0f)
 
 
         renderer = hub.add(SceneryElement.Renderer,

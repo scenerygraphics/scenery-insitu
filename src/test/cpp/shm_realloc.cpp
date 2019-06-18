@@ -1,4 +1,19 @@
-// Generates changing data in same location of shared memory
+// Generates changing data in different locations of shared memory
+// Simply communicate starting index and length of array in shared memory when allocating,
+// Broadcast reallocations likewise, and wait for read locks before deallocating
+// Or simply keep track of written and read segments of memory, realloc outside segments read
+// No need to wait for read locks when writing or vice versa
+
+// Producer manages memory, keeping e.g. semaphores for each segment,
+// broadcasting each allocation to readers, deallocating once all processes using segment have freed
+// Keep track of offsets of each segment in some fixed index, which are updated in realloc and checked while reading
+// Possibly broadcast or record updates too by timestamps, so reader only iterates through array once update occurs
+
+// Segment format: metadata (e.g. update, length) + array of particles each as a vector of positions and properties
+// General I/O: lookup segment offset, go to offset, check if updated, return buffer for array
+// Specific I/O: go through array of particles, process them possibly without copying
+// Perhaps think of segments as files, or at least objects or arrays allocated
+
 
 #include <iostream>
 #include <sys/ipc.h>

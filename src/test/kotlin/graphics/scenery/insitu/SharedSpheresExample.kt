@@ -26,8 +26,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
                 Renderer.createRenderer(hub, applicationName, scene, 512, 512))
 
         spheres = ArrayList()
-        // while(result.remaining() > 3) { // TODO getting segfaults
-        for (i in 1..30 step 3) {
+        while(result.remaining() > 3) {
             val s = Sphere(Random.randomFromRange(0.04f, 0.2f), 10)
             val x = result.get()
             val y = result.get()
@@ -107,8 +106,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
             println(result.remaining())
 
-            //while(result.hasRemaining())
-            for (i in 1..30)
+            while(result.hasRemaining())
                 println(message = "Java says: ${result.get()} (${result.remaining()})")
             result.rewind()
 
