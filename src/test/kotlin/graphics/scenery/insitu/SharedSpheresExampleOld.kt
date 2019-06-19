@@ -13,13 +13,10 @@ import graphics.scenery.backends.Renderer
 import graphics.scenery.numerics.Random
 import kotlin.concurrent.*
 
-class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
+class SharedSpheresExampleOld : SceneryBase("SharedSpheresExampleOld"){
 
     lateinit var result: FloatBuffer
     lateinit var spheres: ArrayList<Sphere>
-    var offset = 0
-    var size = 0
-    var indlen = 20
 
     override fun init() {
         settings.set("Input.SlowMovementSpeed", 0.5f)
@@ -29,12 +26,11 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
                 Renderer.createRenderer(hub, applicationName, scene, 512, 512))
 
         spheres = ArrayList()
-        checkloc()
-        for (i in offset..offset+size step 3) {
+        while(result.remaining() > 3) {
             val s = Sphere(Random.randomFromRange(0.04f, 0.2f), 10)
-            val x = result.get(i)
-            val y = result.get(i+1)
-            val z = result.get(i+2)
+            val x = result.get()
+            val y = result.get()
+            val z = result.get()
             println("x is $x y is $y z is $z")
             s.position = GLVector(x, y, z)
             scene.addChild(s)
@@ -66,20 +62,12 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         }
     }
 
-    private fun checkloc() {
-        // read offset and size from first two locations in result
-        result.rewind()
-        offset = result.get().toInt()
-        size = result.get().toInt()
-    }
-
     private fun update() {
-        checkloc()
-        for ((i, s) in spheres.withIndex()) {
-            val j = offset + 3*i
-            val x = result.get(j)
-            val y = result.get(j+1)
-            val z = result.get(j+2)
+        result.rewind()
+        for (s in spheres) {
+            val x = result.get()
+            val y = result.get()
+            val z = result.get()
             //println("x is $x y is $y z is $z")
             s.position = GLVector(x, y, z)
         }

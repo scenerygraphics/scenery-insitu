@@ -30,17 +30,19 @@
 
 #define SIZE 10000
 #define RANK 0
+#define INDLEN 20 // length of index in floats
 
 int shmid;
 float *str;
 int cont;
+int memloc, size;
 
 int update(float *str)
 {
 	static int cnt = 0;
 	// move each entry in array based on bits of cnt
-	for (int i = 0; i < SIZE/sizeof(float); ++i) {
-		str[i] += 0.02 * ((cnt & (1 << (i & ((1 << 16) - 1)))) ? 1 : -1);
+	for (int i = INDLEN; i < SIZE/sizeof(float); ++i) {
+		str[i] += 0.02 * ((cnt & (1 << (i & ((1 << 4) - 1)))) ? 1 : -1);
 	}
 
 	++cnt;
@@ -48,10 +50,30 @@ int update(float *str)
 	return cont; // whether to continue
 }
 
+void reall()
+{
+	// generate new address
+	size = 45;
+	memloc = (13 * memloc + 27) % (SIZE/sizeof(float) - size - INDLEN) + INDLEN;
+
+	// write it and size in index
+	str[0] = memloc;
+	str[1] = size;
+}
+
 void detach(int signal)
 {
-	printf("\n");
-	cont = 0;
+	char c;
+	std::cout << "Reallocate? ";
+	std::cin >> c;
+	if (c == 'y') {
+		reall();
+		std::cout << "Data written into memory: " << str[memloc] << std::endl;
+		std::cout << "Data location: " << memloc << std::endl;
+	} else {
+		printf("\n");
+		cont = 0;
+	}
 }
 
 int main()
@@ -71,12 +93,16 @@ int main()
 
 	// printf("%d\n", str);
 
-	for (int i = 0; i < SIZE/sizeof(float); ++i) {
+	for (int i = INDLEN; i < SIZE/sizeof(float); ++i) {
 		// printf("%d\n", i);
 		str[i] = ((7*i) % 20 - 10) / 5.0;
 	}
 
-	std::cout << "Data written into memory: " << str[0] << std::endl;
+	memloc = 0;
+	reall();
+
+	std::cout << "Data written into memory: " << str[memloc] << std::endl;
+	std::cout << "Data location: " << memloc << std::endl;
 
 	std::cin.get();
 
