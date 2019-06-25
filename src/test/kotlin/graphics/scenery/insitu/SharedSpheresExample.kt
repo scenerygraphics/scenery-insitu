@@ -4,10 +4,10 @@ import cleargl.GLVector
 import mpi.MPIException
 import mpi.MPI
 import org.junit.Test
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import java.nio.*;
-import java.nio.charset.StandardCharsets;
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
+import java.nio.*
+import java.nio.charset.StandardCharsets
 import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.numerics.Random
@@ -19,7 +19,6 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
     lateinit var spheres: ArrayList<Sphere>
     var offset = 0
     var size = 0
-    var indlen = 20
 
     override fun init() {
         settings.set("Input.SlowMovementSpeed", 0.5f)
@@ -64,6 +63,10 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         fixedRateTimer(initialDelay = 5, period = 5) {
             update()
         }
+
+        fixedRateTimer(initialDelay = 10, period = 10) {
+            checkloc()
+        }
     }
 
     private fun checkloc() {
@@ -74,7 +77,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
     }
 
     private fun update() {
-        checkloc()
+        // checkloc()
         for ((i, s) in spheres.withIndex()) {
             val j = offset + 3*i
             val x = result.get(j)
@@ -131,5 +134,4 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         super.main()
         log.info("Done here.")
     }
-
 }
