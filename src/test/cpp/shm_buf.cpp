@@ -27,127 +27,106 @@
 #include <stdio.h>
 #include <errno.h>
 #include <signal.h>
-#include <mpi.h>
 
 #define SIZE 10000
 #define RANK 0
-#define INDLEN 20 // length of index in floats
+#define INDLEN 0 // length of index in floats
+#define BUFSIZE 20
 
-int shmid;
-float *str;
-int memloc, size;
-int world_size, world_rank;
+int shmid, bufid, oldid;
+float *str, *buf; // buffer contains two elements, first is the current rank, second is whether processes are finished using old memory
+int cont;
+int bufrank;
 
-int update(float *str)
+void initstr()
+{
+        for (int i = 0; i < SIZE/sizeof(float); ++i) {
+                str[i] = ((7*i) % 20 - 10) / 5.0;
+        }
+}
+
+int update()
 {
 	static int cnt = 0;
 	// move each entry in array based on bits of cnt
 	for (int i = INDLEN; i < SIZE/sizeof(float); ++i) {
-		str[i] += 0.02 * ((cnt & (1 << (i & 7))) ? 1 : -1);
+		str[i] += 0.02 * ((cnt & (1 << (i & ((1 << 4) - 1)))) ? 1 : -1);
 	}
 
 	++cnt;
 
-	int flag;
-	MPI_Status stat;
-	MPI_Iprobe(0, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &stat); // check for message
-	return !flag;
+	// if processes have finished reading oldid
+	if (buf[1] == 1) {
+		shmctl(oldid, IPC_RMID, NULL);
+	}
+
+	return cont; // whether to continue
 }
 
 void reall()
 {
-	// generate new address
-	size = 45;
-	memloc = (13 * memloc + 27) % (SIZE/sizeof(float) - size - INDLEN) + INDLEN;
+	static int toggle = 0;
 
-	// write it and size in index
-	str[0] = memloc;
-	str[1] = size;
+	// generate new shared memory
+	toggle ^= 1;
+	myrank = 2*RANK + toggle;
+	key_t key = ftok("/tmp", myrank);
+	printf("shm key:%d\n", key);
+
+	if (str == NULL) {
+		// first call, reset buffer
+		buf[0] = buf[1] = 0;
+	} else {
+		shmdt(str);
+	}
+	oldid = shmid;
+	shmid = shmget(key, SIZE, 0666|IPC_CREAT);
+	str = (float*) shmat(shmid,(void*)0,0);
+	initstr();
+
+	// write it in buffer
+	buf[0] = myrank;
 }
 
-int detach()
+void detach(int signal)
 {
 	char c;
 	std::cout << "Reallocate? ";
 	std::cin >> c;
-
 	if (c == 'y') {
 		reall();
-		std::cout << "Data written into memory: " << str[memloc] << std::endl;
-		std::cout << "Data location: " << memloc << std::endl;
-
-		return 1;
+		std::cout << "Data written into memory: " << str[0] << std::endl;
 	} else {
-		MPI_Request req;
-		MPI_Isend(NULL, 0, MPI_INT, 1, MPI_TAG_UB, MPI_COMM_WORLD, &req); // send call to terminate
-
-		return 0;
+		printf("\n");
+		cont = 0;
 	}
 }
 
-void term(int signal)
+int main()
 {
-	MPI_Barrier(MPI_COMM_WORLD);
-
-	shmdt(str);
-	if (!world_rank)
-		shmctl(shmid, IPC_RMID, NULL);
-
-	MPI_Finalize();
-}
-
-int main(int argc, char *argv[])
-{
-	MPI_Init(&argc, &argv);
-
-	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-	printf("Rank: %d out of %d\n", world_rank, world_size);
-
 	key_t key = ftok("/tmp", RANK);
 	printf("key:%d\n", key);
 
-	shmid = shmget(key, SIZE, 0666|IPC_CREAT);
+	bufid = shmget(key, SIZE, 0666|IPC_CREAT);
 
-	if (shmid < 0) {
-		printf("errno: %d\n", errno);
-		exit(1);
-	}
-
-	str = (float*) shmat(shmid,(void*)0,0);
+	buf = (float*) shmat(shmid,(void*)0,0);
 	// mmap(0, SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shmid, 0);
 
 	// printf("%d\n", str);
 
-	// signal(SIGTERM, term);
+	str = NULL;
+	reall();
 
-	if (world_rank == 0) {
+	std::cout << "Data written into memory: " << str[0] << std::endl;
 
-		for (int i = INDLEN; i < SIZE/sizeof(float); ++i) {
-			// printf("%d\n", i);
-			str[i] = ((7*i) % 20 - 10) / 5.0;
-		}
+	std::cin.get();
 
-		memloc = 0;
-		reall();
+	signal(SIGINT, detach);
+	cont = 1;
+	while (update(str))
+		usleep(10000);
 
-		std::cout << "Data written into memory: " << str[memloc] << std::endl;
-		std::cout << "Data location: " << memloc << std::endl;
+	shmctl(shmid, IPC_RMID, NULL);
 
-		std::cout << "Update? ";
-		std::cin.get();
-
-		MPI_Barrier(MPI_COMM_WORLD);
-
-		while (detach());
-
-	} else {
-		MPI_Barrier(MPI_COMM_WORLD);
-
-		while (update(str))
-			usleep(10000);
-	}
-
-	term(SIGTERM);
 }
 

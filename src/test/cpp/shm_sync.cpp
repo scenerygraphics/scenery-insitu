@@ -14,6 +14,7 @@
 // Specific I/O: go through array of particles, process them possibly without copying
 // Perhaps think of segments as files, or at least objects or arrays allocated
 
+// TODO here try waiting before each write , including deallocations
 
 #include <iostream>
 #include <sys/ipc.h>
@@ -27,7 +28,6 @@
 #include <stdio.h>
 #include <errno.h>
 #include <signal.h>
-#include <mpi.h>
 
 #define SIZE 10000
 #define RANK 0
@@ -35,23 +35,20 @@
 
 int shmid;
 float *str;
+int cont;
 int memloc, size;
-int world_size, world_rank;
 
 int update(float *str)
 {
 	static int cnt = 0;
 	// move each entry in array based on bits of cnt
 	for (int i = INDLEN; i < SIZE/sizeof(float); ++i) {
-		str[i] += 0.02 * ((cnt & (1 << (i & 7))) ? 1 : -1);
+		str[i] += 0.02 * ((cnt & (1 << (i & ((1 << 4) - 1)))) ? 1 : -1);
 	}
 
 	++cnt;
 
-	int flag;
-	MPI_Status stat;
-	MPI_Iprobe(0, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &stat); // check for message
-	return !flag;
+	return cont; // whether to continue
 }
 
 void reall()
@@ -65,45 +62,23 @@ void reall()
 	str[1] = size;
 }
 
-int detach()
+void detach(int signal)
 {
 	char c;
 	std::cout << "Reallocate? ";
 	std::cin >> c;
-
 	if (c == 'y') {
 		reall();
 		std::cout << "Data written into memory: " << str[memloc] << std::endl;
 		std::cout << "Data location: " << memloc << std::endl;
-
-		return 1;
 	} else {
-		MPI_Request req;
-		MPI_Isend(NULL, 0, MPI_INT, 1, MPI_TAG_UB, MPI_COMM_WORLD, &req); // send call to terminate
-
-		return 0;
+		printf("\n");
+		cont = 0;
 	}
 }
 
-void term(int signal)
+int main()
 {
-	MPI_Barrier(MPI_COMM_WORLD);
-
-	shmdt(str);
-	if (!world_rank)
-		shmctl(shmid, IPC_RMID, NULL);
-
-	MPI_Finalize();
-}
-
-int main(int argc, char *argv[])
-{
-	MPI_Init(&argc, &argv);
-
-	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-	printf("Rank: %d out of %d\n", world_rank, world_size);
-
 	key_t key = ftok("/tmp", RANK);
 	printf("key:%d\n", key);
 
@@ -119,35 +94,26 @@ int main(int argc, char *argv[])
 
 	// printf("%d\n", str);
 
-	// signal(SIGTERM, term);
-
-	if (world_rank == 0) {
-
-		for (int i = INDLEN; i < SIZE/sizeof(float); ++i) {
-			// printf("%d\n", i);
-			str[i] = ((7*i) % 20 - 10) / 5.0;
-		}
-
-		memloc = 0;
-		reall();
-
-		std::cout << "Data written into memory: " << str[memloc] << std::endl;
-		std::cout << "Data location: " << memloc << std::endl;
-
-		std::cout << "Update? ";
-		std::cin.get();
-
-		MPI_Barrier(MPI_COMM_WORLD);
-
-		while (detach());
-
-	} else {
-		MPI_Barrier(MPI_COMM_WORLD);
-
-		while (update(str))
-			usleep(10000);
+	for (int i = INDLEN; i < SIZE/sizeof(float); ++i) {
+		// printf("%d\n", i);
+		str[i] = ((7*i) % 20 - 10) / 5.0;
 	}
 
-	term(SIGTERM);
+	memloc = 0;
+	reall();
+
+	std::cout << "Data written into memory: " << str[memloc] << std::endl;
+	std::cout << "Data location: " << memloc << std::endl;
+
+	std::cin.get();
+
+	signal(SIGINT, detach);
+	cont = 1;
+	while (update(str))
+		usleep(10000);
+
+	shmdt(str);
+	shmctl(shmid, IPC_RMID, NULL);
+
 }
 

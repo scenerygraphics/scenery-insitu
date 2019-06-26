@@ -65,7 +65,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         }
 
         fixedRateTimer(initialDelay = 10, period = 10) {
-            checkloc()
+            checkloc() // may only do this after receiving message
         }
     }
 
