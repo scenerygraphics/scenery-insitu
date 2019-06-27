@@ -1,19 +1,4 @@
-// Generates changing data in different locations of shared memory
-// Simply communicate starting index and length of array in shared memory when allocating,
-// Broadcast reallocations likewise, and wait for read locks before deallocating
-// Or simply keep track of written and read segments of memory, realloc outside segments read
-// No need to wait for read locks when writing or vice versa
-
-// Producer manages memory, keeping e.g. semaphores for each segment,
-// broadcasting each allocation to readers, deallocating once all processes using segment have freed
-// Keep track of offsets of each segment in some fixed index, which are updated in realloc and checked while reading
-// Possibly broadcast or record updates too by timestamps, so reader only iterates through array once update occurs
-
-// Segment format: metadata (e.g. update, length) + array of particles each as a vector of positions and properties
-// General I/O: lookup segment offset, go to offset, check if updated, return buffer for array
-// Specific I/O: go through array of particles, process them possibly without copying
-// Perhaps think of segments as files, or at least objects or arrays allocated
-
+// Communicate updates to shared memory through buffer
 
 #include <iostream>
 #include <sys/ipc.h>
@@ -30,8 +15,8 @@
 
 #define SIZE 10000
 #define RANK 0
-#define INDLEN 0 // length of index in floats
-#define BUFSIZE 20
+#define INDLEN 2 // length of index in floats
+#define BUFSIZE 10000
 
 int shmid, bufid, oldid;
 float *str, *buf; // buffer contains two elements, first is the current rank, second is whether processes are finished using old memory
@@ -40,9 +25,16 @@ int bufrank;
 
 void initstr()
 {
-        for (int i = 0; i < SIZE/sizeof(float); ++i) {
+	str[0] = buf[0]; // for now
+	str[1] = buf[1];
+        for (int i = INDLEN; i < SIZE/sizeof(float); ++i) {
                 str[i] = ((7*i) % 20 - 10) / 5.0;
         }
+}
+
+void initbuf()
+{
+	buf[0] = buf[1] = 0;
 }
 
 int update()
@@ -55,10 +47,12 @@ int update()
 
 	++cnt;
 
+	/*
 	// if processes have finished reading oldid
 	if (buf[1] == 1) {
 		shmctl(oldid, IPC_RMID, NULL);
 	}
+	*/
 
 	return cont; // whether to continue
 }
@@ -69,23 +63,30 @@ void reall()
 
 	// generate new shared memory
 	toggle ^= 1;
-	myrank = 2*RANK + toggle;
-	key_t key = ftok("/tmp", myrank);
+	bufrank = 4*RANK + 2 + toggle;
+
+	// write it in buffer
+	printf("Old rank: %d\n", (int) buf[0]);
+	buf[0] = bufrank;
+	if (str != NULL) str[0] = bufrank; // later remove
+	printf("New rank: %d\n", (int) buf[0]);
+
+	key_t key = ftok("/tmp", bufrank);
 	printf("shm key:%d\n", key);
 
-	if (str == NULL) {
-		// first call, reset buffer
-		buf[0] = buf[1] = 0;
-	} else {
+	if (str != NULL) {
 		shmdt(str);
 	}
 	oldid = shmid;
 	shmid = shmget(key, SIZE, 0666|IPC_CREAT);
+	printf("shmid:%d\n", shmid);
 	str = (float*) shmat(shmid,(void*)0,0);
-	initstr();
+	if (str == NULL) {
+		printf("errno:%d\n", errno);
+		exit(1);
+	}
 
-	// write it in buffer
-	buf[0] = myrank;
+	initstr();
 }
 
 void detach(int signal)
@@ -108,8 +109,13 @@ int main()
 	printf("key:%d\n", key);
 
 	bufid = shmget(key, SIZE, 0666|IPC_CREAT);
-
-	buf = (float*) shmat(shmid,(void*)0,0);
+	printf("bufid:%d\n", bufid);
+	buf = (float*) shmat(bufid,(void*)0,0);
+	if (buf == NULL) {
+		printf("errno:%d\n", errno);
+		exit(1);
+	}
+	initbuf();
 	// mmap(0, SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shmid, 0);
 
 	// printf("%d\n", str);
@@ -123,10 +129,13 @@ int main()
 
 	signal(SIGINT, detach);
 	cont = 1;
-	while (update(str))
+	while (update())
 		usleep(10000);
 
+	shmdt(str);
+	shmdt(buf);
 	shmctl(shmid, IPC_RMID, NULL);
-
+	shmctl(bufid, IPC_RMID, NULL);
+	shmctl(oldid, IPC_RMID, NULL);
 }
 

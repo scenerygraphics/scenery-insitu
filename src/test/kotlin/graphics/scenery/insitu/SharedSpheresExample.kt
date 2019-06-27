@@ -4,10 +4,10 @@ import cleargl.GLVector
 import mpi.MPIException
 import mpi.MPI
 import org.junit.Test
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import java.nio.*
-import java.nio.charset.StandardCharsets
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import java.nio.*;
+import java.nio.charset.StandardCharsets;
 import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.numerics.Random
@@ -15,10 +15,10 @@ import kotlin.concurrent.*
 
 class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
+    lateinit var buffer: FloatBuffer // TODO later make IntBuffer
     lateinit var result: FloatBuffer
     lateinit var spheres: ArrayList<Sphere>
-    var offset = 0
-    var size = 0
+    var resrank = -1 // should never be this value in execution
 
     override fun init() {
         settings.set("Input.SlowMovementSpeed", 0.5f)
@@ -28,12 +28,14 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
                 Renderer.createRenderer(hub, applicationName, scene, 512, 512))
 
         spheres = ArrayList()
-        checkloc()
-        for (i in offset..offset+size step 3) {
+        result.rewind()
+        for (i in 0..1) result.get() // TODO remove later, once buffer and result are not tied together
+        // while (result.remaining() > 3) {
+        for (i in 0..30) {
             val s = Sphere(Random.randomFromRange(0.04f, 0.2f), 10)
-            val x = result.get(i)
-            val y = result.get(i+1)
-            val z = result.get(i+2)
+            val x = result.get()
+            val y = result.get()
+            val z = result.get()
             println("x is $x y is $y z is $z")
             s.position = GLVector(x, y, z)
             scene.addChild(s)
@@ -63,28 +65,39 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         fixedRateTimer(initialDelay = 5, period = 5) {
             update()
         }
-
-        fixedRateTimer(initialDelay = 10, period = 10) {
-            checkloc() // may only do this after receiving message
-        }
-    }
-
-    private fun checkloc() {
-        // read offset and size from first two locations in result
-        result.rewind()
-        offset = result.get().toInt()
-        size = result.get().toInt()
     }
 
     private fun update() {
-        // checkloc()
-        for ((i, s) in spheres.withIndex()) {
-            val j = offset + 3*i
-            val x = result.get(j)
-            val y = result.get(j+1)
-            val z = result.get(j+2)
+        // check buffer if memory location changed
+        this.getResult()
+
+        result.rewind()
+        for (i in 0..1) result.get() // TODO remove later
+        for (s in spheres) {
+            val x = result.get()
+            val y = result.get()
+            val z = result.get()
             //println("x is $x y is $y z is $z")
             s.position = GLVector(x, y, z)
+        }
+    }
+
+    private fun getResult() {
+        // buffer.rewind()
+        val newrank = buffer.get(0).toInt()
+        if (resrank != newrank) {
+            println("Old rank: $resrank\tNew rank: $newrank")
+            // use (and delete for now) old memory, attach to new one
+            // buffer.put(1, 1f)
+            this.deleteShm()
+
+            if (newrank < 0) {
+                this.close()
+            }
+            resrank = newrank
+            val bb = this.getSimData(resrank) // TODO this also changes buffer
+            bb.order(ByteOrder.nativeOrder())
+            result = bb.asFloatBuffer()
         }
     }
 
@@ -114,11 +127,13 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         try {
             val a = this.sayHello()
             log.info(a.toString())
+
             val bb = this.getSimData(myrank)
             bb.order(ByteOrder.nativeOrder())
+            buffer = bb.asFloatBuffer()
+            println("Buffer rank: ${buffer.get(0)}")
 
-            result = bb.asFloatBuffer()
-
+            this.getResult()
             println(result.remaining())
 
             while(result.hasRemaining())
@@ -134,4 +149,5 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         super.main()
         log.info("Done here.")
     }
+
 }
