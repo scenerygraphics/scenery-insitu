@@ -15,7 +15,7 @@ import kotlin.concurrent.*
 
 class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
-    lateinit var buffer: FloatBuffer // TODO later make IntBuffer
+    lateinit var buffer: IntBuffer
     lateinit var result: FloatBuffer
     lateinit var spheres: ArrayList<Sphere>
     var resrank = -1 // should never be this value in execution
@@ -29,7 +29,6 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
         spheres = ArrayList()
         result.rewind()
-        for (i in 0..1) result.get() // TODO remove later, once buffer and result are not tied together
         // while (result.remaining() > 3) {
         for (i in 0..30) {
             val s = Sphere(Random.randomFromRange(0.04f, 0.2f), 10)
@@ -72,7 +71,6 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         this.getResult()
 
         result.rewind()
-        for (i in 0..1) result.get() // TODO remove later
         for (s in spheres) {
             val x = result.get()
             val y = result.get()
@@ -95,9 +93,10 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
                 this.close()
             }
             resrank = newrank
-            val bb = this.getSimData(resrank) // TODO this also changes buffer
+            val bb = this.getSimData(resrank)
             bb.order(ByteOrder.nativeOrder())
             result = bb.asFloatBuffer()
+            println(buffer == result)
         }
     }
 
@@ -128,9 +127,9 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val a = this.sayHello()
             log.info(a.toString())
 
-            val bb = this.getSimData(myrank)
+            val bb = this.getSimData(1)
             bb.order(ByteOrder.nativeOrder())
-            buffer = bb.asFloatBuffer()
+            buffer = bb.asIntBuffer()
             println("Buffer rank: ${buffer.get(0)}")
 
             this.getResult()

@@ -8,6 +8,7 @@ using namespace std;
 
 int shmid;
 float *str;
+float *buf = NULL;
 
 
 // Implementation of the native method sayHello()
@@ -18,19 +19,27 @@ JNIEXPORT int JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_sayHello
 
 JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getSimData (JNIEnv *env, jobject thisObj, int worldRank) {
 
-    printf("paramter rec: %d", worldRank);
+    printf("paramter rec: %d\n", worldRank);
      // ftok to generate unique key 
     key_t key = ftok("/tmp",worldRank);
+
+    std::cout << "key: " << key << std::endl;
   
     // shmget returns an identifier in shmid 
-    shmid = shmget(key,2024,0666|IPC_CREAT); 
+    shmid = shmget(key,2024,0666|IPC_CREAT);
+
+    std::cout << "shmid: " << shmid << std::endl;
   
-    // shmat to attach to shared memory 
-    str = (float*) shmat(shmid,(void*)0,0); 
+    // shmat to attach to shared memory
+    float *str1;
+    if (buf == NULL)
+        str1 = buf = (float*) shmat(shmid, NULL,0);
+    else
+        str1 = str = (float*) shmat(shmid, NULL,0);
 
-    std::cout<<"Hello! We are in SimData! Data read from memory:" <<str[0]; 
+    std::cout<<"Hello! We are in SimData! Data read from memory:" <<str1[0] << std::endl;
 
-    jobject bb = (env)->NewDirectByteBuffer((void*) str, 1000);
+    jobject bb = (env)->NewDirectByteBuffer((void*) str1, 1000);
 
     return bb;
 }

@@ -14,19 +14,20 @@
 #include <signal.h>
 
 #define SIZE 10000
-#define RANK 0
-#define INDLEN 2 // length of index in floats
+#define RANK 1
+#define INDLEN 0 // length of index in floats
 #define BUFSIZE 10000
 
 int shmid, bufid, oldid;
-float *str, *buf; // buffer contains two elements, first is the current rank, second is whether processes are finished using old memory
+float *str;
+int  *buf; // buffer contains two elements, first is the current rank, second is whether processes are finished using old memory
 int cont;
 int bufrank;
 
 void initstr()
 {
-	str[0] = buf[0]; // for now
-	str[1] = buf[1];
+	// str[0] = buf[0]; // for now
+	// str[1] = buf[1];
         for (int i = INDLEN; i < SIZE/sizeof(float); ++i) {
                 str[i] = ((7*i) % 20 - 10) / 5.0;
         }
@@ -68,7 +69,7 @@ void reall()
 	// write it in buffer
 	printf("Old rank: %d\n", (int) buf[0]);
 	buf[0] = bufrank;
-	if (str != NULL) str[0] = bufrank; // later remove
+	// if (str != NULL) str[0] = bufrank; // later remove
 	printf("New rank: %d\n", (int) buf[0]);
 
 	key_t key = ftok("/tmp", bufrank);
@@ -85,6 +86,7 @@ void reall()
 		printf("errno:%d\n", errno);
 		exit(1);
 	}
+	printf("buf:%d\tstr:%d\n", buf, str);
 
 	initstr();
 }
@@ -110,7 +112,7 @@ int main()
 
 	bufid = shmget(key, SIZE, 0666|IPC_CREAT);
 	printf("bufid:%d\n", bufid);
-	buf = (float*) shmat(bufid,(void*)0,0);
+	buf = (int*) shmat(bufid,(void*)0,0);
 	if (buf == NULL) {
 		printf("errno:%d\n", errno);
 		exit(1);
