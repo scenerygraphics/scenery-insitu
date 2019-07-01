@@ -15,12 +15,19 @@
 #define SIZE 2024
 #define RANK 0
 
-int main()
+int main(int argc, char *argv[])
 {
-	key_t key = ftok("/tmp", RANK);
+	int rank;
+	if (argc > 1)
+		rank = atoi(argv[1]);
+	else
+		rank = RANK;
+
+	key_t key = ftok("/tmp", rank);
 	printf("key:%d\n", key);
 
 	int shmid = shmget(key, SIZE, 0666|IPC_CREAT);
+	printf("shmid:%d\n", shmid);
 
 	if (shmid < 0) {
 		printf("errno: %d\n", errno);

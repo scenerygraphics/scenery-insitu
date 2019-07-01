@@ -87,7 +87,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             println("Old rank: $resrank\tNew rank: $newrank")
             // use (and delete for now) old memory, attach to new one
             // buffer.put(1, 1f)
-            this.deleteShm()
+            // this.deleteShm()
 
             if (newrank < 0) {
                 this.close()
@@ -127,7 +127,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val a = this.sayHello()
             log.info(a.toString())
 
-            val bb = this.getSimData(1)
+            val bb = this.getSimData(3)
             bb.order(ByteOrder.nativeOrder())
             buffer = bb.asIntBuffer()
             println("Buffer rank: ${buffer.get(0)}")

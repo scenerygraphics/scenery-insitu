@@ -26,7 +26,12 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
     std::cout << "key: " << key << std::endl;
   
     // shmget returns an identifier in shmid 
-    shmid = shmget(key,2024,0666|IPC_CREAT);
+    shmid = shmget(key,2024,0666|IPC_CREAT); // TODO use semget to get semaphore
+
+    if (shmid == -1) {
+        std::cout << "errno: " << errno << std::endl;
+        exit(1);
+    }
 
     std::cout << "shmid: " << shmid << std::endl;
   
@@ -49,7 +54,7 @@ JNIEXPORT void JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_deleteS
     shmdt(str); 
     
     // destroy the shared memory 
-    shmctl(shmid,IPC_RMID,NULL); 
+    shmctl(shmid,IPC_RMID,NULL);
 
     return;
 }

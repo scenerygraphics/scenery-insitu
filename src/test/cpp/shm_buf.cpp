@@ -13,10 +13,10 @@
 #include <errno.h>
 #include <signal.h>
 
-#define SIZE 10000
-#define RANK 1
+#define SIZE 2024
+#define RANK 3
 #define INDLEN 0 // length of index in floats
-#define BUFSIZE 10000
+#define BUFSIZE 2024
 
 int shmid, bufid, oldid;
 float *str;
