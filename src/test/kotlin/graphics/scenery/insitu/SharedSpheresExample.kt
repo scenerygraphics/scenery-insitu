@@ -29,8 +29,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
         spheres = ArrayList()
         result.rewind()
-        // while (result.remaining() > 3) {
-        for (i in 0..30) {
+        while (result.remaining() > 3) {
             val s = Sphere(Random.randomFromRange(0.04f, 0.2f), 10)
             val x = result.get()
             val y = result.get()
@@ -76,18 +75,25 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val y = result.get()
             val z = result.get()
             //println("x is $x y is $y z is $z")
-            s.position = GLVector(x, y, z)
+            s.position = GLVector(x, y, z) // TODO isn't this also a copy? can we just set s.position.mElements to a buffer?
         }
     }
 
     private fun getResult() {
+        // TODO communicate rank through semaphores instead of checking all the time
+        // Two semaphores each for consumer and producer, one for each rank
+        // Producer posts on the rank it is currently using, consumer sees it and changes array
+        // Consumer then posts on old rank, producer sees and deletes it
+        // Perhaps only two or even one semaphore may suffice, toggling rank at each update
+
         // buffer.rewind()
         val newrank = buffer.get(0).toInt()
         if (resrank != newrank) {
             println("Old rank: $resrank\tNew rank: $newrank")
             // use (and delete for now) old memory, attach to new one
             // buffer.put(1, 1f)
-            // this.deleteShm()
+            if (resrank != -1)
+                this.deleteShm()
 
             if (newrank < 0) {
                 this.close()
@@ -96,7 +102,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val bb = this.getSimData(resrank)
             bb.order(ByteOrder.nativeOrder())
             result = bb.asFloatBuffer()
-            println(buffer == result)
+            // println(buffer == result)
         }
     }
 
