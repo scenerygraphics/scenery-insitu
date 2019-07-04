@@ -19,6 +19,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
     lateinit var result: FloatBuffer
     lateinit var spheres: ArrayList<Sphere>
     var resrank = -1 // should never be this value in execution
+    var worldRank = -1
 
     override fun init() {
         settings.set("Input.SlowMovementSpeed", 0.5f)
@@ -63,11 +64,16 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         fixedRateTimer(initialDelay = 5, period = 5) {
             update()
         }
+
+        // execute getResult again only after it has finished waiting
+        timer(initialDelay = 10, period = 10) {
+            getResult()
+        }
     }
 
     private fun update() {
         // check buffer if memory location changed
-        this.getResult()
+        // this.getResult()
 
         result.rewind()
         for (s in spheres) {
@@ -79,31 +85,17 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         }
     }
 
+    // later define a mutex and prevent update from using result while this function is executed
     private fun getResult() {
-        // TODO communicate rank through semaphores instead of checking all the time
+        // communicate rank through semaphores instead of checking all the time
         // Two semaphores each for consumer and producer, one for each rank
         // Producer posts on the rank it is currently using, consumer sees it and changes array
         // Consumer then posts on old rank, producer sees and deletes it
         // Perhaps only two or even one semaphore may suffice, toggling rank at each update
 
-        // buffer.rewind()
-        val newrank = buffer.get(0).toInt()
-        if (resrank != newrank) {
-            println("Old rank: $resrank\tNew rank: $newrank")
-            // use (and delete for now) old memory, attach to new one
-            // buffer.put(1, 1f)
-            if (resrank != -1)
-                this.deleteShm()
-
-            if (newrank < 0) {
-                this.close()
-            }
-            resrank = newrank
-            val bb = this.getSimData(resrank)
-            bb.order(ByteOrder.nativeOrder())
-            result = bb.asFloatBuffer()
-            // println(buffer == result)
-        }
+        val bb = this.getSimData(worldRank) // waits until current shm is released and other shm is acquired
+        bb.order(ByteOrder.nativeOrder())
+        result = bb.asFloatBuffer()
     }
 
     private external fun sayHello(): Int
@@ -133,11 +125,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val a = this.sayHello()
             log.info(a.toString())
 
-            val bb = this.getSimData(3)
-            bb.order(ByteOrder.nativeOrder())
-            buffer = bb.asIntBuffer()
-            println("Buffer rank: ${buffer.get(0)}")
-
+            worldRank = 3 // later assign it based on myrank
             this.getResult()
             println(result.remaining())
 
