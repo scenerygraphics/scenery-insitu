@@ -34,6 +34,8 @@ class ShmAllocator {
 	union semun sem_attr;
     struct sembuf semops[SEMOPS];
 
+    void wait_del(int key); // wait to delete ptrs[key]
+
 public:
 	ShmAllocator(const char *pname, int rank);
 	~ShmAllocator();

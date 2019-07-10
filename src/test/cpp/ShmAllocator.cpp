@@ -40,9 +40,9 @@ ShmAllocator::ShmAllocator(const char *pname, int rank) : pname(pname), rank(ran
 
 		// currently, no consumers or producers
 		sem_attr.val = 0;
-		semctl(semid[i], CONSEM, SETVAL, sem_attr); // no consumers -> 0
+		semctl(semids[i], CONSEM, SETVAL, sem_attr); // no consumers -> 0
 		sem_attr.val = 1;
-		semctl(semid[i], PROSEM, SETVAL, sem_attr); // no producers -> 1
+		semctl(semids[i], PROSEM, SETVAL, sem_attr); // no producers -> 1
 	}
 }
 
@@ -53,7 +53,7 @@ ShmAllocator::~ShmAllocator()
 		shm_free(ptrs[i]);
 
 		// delete semaphore
-		semctl(semid[i], 0, IPC_RMID);
+		semctl(semids[i], 0, IPC_RMID);
 	}
 }
 
@@ -77,7 +77,7 @@ void *ShmAllocator::shm_alloc(size_t size)
 	semops[0].sem_num = PROSEM;
     semops[0].sem_op  = -1;
    	semops[0].sem_flg = 0;
-    if (semop(semid[current_key], semops, 1) == -1) {
+    if (semop(semids[current_key], semops, 1) == -1) {
     	perror("semop"); exit(1);
     }
 
@@ -110,17 +110,21 @@ void ShmAllocator::shm_free(void *ptr)
 	semops[0].sem_num = PROSEM;
     semops[0].sem_op  = 1;
     semops[0].sem_flg = 0;
-    if (semop(semid[i], semops, 1) == -1) {
+    if (semop(semids[i], semops, 1) == -1) {
     	perror("semop"); exit(1);
     }
 
-    // TODO execute these asynchronously
+    // TODO execute this asynchronously
+    wait_del(key);
+}
 
-    // wait for consumer to stop using key
+void ShmAllocator::wait_del(int key)
+{
+	// wait for consumer to stop using key
 	semops[0].sem_num = CONSEM;
     semops[0].sem_op  = 0;
     semops[0].sem_flg = 0;
-    if (semop(semid[i], semops, 1) == -1) {
+    if (semop(semids[key], semops, 1) == -1) {
     	perror("semop"); exit(1);
     }
 
@@ -129,7 +133,7 @@ void ShmAllocator::shm_free(void *ptr)
 	used[i] = false; // ensure that ptrs[i] and shmids[i] only change when used[i] is false
 
     // deallocate shared memory
-    shmat(ptr);
+    shmat(ptrs[i]);
     shmctl(shmids[i], IPC_RMID, NULL); // shmid[i] must not have changed
 
     ptrs[i] = NULL;
