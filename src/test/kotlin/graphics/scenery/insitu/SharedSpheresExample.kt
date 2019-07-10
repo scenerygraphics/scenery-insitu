@@ -15,10 +15,10 @@ import kotlin.concurrent.*
 
 class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
-    lateinit var buffer: IntBuffer
+    // lateinit var buffer: IntBuffer
     lateinit var result: FloatBuffer
     lateinit var spheres: ArrayList<Sphere>
-    var resrank = -1 // should never be this value in execution
+    // var resrank = -1 // should never be this value in execution
     var worldRank = -1
 
     override fun init() {
@@ -81,7 +81,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val y = result.get()
             val z = result.get()
             //println("x is $x y is $y z is $z")
-            s.position = GLVector(x, y, z) // TODO isn't this also a copy? can we just set s.position.mElements to a buffer?
+            s.position = GLVector(x, y, z) // isn't this also a copy? can we just set s.position.mElements to a buffer?
         }
     }
 
@@ -95,7 +95,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
         val bb = this.getSimData(worldRank) // waits until current shm is released and other shm is acquired
         bb.order(ByteOrder.nativeOrder())
-        result = bb.asFloatBuffer()
+        result = bb.asFloatBuffer() // possibly set to result1, then at next update
     }
 
     private external fun sayHello(): Int
@@ -125,7 +125,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val a = this.sayHello()
             log.info(a.toString())
 
-            worldRank = 3 // later assign it based on myrank
+            worldRank = 3 // later assign it based on myrank (should not be zero)
             this.getResult()
             println(result.remaining())
 

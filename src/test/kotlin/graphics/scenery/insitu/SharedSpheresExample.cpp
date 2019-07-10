@@ -19,29 +19,6 @@ float *str = NULL;
 union semun sem_attr;
 struct sembuf semops[SEMOPS];
 
-// detach from current shm, assuming str is set
-// later call this if program is interrupted, to keep semaphores consistent
-void detach()
-{
-	//detach from shared memory
-	shmdt(str);
-
-	// destroy the shared memory
-	// shmctl(shmid,IPC_RMID,NULL);
-
-	// release semaphore, alerting producer to delete shmid
-	semops[0].sem_num = 0;
-	semops[0].sem_op  = -1;
-	semops[0].sem_flg = 0;
-	if (semop(semid[toggle], semops, 1) == -1) {
-		perror("semop(0,-1,0)"); exit(1);
-	}
-
-	std::cout << "decremented semaphore 0 of rank " << toggle << std::endl;
-
-	return;
-}
-
 // attach to new shm, assuming toggle is set
 void attach(int worldRank)
 {
@@ -74,6 +51,29 @@ void attach(int worldRank)
 	std::cout << "incremented semaphore 0 of rank " << toggle << std::endl;
 }
 
+// detach from current shm, assuming str is set
+// later call this if program is interrupted, to keep semaphores consistent
+void detach()
+{
+	//detach from shared memory
+	shmdt(str);
+
+	// destroy the shared memory
+	// shmctl(shmid,IPC_RMID,NULL);
+
+	// release semaphore, alerting producer to delete shmid
+	semops[0].sem_num = 0;
+	semops[0].sem_op  = -1;
+	semops[0].sem_flg = 0;
+	if (semop(semid[toggle], semops, 1) == -1) {
+		perror("semop(0,-1,0)"); exit(1);
+	}
+
+	std::cout << "decremented semaphore 0 of rank " << toggle << std::endl;
+
+	return;
+}
+
 
 
 // Implementation of the native method sayHello()
@@ -97,21 +97,26 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
 		// initialize semaphores
 		for (int i = 0; i < NRANK; ++i) {
 			key = ftok("/tmp", GET_RANK(worldRank, i));
-			semid[i] = semget(key,NSEM,0666|IPC_CREAT);
+			semid[i] = semget(key,NSEM,0666|IPC_CREAT); // possibly remove IPC_CREAT here
 			if (semid[i] == -1) {
 				perror("semget"); exit(1);
 			}
 		}
 
 		std::cout << "looking for available memory" << std::endl;
+
 		// find current rank used by producer, without blocking (may go wrong if called exactly as producer reallocates, possibly another mutex)
 		for (toggle = 0; toggle < NRANK; ++toggle)
-			if (semctl(semid[toggle], 1, GETVAL) != SEMINIT)
+			if (semctl(semid[toggle], 1, GETVAL) == 0) // producer using toggle
 				break;
+
 		if (toggle >= NRANK) {
 			std::cout << "error: no memory" << std::endl;
+			for (int i = 0; i < NRANK; ++i)
+				semctl(semid[i], 0, IPC_RMID); // remove semaphores
 			exit(1);
 		}
+
 		std::cout << "found memory " << toggle << std::endl;
 	} else {
 		std::cout << "waiting for memory " << (1^toggle) << std::endl;
