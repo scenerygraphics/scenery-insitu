@@ -6,6 +6,8 @@
  */
 
 #include <iostream>
+#include <future>
+
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/mman.h>
@@ -96,6 +98,8 @@ void *ShmAllocator::shm_alloc(size_t size)
 
 void ShmAllocator::shm_free(void *ptr)
 {
+	static std::future<void> out;
+
 	// return if null pointer
 	if (ptr == NULL)
 		return;
@@ -124,8 +128,8 @@ void ShmAllocator::shm_free(void *ptr)
     }
 	printf("incremented semaphore %d of rank %d\n", PROSEM, key);
 
-    // TODO execute this asynchronously
-    wait_del(key);
+    // wait_del(key);
+    out = std::async(std::launch::async, &ShmAllocator::wait_del, this, key);
 }
 
 void ShmAllocator::wait_del(int key)
