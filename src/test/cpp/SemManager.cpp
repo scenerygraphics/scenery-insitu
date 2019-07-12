@@ -93,3 +93,24 @@ void SemManager::wait(int keyNo, int semNo, int value)
 	}
 	printf("waited for semaphore %d of key %d\n", semNo, keyNo); // test
 }
+
+
+
+void SemManager::waitgeq(int keyNo, int semNo, int value)
+{
+	if (value == 0)
+		return;
+
+	printf("waiting for semaphore %d of key %d to reach at least %d\n", semNo, keyNo, value); // test
+	// decrement by value, wait for zero (necessary if semaphore was initially higher than value, which in our case doesn't happen), then increment by value
+	semops[0].sem_num = semNo;
+	semops[0].sem_op  = -value;
+	semops[0].sem_flg = 0;
+	semops[1].sem_num = semNo;
+	semops[1].sem_op  = value;
+	semops[1].sem_flg = 0;
+	if (semop(semids[keyNo], semops, 2) == -1) {
+		perror("semop"); exit(1);
+	}
+	printf("waited for semaphore %d of key %d\n", semNo, keyNo); // test
+}
