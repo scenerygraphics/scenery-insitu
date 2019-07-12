@@ -23,28 +23,19 @@
 #include <string>
 #include <sys/sem.h>
 
-#define NKEYS 2 // number of keys used per world rank
-#define SHMINIT -1 // value of shmids[key] when no shared memory is associated to key
+#include "SemManager.hpp"
 
-#define NSEM 2 // number of semaphores per key; 0th semaphore for no of consumers, 1st semaphore for no of producers not using shm
-#define SEMOPS 10 // max number of semops to perform at a time
+#define SHMINIT -1 // value of shmids[key] when no shared memory is associated to key
 
 class ShmAllocator {
 
-	std::string pname;  // path name to pass to ftok
-	int rank;           // world rank
+	SemManager sems;
 
-	int keys[NKEYS];    // keys to be used and toggled
 	bool used[NKEYS];   // whether each key is currently used (allocated and not yet deleted, incl. not released by consumer)
 	int shmids[NKEYS];  // the shared memory id used for each key (-1 if not used)
-	int semids[NKEYS];  // the semaphore id used for each key
 	void *ptrs[NKEYS];  // pointers allocated for each key (NULL if not allocated)
 
 	int current_key;    // takes values 0 or 1; most recent memory allocated using keys[current_key]
-
-	// for semaphore calls (perhaps move to separate class)
-	union semun sem_attr;
-    struct sembuf semops[SEMOPS];
 
     void wait_del(int key); // wait to delete ptrs[key], called from shm_free
 
