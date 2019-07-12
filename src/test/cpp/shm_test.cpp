@@ -1,22 +1,18 @@
 // Test producer using allocator class
 
 #include <iostream>
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <errno.h>
 #include <signal.h>
 
 #include "ShmAllocator.hpp"
 
 #define SIZE 10000
 #define RANK 3
+#define UPDPER 10000
+#define REALLPER 100
 
 int cont;
 float *str = NULL;
@@ -29,6 +25,8 @@ void initstr() // modify this to copy old state to new array
 	}
 }
 
+void detach(int signal);
+
 int update()
 {
 	static int cnt = 0;
@@ -39,6 +37,9 @@ int update()
 	}
 
 	++cnt;
+
+	// if (cnt % REALLPER == 0)
+	// 	detach(0);
 
 	return cont; // whether to continue
 }
@@ -81,7 +82,7 @@ int main()
 
 	cont = 1;
 	while (update())
-		usleep(10000);
+		usleep(UPDPER);
 
 	alloc.shm_free(str);
 }

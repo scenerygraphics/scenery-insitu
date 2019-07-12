@@ -10,8 +10,7 @@ using namespace std;
 
 #define NRANK 2
 #define NSEM 2
-#define SEMINIT 0
-#define SEMOPS 1
+#define SEMOPS 2
 #define GET_RANK(rank, toggle) (2*rank+1+(toggle))
 
 int shmid, semid[NRANK], toggle = -1;
@@ -107,7 +106,7 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
 
 		// find current rank used by producer, without blocking (may go wrong if called exactly as producer reallocates, possibly another mutex)
 		for (toggle = 0; toggle < NRANK; ++toggle)
-			if (semctl(semid[toggle], 1, GETVAL) == 0) // producer using toggle
+			if (semctl(semid[toggle], 1, GETVAL) > 0) // producer using toggle
 				break;
 
 		if (toggle >= NRANK) {
@@ -120,11 +119,14 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
 		std::cout << "found memory " << toggle << std::endl;
 	} else {
 		std::cout << "waiting for memory " << (1^toggle) << std::endl;
-		// wait until producer uses 1^toggle
+		// wait until producer uses 1^toggle (until semaphore reaches 1)
 		semops[0].sem_num = 1;
-		semops[0].sem_op  = 0;
+		semops[0].sem_op  = -1;
 		semops[0].sem_flg = 0;
-		if (semop(semid[1^toggle], semops, 1) == -1) {
+		semops[1].sem_num = 1;
+		semops[1].sem_op  = 1;
+		semops[1].sem_flg = 0;
+		if (semop(semid[1^toggle], semops, 2) == -1) {
 			perror("semop(1,0,0)"); exit(1);
 		}
 		std::cout << "memory " << (1^toggle) << " available" << std::endl;

@@ -103,6 +103,10 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
     private external fun deleteShm()
 
+    fun terminate() {
+        deleteShm();
+    }
+
     @Test
     override fun main() {
 

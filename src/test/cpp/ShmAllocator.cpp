@@ -21,7 +21,7 @@
 
 #include "ShmAllocator.hpp"
 
-#define NSEM 2     // number of semaphores per key; 0th semaphore for no of consumers, 1st semaphore for no of producers not using shm
+#define NSEM 2     // number of semaphores per key; 0th semaphore for no of consumers, 1st semaphore for no of producers using shm
 #define CONSEM 0   // index of semaphore for consumer
 #define PROSEM 1   // index of semaphore for producer
 #define SEMOPS 10  // max number of semops to perform at a time
@@ -46,8 +46,8 @@ ShmAllocator::ShmAllocator(std::string pname, int rank) : pname(pname), rank(ran
 		// currently, no consumers or producers
 		sem_attr.val = 0;
 		semctl(semids[i], CONSEM, SETVAL, sem_attr); // no consumers -> 0
-		sem_attr.val = 1;
-		semctl(semids[i], PROSEM, SETVAL, sem_attr); // no producers -> 1
+		sem_attr.val = 0;
+		semctl(semids[i], PROSEM, SETVAL, sem_attr); // no producers -> 0
 	}
 }
 
@@ -83,14 +83,14 @@ void *ShmAllocator::shm_alloc(size_t size)
 	// mark new key as used
 	used[current_key] = true;
 
-	// decrement semaphore for new key to signal consumer
+	// increment semaphore for new key to signal consumer
 	semops[0].sem_num = PROSEM;
-    semops[0].sem_op  = -1;
+    semops[0].sem_op  = 1;
    	semops[0].sem_flg = 0;
     if (semop(semids[current_key], semops, 1) == -1) {
     	perror("semop"); exit(1);
     }
-	printf("decremented semaphore %d of rank %d\n", PROSEM, current_key);
+	printf("incremented semaphore %d of rank %d\n", PROSEM, current_key);
 
     // return pointer
     return ptrs[current_key];
@@ -119,14 +119,14 @@ void ShmAllocator::shm_free(void *ptr)
 	// used[key] = false;
 	// shmdt(ptr); // better here than after waiting; pointer should be unusable after free is called
 
-	// increment semaphore for key
+	// decrement semaphore for key
 	semops[0].sem_num = PROSEM;
-    semops[0].sem_op  = 1;
+    semops[0].sem_op  = -1;
     semops[0].sem_flg = 0;
     if (semop(semids[key], semops, 1) == -1) {
     	perror("semop"); exit(1);
     }
-	printf("incremented semaphore %d of rank %d\n", PROSEM, key);
+	printf("decremented semaphore %d of rank %d\n", PROSEM, key);
 
     // wait_del(key);
     out = std::async(std::launch::async, &ShmAllocator::wait_del, this, key);

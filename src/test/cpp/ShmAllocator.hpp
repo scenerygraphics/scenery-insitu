@@ -42,7 +42,7 @@ class ShmAllocator {
 
 	int current_key;    // takes values 0 or 1; most recent memory allocated using keys[current_key]
 
-	// for semaphore calls
+	// for semaphore calls (perhaps move to separate class)
 	union semun sem_attr;
     struct sembuf semops[SEMOPS];
 
