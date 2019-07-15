@@ -8,7 +8,17 @@
 
 #define PROJ_ID(rank, toggle) (2*(rank)+1+(toggle)) // generate proj_id to send to ftok (later should be more complex)
 
-SemManager::SemManager(std::string pname, int rank) : pname(pname), rank(rank)
+SemManager::SemManager(std::string pname, int rank) : pname(pname), rank(rank), ismain(true)
+{
+	init();
+}
+
+SemManager::SemManager(std::string pname, int rank, bool ismain) : pname(pname), rank(rank), ismain(ismain)
+{
+	init();
+}
+
+void SemManager::init()
 {
 	for (int i = 0; i < NKEYS; ++i) {
 		printf("rank:%d\ttoggle:%d\tid:%d\t", rank, i, PROJ_ID(rank, i)); // test
@@ -22,9 +32,11 @@ SemManager::SemManager(std::string pname, int rank) : pname(pname), rank(rank)
 
 SemManager::~SemManager()
 {
-	for (int i = 0; i < NKEYS; ++i) {
-		// delete semaphore
-		semctl(semids[i], 0, IPC_RMID);
+	if (ismain) {
+		for (int i = 0; i < NKEYS; ++i) {
+			// delete semaphore
+			semctl(semids[i], 0, IPC_RMID);
+		}
 	}
 }
 

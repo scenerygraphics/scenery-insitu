@@ -21,7 +21,7 @@
 #define SHM_ALLOC_HPP_
 
 #include <string>
-#include <sys/sem.h>
+#include <mutex>
 
 #include "SemManager.hpp"
 
@@ -31,7 +31,8 @@ class ShmAllocator {
 
 	SemManager sems;
 
-	bool used[NKEYS];   // whether each key is currently used (allocated and not yet deleted, incl. not released by consumer)
+	// bool used[NKEYS];   // whether each key is currently used (allocated and not yet deleted, incl. not released by consumer)
+	std::mutex used[NKEYS]; // lock when currently used; only after deallocation unlocks mutex can memory be allocated again
 	int shmids[NKEYS];  // the shared memory id used for each key (-1 if not used)
 	void *ptrs[NKEYS];  // pointers allocated for each key (NULL if not allocated)
 

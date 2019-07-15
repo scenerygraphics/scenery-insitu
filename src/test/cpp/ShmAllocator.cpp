@@ -32,7 +32,7 @@ ShmAllocator::ShmAllocator(std::string pname, int rank) : sems(pname, rank), cur
 	for (int i = 0; i < NKEYS; ++i) {
 		shmids[i] = -1;
 		ptrs[i] = NULL;
-		used[i] = false;
+		// used[i] = false;
 
 		// currently, no consumers or producers
 		sems.set(i, CONSEM, 0); // no consumers -> 0
@@ -45,6 +45,7 @@ ShmAllocator::~ShmAllocator()
 	for (int i = 0; i < NKEYS; ++i) {
 		// delete pointer if it is used
 		shm_free(ptrs[i]); // to avoid deadlocks, for now may just call shmctl instead of having to wait for consumer
+		// or call out.wait_for() for a given timeout duration, making out a class field and not a static variable for shm_free
 	}
 }
 
@@ -59,6 +60,7 @@ void *ShmAllocator::shm_alloc(size_t size)
 	// assert !used[current_key]; user must not be able to allocate more than twice
 	// wait for current key to stop being used by consumer
 	// technically used is also like a semaphore
+	used[current_key].lock(); // wait for it to be unused, then mark again
 
 	// allocate memory with new key
 	shmids[current_key] = shmget(sems[current_key], size, 0666|IPC_CREAT);
@@ -67,7 +69,7 @@ void *ShmAllocator::shm_alloc(size_t size)
 	printf("ptr:%ld\n", (long) ptrs[current_key]); // test
 
 	// mark new key as used
-	used[current_key] = true;
+	// used[current_key] = true;
 
 	// increment semaphore for new key to signal consumer
 	sems.incr(current_key, PROSEM);
@@ -113,7 +115,8 @@ void ShmAllocator::wait_del(int key)
 
 	// mark key as unused by consumer
 	// execute after waiting so that another allocate call to the key would not mess things up
-	used[key] = false; // ensure that ptrs[key] and shmids[key] only change when used[key] is false
+	// used[key] = false; // ensure that ptrs[key] and shmids[key] only change when used[key] is false
+	used[key].unlock();
 
     // deallocate shared memory
     shmdt(ptrs[key]); // ptrs[key] must not have changed

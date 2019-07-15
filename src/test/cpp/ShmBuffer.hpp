@@ -11,6 +11,9 @@
 
  #include "SemManager.hpp"
 
+ // TODO for synchronization, store both current and old pointers, support both attach after detach and attach before detach,
+ //
+
  class ShmBuffer {
 
 	SemManager sems;
@@ -22,7 +25,7 @@
 	int shmid;          // the shared memory id used for current key (-1 if not used)
 	void *ptr;          // pointer to current shared memory
 
-	std::future<void> out; //
+	std::future<void> out;
 
 	void loop(); // event loop // this should be implemented in Kotlin
 

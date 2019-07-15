@@ -7,7 +7,7 @@
 #define KEYINIT -1 // initial value of current_key to signify no previous memory allocated
 #define NEXTKEY (1^current_key)
 
-ShmBuffer::ShmBuffer(std::string pname, int rank. size_t size) : sems(pname, rank), size(size), current_key(KEYINIT), shmid(-1), ptr(NULL)
+ShmBuffer::ShmBuffer(std::string pname, int rank. size_t size) : sems(pname, rank, false), size(size), current_key(KEYINIT), shmid(-1), ptr(NULL)
 {
 	find_active();
 }

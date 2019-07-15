@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.numerics.Random
+import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.*
 
 class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
@@ -20,6 +21,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
     lateinit var spheres: ArrayList<Sphere>
     // var resrank = -1 // should never be this value in execution
     var worldRank = -1
+    val lock = ReentrantLock()
 
     override fun init() {
         settings.set("Input.SlowMovementSpeed", 0.5f)
@@ -62,7 +64,9 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         }
 
         fixedRateTimer(initialDelay = 5, period = 5) {
+            lock.lock()
             update()
+            lock.unlock()
         }
 
         // execute getResult again only after it has finished waiting
@@ -95,7 +99,10 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
         val bb = this.getSimData(worldRank) // waits until current shm is released and other shm is acquired
         bb.order(ByteOrder.nativeOrder())
+        lock.lock()
+        // this.deleteShm() // TODO should call this here, deleting old memory ensuring it's not simultaneously being read
         result = bb.asFloatBuffer() // possibly set to result1, then at next update
+        lock.unlock()
     }
 
     private external fun sayHello(): Int

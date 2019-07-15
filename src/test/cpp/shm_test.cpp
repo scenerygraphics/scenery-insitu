@@ -12,20 +12,27 @@
 #define SIZE 10000
 #define RANK 3
 #define UPDPER 10000
-#define REALLPER 100
+#define REALLPER 50
 
 int cont;
-float *str = NULL;
+float *str = NULL, *str1 = NULL;
 ShmAllocator alloc("/tmp", RANK);
 
 void initstr() // modify this to copy old state to new array
 {
-	for (int i = 0; i < SIZE/sizeof(float); ++i) {
-		str[i] = ((7*i) % 20 - 10) / 5.0;
+	if (str1 == NULL) {
+		for (int i = 0; i < SIZE/sizeof(float); ++i) {
+			str[i] = ((7*i) % 20 - 10) / 5.0;
+		}
+	} else {
+		for (int i = 0; i < SIZE/sizeof(float); ++i) {
+			str[i] = str1[i];
+		}
 	}
 }
 
 void detach(int signal);
+void reall();
 
 int update()
 {
@@ -38,21 +45,23 @@ int update()
 
 	++cnt;
 
-	// if (cnt % REALLPER == 0)
+	if (cnt % REALLPER == 0)
+		reall();
 	// 	detach(0);
 
 	return cont; // whether to continue
 }
+
 void reall()
 {
 	// generate new key
-	float *str1 = str;
-
-	// detach from old shm, release semaphore // detach after attaching to new, and copy from old to new
-	alloc.shm_free(str1); // need not check for null
+	str1 = str;
 
 	str = (float *) alloc.shm_alloc(SIZE);
 	initstr();
+
+	// detach from old shm, release semaphore // detach after attaching to new, and copy from old to new
+	alloc.shm_free(str1); // need not check for null
 }
 
 void detach(int signal)

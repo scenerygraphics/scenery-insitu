@@ -133,7 +133,7 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
 
 		// detach from toggle, change toggle to 1^toggle, attach to new toggle
 		if (str != NULL)
-			detach();
+			detach(); // TODO don't delete here, make detach() delete 1^toggle, store both pointers
 		toggle ^= 1;
 	}
 
