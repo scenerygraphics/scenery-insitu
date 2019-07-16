@@ -100,7 +100,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         val bb = this.getSimData(worldRank) // waits until current shm is released and other shm is acquired
         bb.order(ByteOrder.nativeOrder())
         lock.lock()
-        // this.deleteShm() // TODO should call this here, deleting old memory ensuring it's not simultaneously being read
+        this.deleteShm()
         result = bb.asFloatBuffer() // possibly set to result1, then at next update
         lock.unlock()
     }

@@ -8,15 +8,16 @@
 #include <sys/types.h>
 using namespace std;
 
-#define NRANK 2
-#define NSEM 2
-#define SEMOPS 2
-#define GET_RANK(rank, toggle) (2*rank+1+(toggle))
+#include "ShmBuffer.hpp"
 
-int shmid, semid[NRANK], toggle = -1;
+#define PNAME "/tmp"
+#define SIZE 2024
+
+ShmBuffer *buf = NULL; // TODO later add functions to delete
 float *str = NULL;
-union semun sem_attr;
-struct sembuf semops[SEMOPS];
+int myRank = -1;
+
+/*
 
 // attach to new shm, assuming toggle is set
 void attach(int worldRank)
@@ -73,6 +74,7 @@ void detach()
 	return;
 }
 
+*/
 
 
 // Implementation of the native method sayHello()
@@ -87,57 +89,15 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
 
 	printf("paramter rec: %d\n", worldRank);
 
-	// ftok to generate unique key
-	key_t key;
-
-	// if toggle = -1 initialize and check current rank, else wait for next rank
-	if (toggle == -1) {
-		std::cout << "initializing semaphores" << std::endl;
-		// initialize semaphores
-		for (int i = 0; i < NRANK; ++i) {
-			key = ftok("/tmp", GET_RANK(worldRank, i));
-			semid[i] = semget(key,NSEM,0666|IPC_CREAT); // possibly remove IPC_CREAT here
-			if (semid[i] == -1) {
-				perror("semget"); exit(1);
-			}
-		}
-
-		std::cout << "looking for available memory" << std::endl;
-
-		// find current rank used by producer, without blocking (may go wrong if called exactly as producer reallocates, possibly another mutex)
-		for (toggle = 0; toggle < NRANK; ++toggle)
-			if (semctl(semid[toggle], 1, GETVAL) > 0) // producer using toggle
-				break;
-
-		if (toggle >= NRANK) {
-			std::cout << "error: no memory" << std::endl;
-			for (int i = 0; i < NRANK; ++i)
-				semctl(semid[i], 0, IPC_RMID); // remove semaphores
-			exit(1);
-		}
-
-		std::cout << "found memory " << toggle << std::endl;
-	} else {
-		std::cout << "waiting for memory " << (1^toggle) << std::endl;
-		// wait until producer uses 1^toggle (until semaphore reaches 1)
-		semops[0].sem_num = 1;
-		semops[0].sem_op  = -1;
-		semops[0].sem_flg = 0;
-		semops[1].sem_num = 1;
-		semops[1].sem_op  = 1;
-		semops[1].sem_flg = 0;
-		if (semop(semid[1^toggle], semops, 2) == -1) {
-			perror("semop(1,0,0)"); exit(1);
-		}
-		std::cout << "memory " << (1^toggle) << " available" << std::endl;
-
-		// detach from toggle, change toggle to 1^toggle, attach to new toggle
-		if (str != NULL)
-			detach(); // TODO don't delete here, make detach() delete 1^toggle, store both pointers
-		toggle ^= 1;
+	if (myRank != worldRank) {
+		myRank = worldRank;
+		if (buf != NULL)
+			delete buf;
+		buf = new ShmBuffer(PNAME, myRank, SIZE);
 	}
 
-	attach(worldRank);
+	buf->update_key();
+	str = (float *) buf->attach();
 
 	std::cout<<"Hello! We are in SimData! Data read from memory:" <<str[0] << std::endl;
 
@@ -147,5 +107,5 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
 }
 
 JNIEXPORT void JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_deleteShm (JNIEnv *env, jobject thisObj) {
-	detach();
+	buf->detach(false); // detach from old
 }

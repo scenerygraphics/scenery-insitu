@@ -1,4 +1,6 @@
 #include <iostream>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 
 #include "ShmBuffer.hpp"
 
@@ -6,16 +8,21 @@
 #define PROSEM 1   // index of semaphore for producer
 #define KEYINIT -1 // initial value of current_key to signify no previous memory allocated
 #define NEXTKEY (1^current_key)
+#define PREVKEY NEXTKEY
 
-ShmBuffer::ShmBuffer(std::string pname, int rank. size_t size) : sems(pname, rank, false), size(size), current_key(KEYINIT), shmid(-1), ptr(NULL)
+ShmBuffer::ShmBuffer(std::string pname, int rank, size_t size) : sems(pname, rank, false), size(size), current_key(KEYINIT), shmid(-1) // , ptr(NULL)
 {
-	find_active();
+	for (int i = 0; i < NKEYS; ++i)
+		ptrs[i] = NULL;
+	// find_active();
 }
 
 ShmBuffer::~ShmBuffer()
 {
-	if (current_key != KEYINIT)
-		detach();
+	if (current_key != KEYINIT) {
+		detach(true);
+		detach(false);
+	}
 }
 
 void ShmBuffer::find_active()
@@ -29,14 +36,14 @@ void ShmBuffer::find_active()
 	}
 }
 
-void ShmBuffer::attach()
+void *ShmBuffer::attach()
 {
-	if (ptr != NULL)
-		return;
+	if (ptrs[current_key] != NULL)
+		return ptrs[current_key];
 
 	int key = sems[current_key];
     
-	std::cout << "attaching to key " << key " with no " << current_key << std::endl; // test
+	std::cout << "attaching to key " << key << " with no " << current_key << std::endl; // test
 
 	// shmget returns an identifier in shmid
 	shmid = shmget(key, size, 0666|IPC_CREAT);
@@ -46,39 +53,33 @@ void ShmBuffer::attach()
 	std::cout << "shmid: " << shmid << std::endl; // test
 
 	// shmat to attach to shared memory
-	ptr = shmat(shmid, NULL, 0);
-	if (ptr == NULL) {
+	ptrs[current_key] = shmat(shmid, NULL, 0);
+	if (ptrs[current_key] == NULL) {
 		perror("shmat"); exit(1);
 	}
 
 	// increment consumer semaphore
 	sems.incr(current_key, CONSEM);
+
+	return ptrs[current_key];
 }
 
-void ShmBuffer::detach()
+void ShmBuffer::detach(bool current)
 {
-	if (ptr == NULL)
+	int key = current ? current_key : PREVKEY;
+
+	if (ptrs[key] == NULL)
 		return;
 
 	// detach from shared memory
-	shmdt(ptr);
-	ptr = NULL;
+	shmdt(ptrs[key]);
+	ptrs[key] = NULL;
 
 	// release semaphore, alerting producer to delete shmid
-	sems.decr(current_key, CONSEM);
+	sems.decr(key, CONSEM);
 }
 
-void ShmBuffer::loop()
-{
-	do {
-		reattach(true);
-		// do something with ptr
-	} while (ptr != NULL); // TODO make sure to stop looping when another call to detach is made
-}
-
-
-
-void ShmBuffer::reattach(bool wait) // should keep some sort of mutex for ptr, so that it is never read as null between detaching and attaching
+void ShmBuffer::update_key(bool wait) // should keep some sort of mutex for ptr, so that it is never read as null between detaching and attaching
 {
 	if (current_key == KEYINIT) { // called initially
 		std::cout << "looking for available memory" << std::endl; // test
@@ -98,13 +99,25 @@ void ShmBuffer::reattach(bool wait) // should keep some sort of mutex for ptr, s
 		std::cout << "memory " << NEXTKEY << " available" << std::endl; // test
 
 		// detach from current memory, toggle key
-		detach();
+		// detach();
 		current_key = NEXTKEY;
 	}
 	// assert ptr == NULL
 
 	// attach to new key
-	attach();
+	// attach();
+}
+
+// ignore these for now
+
+/*
+
+void ShmBuffer::loop()
+{
+	do {
+		reattach(true);
+		// do something with ptr
+	} while (ptr != NULL); // TODO make sure to stop looping when another call to detach is made
 }
 
 void ShmBuffer::init()
@@ -119,3 +132,5 @@ void ShmBuffer::term()
 	detach();
 	out.wait(); // TODO use wait_for instead
 }
+
+*/

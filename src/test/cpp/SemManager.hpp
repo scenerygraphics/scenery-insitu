@@ -26,12 +26,9 @@ class SemManager {
 	union semun sem_attr;
     struct sembuf semops[SEMOPS];
 
-    void init();
-
 public:
 
-	SemManager(std::string pname, int rank);
-	SemManager(std::string pname, int rank, bool main);
+	SemManager(std::string pname, int rank, bool ismain = true);
 	~SemManager();
 
 	const int &operator[](int keyNo); // return key[keyNo]
