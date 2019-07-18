@@ -10,7 +10,7 @@
 #define NEXTKEY (1^current_key)
 #define PREVKEY NEXTKEY
 
-ShmBuffer::ShmBuffer(std::string pname, int rank, size_t size) : sems(pname, rank, false), size(size), current_key(KEYINIT), shmid(-1) // , ptr(NULL)
+ShmBuffer::ShmBuffer(std::string pname, int rank, size_t size, bool verbose) : sems(pname, rank, verbose, false), size(size), current_key(KEYINIT), shmid(-1), verbose(verbose) // , ptr(NULL)
 {
 	for (int i = 0; i < NKEYS; ++i)
 		ptrs[i] = NULL;

@@ -17,66 +17,6 @@ ShmBuffer *buf = NULL; // TODO later add functions to delete
 float *str = NULL;
 int myRank = -1;
 
-/*
-
-// attach to new shm, assuming toggle is set
-void attach(int worldRank)
-{
-	int rank = GET_RANK(worldRank, toggle);
-
-	std::cout << "attaching to rank " << rank << std::endl;
-
-	key_t key = ftok("/tmp", rank);
-
-	std::cout << "key: " << key << std::endl;
-
-	// shmget returns an identifier in shmid
-	shmid = shmget(key,2024,0666|IPC_CREAT);
-	if (shmid == -1) {
-		perror("shmget"); exit(1);
-	}
-
-	std::cout << "shmid: " << shmid << std::endl;
-
-	// shmat to attach to shared memory
-	str = (float*) shmat(shmid, NULL,0);
-
-	// increment semaphore
-	semops[0].sem_num = 0;
-	semops[0].sem_op  = 1;
-	semops[0].sem_flg = 0;
-	if (semop(semid[toggle], semops, 1) == -1) {
-		perror("semop(0,1,0)"); exit(1);
-	}
-	std::cout << "incremented semaphore 0 of rank " << toggle << std::endl;
-}
-
-// detach from current shm, assuming str is set
-// later call this if program is interrupted, to keep semaphores consistent
-void detach()
-{
-	//detach from shared memory
-	shmdt(str);
-
-	// destroy the shared memory
-	// shmctl(shmid,IPC_RMID,NULL);
-
-	// release semaphore, alerting producer to delete shmid
-	semops[0].sem_num = 0;
-	semops[0].sem_op  = -1;
-	semops[0].sem_flg = 0;
-	if (semop(semid[toggle], semops, 1) == -1) {
-		perror("semop(0,-1,0)"); exit(1);
-	}
-
-	std::cout << "decremented semaphore 0 of rank " << toggle << std::endl;
-
-	return;
-}
-
-*/
-
-
 // Implementation of the native method sayHello()
 JNIEXPORT int JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_sayHello(JNIEnv *env, jobject thisObj) {
 	cout << "Hello World from C++!" << endl;

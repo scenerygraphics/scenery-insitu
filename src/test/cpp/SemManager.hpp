@@ -18,6 +18,7 @@ class SemManager {
 	std::string pname;
 	int rank;
 	bool ismain; // whether to manage and delete semaphores, true by default
+	bool verbose;
 
 	int keys[NKEYS];    // keys to be used and toggled
 	int semids[NKEYS];  // the semaphore id used for each key
@@ -28,7 +29,7 @@ class SemManager {
 
 public:
 
-	SemManager(std::string pname, int rank, bool ismain = true);
+	SemManager(std::string pname, int rank, bool verbose = true, bool ismain = true);
 	~SemManager();
 
 	const int &operator[](int keyNo); // return key[keyNo]

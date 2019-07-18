@@ -11,16 +11,18 @@
 
 #define SIZE 10000
 #define RANK 3
-#define UPDPER 10000
+#define UPDPER 5000
 #define REALLPER 50
+#define VERBOSE true
+#define COPYSTR true
 
 int cont;
 float *str = NULL, *str1 = NULL;
-ShmAllocator alloc("/tmp", RANK);
+ShmAllocator alloc("/tmp", RANK, VERBOSE);
 
 void initstr() // modify this to copy old state to new array
 {
-	if (str1 == NULL) {
+	if (!COPYSTR || str1 == NULL) {
 		for (int i = 0; i < SIZE/sizeof(float); ++i) {
 			str[i] = ((7*i) % 20 - 10) / 5.0;
 		}

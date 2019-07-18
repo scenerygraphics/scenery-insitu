@@ -30,6 +30,7 @@
 class ShmAllocator {
 
 	SemManager sems;
+	bool verbose;
 
 	// bool used[NKEYS];   // whether each key is currently used (allocated and not yet deleted, incl. not released by consumer)
 	std::mutex used[NKEYS]; // lock when currently used; only after deallocation unlocks mutex can memory be allocated again
@@ -41,7 +42,7 @@ class ShmAllocator {
     void wait_del(int key); // wait to delete ptrs[key], called from shm_free
 
 public:
-	ShmAllocator(std::string pname, int rank); // generate two keys per rank, pass pname to ftok, initialize semaphores
+	ShmAllocator(std::string pname, int rank, bool verbose = true); // generate two keys per rank, pass pname to ftok, initialize semaphores
 	~ShmAllocator(); // delete semaphores and any remaining memory segments
 
 	void *shm_alloc(size_t size); // allocate shared memory of given size

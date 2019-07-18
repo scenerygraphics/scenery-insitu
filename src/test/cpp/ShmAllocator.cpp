@@ -27,7 +27,9 @@
 
 #define PROJ_ID(rank, toggle) (2*(rank)+1+(toggle)) // generate proj_id to send to ftok
 
-ShmAllocator::ShmAllocator(std::string pname, int rank) : sems(pname, rank), current_key(KEYINIT)
+#define TESTPRINT if (verbose) printf
+
+ShmAllocator::ShmAllocator(std::string pname, int rank, bool verbose) : sems(pname, rank, verbose, true), current_key(KEYINIT), verbose(verbose)
 {
 	for (int i = 0; i < NKEYS; ++i) {
 		shmids[i] = -1;
@@ -55,18 +57,23 @@ void *ShmAllocator::shm_alloc(size_t size)
 	current_key &= 1; // -1 becomes 1
 	// if (used[current_key]) // does not change key if allocating after freeing
 		current_key ^= 1;
-	printf("rank:%d\tkey:%d\n", current_key, sems[current_key]); // test
+	TESTPRINT("rank:%d\tkey:%d\n", current_key, sems[current_key]); // test
 
 	// assert !used[current_key]; user must not be able to allocate more than twice
 	// wait for current key to stop being used by consumer
 	// technically used is also like a semaphore
 	used[current_key].lock(); // wait for it to be unused, then mark again
+	// TODO change this later to use heap memory and change used back to bool
 
 	// allocate memory with new key
-	shmids[current_key] = shmget(sems[current_key], size, 0666|IPC_CREAT);
-	printf("shmid:%d\n", shmids[current_key]); // test
-	ptrs[current_key] = shmat(shmids[current_key], NULL, 0);
-	printf("ptr:%ld\n", (long) ptrs[current_key]); // test
+	if ((shmids[current_key] = shmget(sems[current_key], size, 0666|IPC_CREAT)) == -1) {
+		perror("shmget"); exit(1);
+	}
+	TESTPRINT("shmid:%d\n", shmids[current_key]); // test
+	if ((long) (ptrs[current_key] = shmat(shmids[current_key], NULL, 0)) == -1) {
+		perror("shmat"); exit(1);
+	}
+	TESTPRINT("ptr:%ld\n", (long) ptrs[current_key]); // test
 
 	// mark new key as used
 	// used[current_key] = true;
@@ -93,7 +100,7 @@ void ShmAllocator::shm_free(void *ptr)
 			break;
 	// if no key found, return
 	if (key == NKEYS)
-		return;
+		return; // TODO change this to free()
 
 	// assert used[key]
 
@@ -111,17 +118,18 @@ void ShmAllocator::shm_free(void *ptr)
 void ShmAllocator::wait_del(int key)
 {
 	// wait for consumer to stop using key
-	sems.wait(key, CONSEM, 0);
+	sems.wait(key, CONSEM, 0); // need to check if this is busy waiting
 
-	// mark key as unused by consumer
 	// execute after waiting so that another allocate call to the key would not mess things up
 	// used[key] = false; // ensure that ptrs[key] and shmids[key] only change when used[key] is false
-	used[key].unlock();
 
-    // deallocate shared memory
+	// deallocate shared memory
     shmdt(ptrs[key]); // ptrs[key] must not have changed
     shmctl(shmids[key], IPC_RMID, NULL); // shmid[key] must not have changed
 
     ptrs[key] = NULL;
     shmids[key] = -1;
+
+    // mark key as unused by consumer
+    used[key].unlock();
 }

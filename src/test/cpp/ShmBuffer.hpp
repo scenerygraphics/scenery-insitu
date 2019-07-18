@@ -16,6 +16,8 @@ class ShmBuffer {
 	SemManager sems;
 	size_t size; // buffer size in bytes
 
+	bool verbose;
+
 	// bool used[NKEYS];   // whether each key is currently used (allocated and not yet deleted, incl. not released by consumer)
 
 	int current_key;    // takes values 0 or 1; most recent memory read from keys[current_key]
@@ -30,7 +32,7 @@ class ShmBuffer {
 
 public:
 
-	ShmBuffer(std::string pname, int rank, size_t size);
+	ShmBuffer(std::string pname, int rank, size_t size, bool verbose = true);
 	~ShmBuffer();
 
 	void *attach(); // attach to current memory

@@ -22,6 +22,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
     // var resrank = -1 // should never be this value in execution
     var worldRank = -1
     val lock = ReentrantLock()
+    var cont = true // whether to continue updating memory
 
     override fun init() {
         settings.set("Input.SlowMovementSpeed", 0.5f)
@@ -71,7 +72,8 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
         // execute getResult again only after it has finished waiting
         timer(initialDelay = 10, period = 10) {
-            getResult()
+            if (cont)
+                getResult()
         }
     }
 
@@ -111,7 +113,8 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
     private external fun deleteShm()
 
     fun terminate() {
-        deleteShm();
+        deleteShm()
+        cont = false
     }
 
     @Test
