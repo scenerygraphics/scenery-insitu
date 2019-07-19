@@ -31,6 +31,14 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
 JNIEXPORT void JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_deleteShm
   (JNIEnv *, jobject);
 
+/*
+ * Class:     SharedSpheresExample
+ * Method:    deleteShm
+ * Signature: ()V
+ */
+JNIEXPORT void JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_terminate
+  (JNIEnv *, jobject);
+
 #ifdef __cplusplus
 }
 #endif

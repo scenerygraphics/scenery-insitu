@@ -20,7 +20,11 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
     lateinit var result: FloatBuffer
     lateinit var spheres: ArrayList<Sphere>
     // var resrank = -1 // should never be this value in execution
-    var worldRank = -1
+    var shmRank = -1
+    var mpiRank = -1
+    var mpiSize = -1
+    var mpiOffset = -1
+
     val lock = ReentrantLock()
     var cont = true // whether to continue updating memory
 
@@ -38,7 +42,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val x = result.get()
             val y = result.get()
             val z = result.get()
-            println("x is $x y is $y z is $z")
+            // println("x is $x y is $y z is $z")
             s.position = GLVector(x, y, z)
             scene.addChild(s)
             spheres.add(s)
@@ -75,6 +79,15 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             if (cont)
                 getResult()
         }
+
+        // probe for termination messages
+        fixedRateTimer(initialDelay = 100, period = 100) {
+            if (MPI.COMM_WORLD.iProbe(mpiSize - mpiOffset, MPI.ANY_TAG) != null) {
+                println("Terminate message received")
+                stop()
+                super.close()
+            }
+        }
     }
 
     private fun update() {
@@ -99,7 +112,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         // Consumer then posts on old rank, producer sees and deletes it
         // Perhaps only two or even one semaphore may suffice, toggling rank at each update
 
-        val bb = this.getSimData(worldRank) // waits until current shm is released and other shm is acquired
+        val bb = this.getSimData(shmRank) // waits until current shm is released and other shm is acquired
         bb.order(ByteOrder.nativeOrder())
         lock.lock()
         this.deleteShm()
@@ -111,10 +124,13 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
     private external fun getSimData(worldRank:Int): ByteBuffer
 
     private external fun deleteShm()
+    private external fun terminate()
 
-    fun terminate() {
-        deleteShm()
+    fun stop() {
+        // lock.lock()
+        terminate()
         cont = false
+        // lock.unlock()
     }
 
     @Test
@@ -130,6 +146,14 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             println("Hi, I am Aryaman's MPI example")
         else
             println("Hello world from $pName rank $myrank of $size")
+        mpiSize = size / 2
+        if (mpiSize == 0)
+            mpiRank = myrank
+        else
+            mpiRank = myrank % mpiSize
+        mpiOffset = myrank - mpiRank
+        println("mpiRank: $mpiRank\tmpiSize: $mpiSize\tmpiOffset: $mpiOffset")
+
 
         System.loadLibrary("shmSpheresTrial")
         val log = LoggerFactory.getLogger("JavaMPI")
@@ -139,13 +163,15 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val a = this.sayHello()
             log.info(a.toString())
 
-            worldRank = 3 // later assign it based on myrank (should not be zero)
+            shmRank = mpiRank + 3 // later assign it based on myrank (should not be zero)
             this.getResult()
             println(result.remaining())
 
+            /*
             while(result.hasRemaining())
                 println(message = "Java says: ${result.get()} (${result.remaining()})")
             result.rewind()
+             */
 
             //this.deleteShm()
 

@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
+#include <cstdlib>
 
 #include "ShmAllocator.hpp"
 
@@ -46,6 +47,7 @@ ShmAllocator::~ShmAllocator()
 {
 	for (int i = 0; i < NKEYS; ++i) {
 		// delete pointer if it is used
+		sems.set(i, CONSEM, 0); // don't wait for consumer
 		shm_free(ptrs[i]); // to avoid deadlocks, for now may just call shmctl instead of having to wait for consumer
 		// or call out.wait_for() for a given timeout duration, making out a class field and not a static variable for shm_free
 	}
@@ -67,11 +69,11 @@ void *ShmAllocator::shm_alloc(size_t size)
 
 	// allocate memory with new key
 	if ((shmids[current_key] = shmget(sems[current_key], size, 0666|IPC_CREAT)) == -1) {
-		perror("shmget"); exit(1);
+		perror("shmget"); std::exit(1);
 	}
 	TESTPRINT("shmid:%d\n", shmids[current_key]); // test
 	if ((long) (ptrs[current_key] = shmat(shmids[current_key], NULL, 0)) == -1) {
-		perror("shmat"); exit(1);
+		perror("shmat"); std::exit(1);
 	}
 	TESTPRINT("ptr:%ld\n", (long) ptrs[current_key]); // test
 

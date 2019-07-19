@@ -1,6 +1,7 @@
 #include <iostream>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <cstdlib>
 
 #include "ShmBuffer.hpp"
 
@@ -25,7 +26,7 @@ ShmBuffer::~ShmBuffer()
 	}
 }
 
-void ShmBuffer::find_active()
+void ShmBuffer::find_active() // move to attach(), should always be called before it
 {
 	current_key = KEYINIT;
 	for (int i = 0; i < NKEYS; ++i) {
@@ -43,19 +44,19 @@ void *ShmBuffer::attach()
 
 	int key = sems[current_key];
     
-	std::cout << "attaching to key " << key << " with no " << current_key << std::endl; // test
+	if (verbose) std::cout << "attaching to key " << key << " with no " << current_key << std::endl; // test
 
 	// shmget returns an identifier in shmid
 	shmid = shmget(key, size, 0666|IPC_CREAT);
 	if (shmid == -1) {
-		perror("shmget"); exit(1);
+		perror("shmget"); std::exit(1);
 	}
-	std::cout << "shmid: " << shmid << std::endl; // test
+	if (verbose) std::cout << "shmid: " << shmid << std::endl; // test
 
 	// shmat to attach to shared memory
 	ptrs[current_key] = shmat(shmid, NULL, 0);
 	if (ptrs[current_key] == NULL) {
-		perror("shmat"); exit(1);
+		perror("shmat"); std::exit(1);
 	}
 
 	// increment consumer semaphore
@@ -86,17 +87,17 @@ void ShmBuffer::update_key(bool wait) // should keep some sort of mutex for ptr,
 		find_active();
 		if (current_key == KEYINIT)
 			return; // possibly wait here
-		std::cout << "found memory " << current_key << std::endl; // test
+		if (verbose) std::cout << "found memory " << current_key << std::endl; // test
 	} else {
 		if (wait) {
-			std::cout << "waiting for memory " << NEXTKEY << std::endl; // test
+			if (verbose) std::cout << "waiting for memory " << NEXTKEY << std::endl; // test
 			sems.waitgeq(NEXTKEY, PROSEM, 1);
 		} else {
-			std::cout << "checking for memory " << NEXTKEY << std::endl; // test
+			if (verbose) std::cout << "checking for memory " << NEXTKEY << std::endl; // test
 			if (sems.get(NEXTKEY, PROSEM) == 0)
 				return;
 		}
-		std::cout << "memory " << NEXTKEY << " available" << std::endl; // test
+		if (verbose) std::cout << "memory " << NEXTKEY << " available" << std::endl; // test
 
 		// detach from current memory, toggle key
 		// detach();

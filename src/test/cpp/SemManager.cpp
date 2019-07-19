@@ -4,6 +4,8 @@
  *
  */
 
+#include <cstdlib>
+
 #include "SemManager.hpp"
 
 #define PROJ_ID(rank, toggle) (2*(rank)+1+(toggle)) // generate proj_id to send to ftok (later should be more complex)
@@ -54,7 +56,7 @@ void SemManager::incr(int keyNo, int semNo)
     semops[0].sem_op  = 1;
    	semops[0].sem_flg = 0;
     if (semop(semids[keyNo], semops, 1) == -1) {
-    	perror("semop"); exit(1);
+    	perror("semop"); std::exit(1);
     }
 	TESTPRINT("incremented semaphore %d of key %d\n", semNo, keyNo); // test
 }
@@ -65,7 +67,7 @@ void SemManager::decr(int keyNo, int semNo)
     semops[0].sem_op  = -1;
    	semops[0].sem_flg = 0;
     if (semop(semids[keyNo], semops, 1) == -1) {
-    	perror("semop"); exit(1);
+    	perror("semop"); std::exit(1);
     }
 	TESTPRINT("decremented semaphore %d of key %d\n", semNo, keyNo); // test
 }
@@ -78,7 +80,7 @@ void SemManager::wait(int keyNo, int semNo, int value)
 		semops[0].sem_op  = 0;
 		semops[0].sem_flg = 0;
 		if (semop(semids[keyNo], semops, 1) == -1) {
-			perror("semop"); exit(1);
+			perror("semop"); std::exit(1);
 		}
 	} else {
 		// decrement by value, wait for zero (necessary if semaphore was initially higher than value, which in our case doesn't happen), then increment by value
@@ -92,7 +94,7 @@ void SemManager::wait(int keyNo, int semNo, int value)
 		semops[2].sem_op  = value;
 		semops[2].sem_flg = 0;
 		if (semop(semids[keyNo], semops, 3) == -1) {
-			perror("semop"); exit(1);
+			perror("semop"); std::exit(1);
 		}
 	}
 	TESTPRINT("waited for semaphore %d of key %d\n", semNo, keyNo); // test
@@ -114,7 +116,7 @@ void SemManager::waitgeq(int keyNo, int semNo, int value)
 	semops[1].sem_op  = value;
 	semops[1].sem_flg = 0;
 	if (semop(semids[keyNo], semops, 2) == -1) {
-		perror("semop"); exit(1);
+		perror("semop"); std::exit(1);
 	}
 	TESTPRINT("waited for semaphore %d of key %d\n", semNo, keyNo); // test
 }
