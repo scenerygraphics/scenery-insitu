@@ -13,6 +13,7 @@ import graphics.scenery.backends.Renderer
 import graphics.scenery.numerics.Random
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.*
+import kotlin.system.exitProcess
 
 class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
@@ -82,12 +83,17 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
         // probe for termination messages
         fixedRateTimer(initialDelay = 100, period = 100) {
-            if (MPI.COMM_WORLD.iProbe(mpiSize - mpiOffset, MPI.ANY_TAG) != null) {
-                println("Terminate message received")
+            if (mpiSize > 1 && MPI.COMM_WORLD.iProbe(mpiSize - mpiOffset, MPI.ANY_TAG) != null) {
+                println("Terminate message received by rank ${mpiRank}")
                 stop()
-                super.close()
+                // super.close()
+                MPI.COMM_WORLD.barrier()
+                MPI.Finalize()
+                exitProcess(0)
             }
         }
+
+        MPI.COMM_WORLD.barrier() // signal to producer that you have initialized
     }
 
     private fun update() {
@@ -127,10 +133,15 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
     private external fun terminate()
 
     fun stop() {
-        // lock.lock()
+        lock.lock()
+        println("Acquired lock")
+        deleteShm()
+        MPI.COMM_WORLD.barrier()
+        println("Passed barrier")
         terminate()
         cont = false
-        // lock.unlock()
+        lock.unlock()
+        println("Released lock")
     }
 
     @Test
@@ -164,6 +175,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             log.info(a.toString())
 
             shmRank = mpiRank + 3 // later assign it based on myrank (should not be zero)
+            MPI.COMM_WORLD.barrier() // wait for producer to allocate its memory
             this.getResult()
             println(result.remaining())
 

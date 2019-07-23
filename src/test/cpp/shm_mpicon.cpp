@@ -9,12 +9,12 @@
 #include <signal.h>
 #include <mpi.h>
 
-#include "ShmAllocator.hpp"
+#include "ShmBuffer.hpp"
 
 #define SIZE 10000
 #define UPDPER 5000
-#define REALLPER 50
-#define VERBOSE false
+#define REALLPER 333
+#define VERBOSE true
 #define COPYSTR true
 #define NOCONSUMER false
 #define SHMRANK (rank+3)
@@ -26,20 +26,7 @@ int rank, size, offset = 0;
 
 bool cont, suspend;
 float *str = NULL, *str1 = NULL;
-ShmAllocator *alloc;
-
-void initstr() // modify this to copy old state to new array
-{
-	if (!COPYSTR || str1 == NULL) {
-		for (int i = 0; i < SIZE/sizeof(float); ++i) {
-			str[i] = ((7*i) % 20 - 10) / 5.0;
-		}
-	} else {
-		for (int i = 0; i < SIZE/sizeof(float); ++i) {
-			str[i] = str1[i];
-		}
-	}
-}
+ShmBuffer *buf;
 
 void detach(int signal);
 void reall();
@@ -49,29 +36,16 @@ int update()
 	static int cnt = 0;
 
 	// move each entry in array based on bits of cnt
+	float sum = 0;
 	for (int i = 0; i < SIZE/sizeof(float); ++i) {
-		str[i] += 0.02 * ((cnt & (1 << (i & ((1 << 4) - 1)))) ? 1 : -1);
+		sum += str[i]*((i*i+1)&3);
 	}
+	if (cnt % REALLPER == 0)
+		std::cout << "val: " << str[5] << std::endl;
 
 	++cnt;
 
-	if (cnt % REALLPER == 0)
-		reall();
-	// 	detach(0);
-
 	return cont; // whether to continue
-}
-
-void reall()
-{
-	// generate new key
-	str1 = str;
-
-	str = (float *) alloc->shm_alloc(SIZE);
-	initstr();
-
-	// detach from old shm, release semaphore // detach after attaching to new, and copy from old to new
-	alloc->shm_free(str1); // need not check for null
 }
 
 void detach(int signal)
@@ -80,7 +54,7 @@ void detach(int signal)
 	std::cout << "Reallocate? ";
 	std::cin >> c;
 	if (c == 'y') {
-		reall();
+		// reall();
 		std::cout << "Data written into memory: " << str[0] << std::endl;
 	} else {
 		printf("\n");
@@ -88,26 +62,35 @@ void detach(int signal)
 	}
 }
 
-/*
+void reall()
+{
+	buf->update_key();
+	str = (float *) buf->attach();
+	std::cout << "attached to new" << std::endl;
+	buf->detach(false);
+}
+
 void terminate()
 {
 
 	std::cout << "rank " << rank << " with offset " << offset << " finished waiting" << std::endl;
 
-	alloc->shm_free(str);
+	buf->detach(true);
+	str = NULL;
 
-	std::cout << "rank " << rank << " with offset " << offset << " alloc: " << ((long) alloc) << std::endl;
+	std::cout << "rank " << rank << " with offset " << offset << " buf: " << ((long) buf) << std::endl;
 
-	delete alloc;
+	BARRIER();
 
-	std::cout << "rank " << rank << " with offset " << offset << " deleted alloc" << std::endl;
+	delete buf;
+
+	std::cout << "rank " << rank << " with offset " << offset << " deleted buf" << std::endl;
 }
-*/
 
 // input handling
 void loop()
 {
-	if (rank == 0) { // assuming producer is called first in mpi
+	if (rank == 0 && offset == 0) { // assuming producer is called first in mpi
 		// cont = true;
 		char c;
 
@@ -128,9 +111,9 @@ void loop()
 		int flag;
 		MPI_Status stat;
 
-		std::cout << "rank " << rank << " waiting for " << offset << std::endl;
-		MPI_Probe(offset, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
-		std::cout << "rank " << rank << " waited for " << offset << std::endl;
+		std::cout << "rank " << rank << " waiting for " << (size - offset) << std::endl;
+		MPI_Probe(size - offset, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
+		std::cout << "rank " << rank << " waited for " << (size - offset) << std::endl;
 
 		cont = false;
 	}
@@ -153,12 +136,6 @@ void loop()
 
 int main(int argc, char *argv[])
 {
-	/*
-	int flag;
-	MPI_Initialized(&flag);
-	std::cout << "initializing, initialized: " << flag << std::endl;
-	*/
-
 	MPI_Init(&argc, &argv);
 
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -169,23 +146,19 @@ int main(int argc, char *argv[])
 		rank %= size; // assuming for now that mpi assigns ranks in order to different programs
 	}
 
-	std::cout << "starting producer with rank " << rank << " of size " << size << " and offset " << offset << std::endl;
+	BARRIER(); // wait for producer to initialize memory
 
-	alloc = new ShmAllocator("/tmp", SHMRANK, VERBOSE);
+	std::cout << "starting consumer with rank " << rank << " of size " << size << " and offset " << offset << std::endl;
+
+	buf = new ShmBuffer("/tmp", SHMRANK, SIZE, VERBOSE);
 
 	str = NULL;
 	reall();
 
-	BARRIER();
-
-	std::cout << "Data written into memory: " << str[0] << std::endl;
-
-	std::cin.get();
+	BARRIER(); // signal producer that it can take input now
 
 	cont = true;
 	suspend = false;
-
-	BARRIER();
 
 	std::future<void> out = std::async(std::launch::async, loop);
 
@@ -195,23 +168,7 @@ int main(int argc, char *argv[])
 
 	out.wait();
 
-	// terminate();
-
-	std::cout << "rank " << rank << " with offset " << offset << " finished waiting" << std::endl;
-
-	alloc->shm_free(str);
-
-	std::cout << "entering barrier" << std::endl;
-
-	BARRIER();
-
-	std::cout << "passed barrier" << std::endl;
-
-	// std::cout << "rank " << rank << " with offset " << offset << " alloc: " << ((long) alloc) << std::endl;
-
-	delete alloc; // for some reason this freezes program
-
-	std::cout << "rank " << rank << " with offset " << offset << " deleted alloc" << std::endl;
+	terminate();
 
 	BARRIER();
 
