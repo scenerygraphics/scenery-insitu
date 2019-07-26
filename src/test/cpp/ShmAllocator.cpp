@@ -47,10 +47,13 @@ ShmAllocator::~ShmAllocator()
 {
 	for (int i = 0; i < NKEYS; ++i) {
 		// delete pointer if it is used
-		sems.set(i, CONSEM, 0); // don't wait for consumer
-		shm_free(ptrs[i]); // to avoid deadlocks, for now may just call shmctl instead of having to wait for consumer
+		sems.set(i, CONSEM, 0); // don't wait for consumer to finish
+		TESTPRINT("set semaphore %d\n", i);
+		shm_free(ptrs[i]); // TODO this call seems to freeze sometimes
+		TESTPRINT("freed pointer %d\n", i);
 		// or call out.wait_for() for a given timeout duration, making out a class field and not a static variable for shm_free
 	}
+	TESTPRINT("deleted ShmAllocator\n");
 }
 
 void *ShmAllocator::shm_alloc(size_t size)

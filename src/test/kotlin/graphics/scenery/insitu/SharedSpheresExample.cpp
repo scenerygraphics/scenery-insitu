@@ -14,7 +14,7 @@ using namespace std;
 #define SIZE 2024
 #define VERBOSE false
 
-ShmBuffer *buf = NULL; // TODO later add functions to delete
+ShmBuffer *buf = NULL;
 float *str = NULL;
 int myRank = -1;
 

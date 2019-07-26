@@ -1,4 +1,4 @@
-// Test producer using allocator class
+// Test consumer using buffer class
 
 #include <iostream>
 #include <future>
@@ -87,9 +87,9 @@ void terminate()
 }
 
 // input handling
-void loop()
+void msgloop()
 {
-	if (rank == 0) { // assuming producer is called first in mpi
+	if (rank == 0) {
 		// cont = true;
 		char c;
 
@@ -120,8 +120,6 @@ void loop()
 	std::cout << "Exiting rank " << rank << std::endl;
 	std::cout << "suspend: " << suspend << "\tcont: " << cont << std::endl;
 
-	// terminate();
-
 	if (rank == 0) {
 		// alert other processes to finish
 		MPI_Request req;
@@ -151,7 +149,7 @@ int main(int argc, char *argv[])
 	cont = true;
 	suspend = false;
 
-	std::future<void> out = std::async(std::launch::async, loop);
+	std::future<void> out = std::async(std::launch::async, msgloop);
 
 	// signal(SIGINT, detach);
 	while (suspend || update())

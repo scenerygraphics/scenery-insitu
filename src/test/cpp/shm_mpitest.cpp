@@ -71,6 +71,7 @@ void reall()
 
 	// detach from old shm, release semaphore // detach after attaching to new, and copy from old to new
 	alloc->shm_free(str1); // need not check for null
+	str1 = NULL;
 }
 
 void detach(int signal)
@@ -87,24 +88,27 @@ void detach(int signal)
 	}
 }
 
-/*
 void terminate()
 {
 
-	std::cout << "rank " << rank << " with offset " << offset << " finished waiting" << std::endl;
+	std::cout << "rank " << rank << " finished waiting" << std::endl;
 
 	alloc->shm_free(str);
+	str = NULL;
 
-	std::cout << "rank " << rank << " with offset " << offset << " alloc: " << ((long) alloc) << std::endl;
+	std::cout << "rank " << rank << " freed memory" << std::endl;
+
+	// BARRIER();
+
+	// std::cout << "rank " << rank << " with offset " << offset << " alloc: " << ((long) alloc) << std::endl;
 
 	delete alloc;
 
-	std::cout << "rank " << rank << " with offset " << offset << " deleted alloc" << std::endl;
+	std::cout << "rank " << rank << " deleted alloc" << std::endl;
 }
-*/
 
-// input handling
-void loop()
+// input and message handling
+void msgloop()
 {
 	if (rank == 0) { // assuming producer is called first in mpi
 		// cont = true;
@@ -127,9 +131,9 @@ void loop()
 		int flag;
 		MPI_Status stat;
 
-		std::cout << "rank " << rank << " waiting for " << 0 << std::endl;
+		std::cout << "rank " << rank << " waiting for 0" << std::endl;
 		MPI_Probe(0, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
-		std::cout << "rank " << rank << " waited for " << 0 << std::endl;
+		std::cout << "rank " << rank << " received message" << std::endl;
 
 		cont = false;
 	}
@@ -137,24 +141,16 @@ void loop()
 	std::cout << "Exiting rank " << rank << std::endl;
 	std::cout << "suspend: " << suspend << "\tcont: " << cont << std::endl;
 
-	// terminate();
-
-	if (rank == 0 && size > 1) {
+	if (rank == 0) {
 		// alert other processes to finish
 		MPI_Request req;
-		for (int i = 1; i < size; ++i)
+		for (int i = 1; i < size; ++i) // do nothing if size == 1
 			MPI_Isend(NULL, 0, MPI_INT, i, MPI_TAG_UB, MPI_COMM_WORLD, &req), std::cout << "sent message to " << i << std::endl;
 	}
 }
 
 int main(int argc, char *argv[])
 {
-	/*
-	int flag;
-	MPI_Initialized(&flag);
-	std::cout << "initializing, initialized: " << flag << std::endl;
-	*/
-
 	MPI_Init(&argc, &argv);
 
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -167,7 +163,7 @@ int main(int argc, char *argv[])
 	str = NULL;
 	reall();
 
-	BARRIER();
+	// BARRIER();
 
 	std::cout << "Data written into memory: " << str[0] << std::endl;
 
@@ -176,9 +172,9 @@ int main(int argc, char *argv[])
 	cont = true;
 	suspend = false;
 
-	BARRIER();
+	// BARRIER();
 
-	std::future<void> out = std::async(std::launch::async, loop);
+	std::future<void> out = std::async(std::launch::async, msgloop);
 
 	// signal(SIGINT, detach);
 	while (suspend || update())
@@ -186,25 +182,9 @@ int main(int argc, char *argv[])
 
 	out.wait();
 
-	// terminate();
+	terminate();
 
-	std::cout << "rank " << rank << " finished waiting" << std::endl;
-
-	alloc->shm_free(str);
-
-	std::cout << "entering barrier" << std::endl;
-
-	BARRIER();
-
-	std::cout << "passed barrier" << std::endl;
-
-	// std::cout << "rank " << rank << " with offset " << offset << " alloc: " << ((long) alloc) << std::endl;
-
-	delete alloc; // for some reason this freezes program
-
-	std::cout << "rank " << rank << " deleted alloc" << std::endl;
-
-	BARRIER();
+	// BARRIER();
 
 	MPI_Finalize();
 }

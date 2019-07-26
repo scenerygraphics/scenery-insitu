@@ -29,9 +29,12 @@ SemManager::~SemManager()
 	if (ismain) {
 		for (int i = 0; i < NKEYS; ++i) {
 			// delete semaphore
+			TESTPRINT("deleting semaphore %d\n", i);
 			semctl(semids[i], 0, IPC_RMID);
+			TESTPRINT("deleted semaphore %d\n", i);
 		}
 	}
+	TESTPRINT("deleted SemManager\n");
 }
 
 const int &SemManager::operator[](int keyNo)

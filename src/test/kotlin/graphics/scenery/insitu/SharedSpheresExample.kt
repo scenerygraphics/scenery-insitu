@@ -75,27 +75,9 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
         // execute getResult again only after it has finished waiting
         timer(initialDelay = 10, period = 10) {
-            // lock.lock()
-            if (cont) // also synchronize cont with stop()
+            if (cont) // may also synchronize cont with stop()
                 getResult()
-            // lock.unlock()
         }
-
-        /*
-        // probe for termination messages
-        fixedRateTimer(initialDelay = 100, period = 100) {
-            if (mpiSize > 1 && MPI.COMM_WORLD.iProbe(mpiSize - mpiOffset, MPI.ANY_TAG) != null) {
-                println("Terminate message received by rank ${mpiRank}")
-                stop()
-                // super.close()
-                MPI.COMM_WORLD.barrier()
-                MPI.Finalize()
-                exitProcess(0)
-            }
-        }
-
-        MPI.COMM_WORLD.barrier() // signal to producer that you have initialized
-         */
     }
 
     private fun update() {
@@ -136,15 +118,13 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
     fun stop() {
         lock.lock()
-        // println("Acquired lock")
+        println("Acquired lock")
         deleteShm()
-        // MPI.COMM_WORLD.barrier()
-        // println("Passed barrier")
         terminate()
         println("Called terminate")
         cont = false
         lock.unlock()
-        // println("Released lock")
+        println("Released lock")
     }
 
     @Test
