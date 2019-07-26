@@ -16,7 +16,7 @@ void detach(int signal)
 
 int main()
 {
-	ShmBuffer buf("/tmp", RANK, SIZE);
+	ShmBuffer buf("/tmp", RANK, SIZE, true);
 
 	signal(SIGINT, detach);
 
