@@ -20,11 +20,9 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
     // lateinit var buffer: IntBuffer
     lateinit var result: FloatBuffer
     lateinit var spheres: ArrayList<Sphere>
-    // var resrank = -1 // should never be this value in execution
-    var shmRank = -1
-    var mpiRank = -1
-    var mpiSize = -1
-    var mpiOffset = -1
+    var rank = -1
+    var size = -1
+    var shmRank = -1 // should be calculated from rank
 
     val lock = ReentrantLock()
     var cont = true // whether to continue updating memory
@@ -77,10 +75,13 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
         // execute getResult again only after it has finished waiting
         timer(initialDelay = 10, period = 10) {
-            if (cont)
+            // lock.lock()
+            if (cont) // also synchronize cont with stop()
                 getResult()
+            // lock.unlock()
         }
 
+        /*
         // probe for termination messages
         fixedRateTimer(initialDelay = 100, period = 100) {
             if (mpiSize > 1 && MPI.COMM_WORLD.iProbe(mpiSize - mpiOffset, MPI.ANY_TAG) != null) {
@@ -94,6 +95,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         }
 
         MPI.COMM_WORLD.barrier() // signal to producer that you have initialized
+         */
     }
 
     private fun update() {
@@ -134,14 +136,15 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
     fun stop() {
         lock.lock()
-        println("Acquired lock")
+        // println("Acquired lock")
         deleteShm()
-        MPI.COMM_WORLD.barrier()
-        println("Passed barrier")
+        // MPI.COMM_WORLD.barrier()
+        // println("Passed barrier")
         terminate()
+        println("Called terminate")
         cont = false
         lock.unlock()
-        println("Released lock")
+        // println("Released lock")
     }
 
     @Test
@@ -150,20 +153,13 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         val nullArg = arrayOfNulls<String>(0)
         MPI.Init(nullArg)
 
-        val myrank = MPI.COMM_WORLD.rank
-        val size = MPI.COMM_WORLD.size
+        rank = MPI.COMM_WORLD.rank
+        size = MPI.COMM_WORLD.size
         val pName = MPI.COMM_WORLD.name
-        if (myrank == 0)
+        if (rank == 0)
             println("Hi, I am Aryaman's MPI example")
         else
-            println("Hello world from $pName rank $myrank of $size")
-        mpiSize = size / 2
-        if (mpiSize == 0)
-            mpiRank = myrank
-        else
-            mpiRank = myrank % mpiSize
-        mpiOffset = myrank - mpiRank
-        println("mpiRank: $mpiRank\tmpiSize: $mpiSize\tmpiOffset: $mpiOffset")
+            println("Hello world from $pName rank $rank of $size")
 
 
         System.loadLibrary("shmSpheresTrial")
@@ -174,8 +170,8 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val a = this.sayHello()
             log.info(a.toString())
 
-            shmRank = mpiRank + 3 // later assign it based on myrank (should not be zero)
-            MPI.COMM_WORLD.barrier() // wait for producer to allocate its memory
+            shmRank = rank + 3 // later assign it based on myrank (should not be zero)
+            // MPI.COMM_WORLD.barrier() // wait for producer to allocate its memory
             this.getResult()
             println(result.remaining())
 
