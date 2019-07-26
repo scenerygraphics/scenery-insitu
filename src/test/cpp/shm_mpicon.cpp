@@ -13,16 +13,15 @@
 
 #define SIZE 10000
 #define UPDPER 5000
-#define REALLPER 333
+#define PRINTPER 1001
 #define VERBOSE true
 #define COPYSTR true
-#define NOCONSUMER false
 #define SHMRANK (rank+3)
 #define SYNCHRONIZE true
 
 #define BARRIER() do { if (SYNCHRONIZE) MPI_Barrier(MPI_COMM_WORLD); } while (0)
 
-int rank, size, offset = 0;
+int rank, size;
 
 bool cont, suspend;
 float *str = NULL, *str1 = NULL;
@@ -40,7 +39,7 @@ int update()
 	for (int i = 0; i < SIZE/sizeof(float); ++i) {
 		sum += str[i]*((i*i+1)&3);
 	}
-	if (cnt % REALLPER == 0)
+	if (cnt % PRINTPER == 0)
 		std::cout << "val: " << str[5] << std::endl;
 
 	++cnt;
@@ -73,24 +72,24 @@ void reall()
 void terminate()
 {
 
-	std::cout << "rank " << rank << " with offset " << offset << " finished waiting" << std::endl;
+	std::cout << "rank " << rank << " finished waiting" << std::endl;
 
 	buf->detach(true);
 	str = NULL;
 
-	std::cout << "rank " << rank << " with offset " << offset << " buf: " << ((long) buf) << std::endl;
+	std::cout << "rank " << rank << " buf: " << ((long) buf) << std::endl;
 
-	BARRIER();
+	// BARRIER();
 
 	delete buf;
 
-	std::cout << "rank " << rank << " with offset " << offset << " deleted buf" << std::endl;
+	std::cout << "rank " << rank << " deleted buf" << std::endl;
 }
 
 // input handling
 void loop()
 {
-	if (rank == 0 && offset == 0) { // assuming producer is called first in mpi
+	if (rank == 0) { // assuming producer is called first in mpi
 		// cont = true;
 		char c;
 
@@ -111,9 +110,9 @@ void loop()
 		int flag;
 		MPI_Status stat;
 
-		std::cout << "rank " << rank << " waiting for " << (size - offset) << std::endl;
-		MPI_Probe(size - offset, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
-		std::cout << "rank " << rank << " waited for " << (size - offset) << std::endl;
+		std::cout << "rank " << rank << " waiting for " << 0 << std::endl;
+		MPI_Probe(0, MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
+		std::cout << "rank " << rank << " waited for " << 0 << std::endl;
 
 		cont = false;
 	}
@@ -123,14 +122,11 @@ void loop()
 
 	// terminate();
 
-	if (rank == 0 && offset == 0 && size > 0) {
+	if (rank == 0) {
 		// alert other processes to finish
 		MPI_Request req;
 		for (int i = 1; i < size; ++i)
-			MPI_Isend(NULL, 0, MPI_INT, i + offset, MPI_TAG_UB, MPI_COMM_WORLD, &req), std::cout << "sent message to " << i << std::endl;
-		if (!NOCONSUMER)
-			for (int i = 0; i < size; ++i)
-				MPI_Isend(NULL, 0, MPI_INT, i + size - offset, MPI_TAG_UB, MPI_COMM_WORLD, &req);
+			MPI_Isend(NULL, 0, MPI_INT, i, MPI_TAG_UB, MPI_COMM_WORLD, &req), std::cout << "sent message to " << i << std::endl;
 	}
 }
 
@@ -140,22 +136,17 @@ int main(int argc, char *argv[])
 
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	if (!NOCONSUMER && size > 1) {
-		size /= 2; // perhaps also communicate to consumers
-		offset = size * (rank / size);
-		rank %= size; // assuming for now that mpi assigns ranks in order to different programs
-	}
 
-	BARRIER(); // wait for producer to initialize memory
+	// BARRIER(); // wait for producer to initialize memory
 
-	std::cout << "starting consumer with rank " << rank << " of size " << size << " and offset " << offset << std::endl;
+	std::cout << "starting consumer with rank " << rank << " of size " << size << std::endl;
 
 	buf = new ShmBuffer("/tmp", SHMRANK, SIZE, VERBOSE);
 
 	str = NULL;
 	reall();
 
-	BARRIER(); // signal producer that it can take input now
+	// BARRIER(); // signal producer that it can take input now
 
 	cont = true;
 	suspend = false;
@@ -170,7 +161,7 @@ int main(int argc, char *argv[])
 
 	terminate();
 
-	BARRIER();
+	// BARRIER();
 
 	MPI_Finalize();
 }
