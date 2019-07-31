@@ -1,4 +1,4 @@
-// Send and receive data through MPI buffers
+// Send and receive data through named pipes
 
 #define _OPEN_SYS
 #include <iostream>
