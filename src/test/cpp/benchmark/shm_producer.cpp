@@ -24,7 +24,7 @@
 #define VERBOSE false
 #define SHMRANK (rank+3)
 #define SYNCHRONIZE true
-#define DTYPE unsigned long
+#define DTYPE  long
 #define ARRSIZE (SIZE/sizeof(DTYPE))
 
 #define BARRIER() do { if (SYNCHRONIZE) MPI_Barrier(MPI_COMM_WORLD); } while (0)
