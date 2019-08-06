@@ -1,7 +1,7 @@
-// Save as "ShmConsumer.cpp"
+// Save as "TestConsumer.cpp"
 #include <jni.h>       // JNI header provided by JDK
 #include <iostream>    // C++ standard IO header
-#include "ShmConsumer.h"  // Generated
+#include "TestConsumer.h"  // Generated
 #include <sys/ipc.h> 
 #include <sys/shm.h>
 #include <sys/types.h>
@@ -9,20 +9,16 @@
 #include <fcntl.h>
 using namespace std;
 
-#define DTYPE long
+#define DTYPE float
+
+#define RANK 12
 
 int shmid;
 DTYPE *str;
 
 struct timespec start;
 
-// Implementation of the native method sayHello()
-JNIEXPORT int JNICALL Java_graphics_scenery_insitu_benchmark_ShmConsumer_sayHello(JNIEnv *env, jobject thisObj) {
-    cout << "Hello World from C++!" << endl;
-   return 1;
-}
-
-JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_benchmark_ShmConsumer_getSimData (JNIEnv *env, jobject thisObj, int worldRank) {
+JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_benchmark_TestConsumer_sysvReceive (JNIEnv *env, jobject thisObj) {
 
 	if (clock_gettime( CLOCK_REALTIME, &start) < 0) {
 		perror("clock_gettime"); exit(1);
@@ -52,12 +48,6 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_benchmark_ShmConsumer_get
     return bb;
 }
 
-JNIEXPORT void JNICALL Java_graphics_scenery_insitu_benchmark_ShmConsumer_deleteShm (JNIEnv *env, jobject thisObj) {
-        //detach from shared memory  
-    shmdt(str); 
-    
-    // destroy the shared memory 
-    // shmctl(shmid,IPC_RMID,NULL);
-
-    return;
+JNIEXPORT void JNICALL Java_graphics_scenery_insitu_benchmark_TestConsumer_sysvDelete (JNIEnv *env, jobject thisObj) {
+    shmdt(str);
 }

@@ -26,7 +26,7 @@
 #define BARRIER() do { if (SYNCHRONIZE) MPI_Barrier(MPI_COMM_WORLD); } while (0)
 
 #define PARTNER ((rank+size/2)%size)
-#define ISPRODUCER (rank < size/2)
+#define ISPRODUCER (rank*2 < size)
 
 int rank, size;
 // int fd[2];
@@ -317,6 +317,7 @@ int main(int argc, char *argv[])
 
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	std::cout << "rank: " << rank << "\tsize: " << size << std::endl;
 	
 	if (ISPRODUCER)
 		producer();

@@ -114,7 +114,8 @@ void ShmAllocator::shm_free(void *ptr)
 	// shmdt(ptr); // better here than after waiting; pointer should be unusable after free is called
 
 	// decrement semaphore for key
-	sems.decr(key, PROSEM);
+	if (sems.get(key, PROSEM) != 0)
+    	sems.decr(key, PROSEM);
 
     // wait_del(key);
     out = std::async(std::launch::async, &ShmAllocator::wait_del, this, key);

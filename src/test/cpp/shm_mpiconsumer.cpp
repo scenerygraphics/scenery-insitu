@@ -14,7 +14,7 @@
 #define SIZE 10000
 #define UPDPER 5000
 #define PRINTPER 1001
-#define VERBOSE true
+#define VERBOSE false
 #define COPYSTR true
 #define SHMRANK (rank+3)
 #define SYNCHRONIZE true
@@ -69,6 +69,14 @@ void reall()
 	buf->detach(false);
 }
 
+void bufloop()
+{
+	while (cont) {
+		reall();
+		usleep(UPDPER);
+	}
+}
+
 void terminate()
 {
 
@@ -89,6 +97,8 @@ void terminate()
 // input handling
 void msgloop()
 {
+	std::future<void> out = std::async(std::launch::async, bufloop);
+
 	if (rank == 0) {
 		// cont = true;
 		char c;
@@ -116,6 +126,8 @@ void msgloop()
 
 		cont = false;
 	}
+
+	out.wait();
 
 	std::cout << "Exiting rank " << rank << std::endl;
 	std::cout << "suspend: " << suspend << "\tcont: " << cont << std::endl;

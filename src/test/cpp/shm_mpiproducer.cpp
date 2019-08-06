@@ -13,7 +13,7 @@
 
 #define SIZE 10000
 #define UPDPER 5000
-#define REALLPER 50
+#define REALLPER 500
 #define VERBOSE false
 #define COPYSTR true
 #define SHMRANK (rank+3)

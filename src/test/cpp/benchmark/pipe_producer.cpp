@@ -170,7 +170,7 @@ int main(int argc, char *argv[])
 
 	std::cout << "made fifo file " << fifoname << std::endl;
 
-	signalsem(); // signal that producer has created
+	waitsem(); // signal that producer has created
 
 	// open pipe
 	if ((fd = open(fifoname, O_WRONLY)) < 0) {
@@ -184,11 +184,11 @@ int main(int argc, char *argv[])
 	str = new float[ARRSIZE];
 	prod_initstr();
 
-	signalsem(); // signal that producer has written
+	waitsem(); // signal that producer has written
 
 	std::cout << "Data written into memory: " << str[0] << std::endl;
 
-	std::cin.get();
+	// std::cin.get();
 
 	cont = true;
 	suspend = false;

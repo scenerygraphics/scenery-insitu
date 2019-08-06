@@ -49,7 +49,7 @@ void setsem() // set to 0
 	semctl(semid, 0, SETVAL, sem_attr);
 }
 
-void waitsem() // decrement by 1
+void signalsem() // decrement by 1
 {
 	semops[0].sem_num = 0;
 	semops[0].sem_op  = -1;
@@ -59,7 +59,7 @@ void waitsem() // decrement by 1
 	}
 }
 
-void signalsem() // increment by 1, wait for 0
+void waitsem() // increment by 1, wait for 0
 {
 	semops[0].sem_num = 0;
 	semops[0].sem_op  = 1;
@@ -67,7 +67,7 @@ void signalsem() // increment by 1, wait for 0
 	semops[1].sem_num = 0;
 	semops[1].sem_op  = 0;
 	semops[1].sem_flg = 0;
-	if (semop(semid, semops, 2) == -1) {
+	if (semop(semid, semops, 1) == -1) {
 		perror("semop"); std::exit(1);
 	}
 }
@@ -141,7 +141,7 @@ int main(int argc, char *argv[])
 
 	std::cout << "waiting for " << fifoname << std::endl;
 
-	waitsem(); // wait for producer to create
+	signalsem(); // wait for producer to create
 
 	// open pipe
 	if ((fd = open(fifoname, O_RDONLY)) < 0) {
@@ -164,7 +164,7 @@ int main(int argc, char *argv[])
 	cont = true;
 	suspend = false;
 
-	waitsem(); // wait for producer to write
+	signalsem(); // wait for producer to write
 
 	std::future<void> out = std::async(std::launch::async, loop);
 
