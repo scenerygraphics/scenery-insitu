@@ -40,7 +40,7 @@ public:
 	void incr(int keyNo, int semNo); // increment semaphore value
 	void decr(int keyNo, int semNo); // decrement semaphore value, wait if semaphore equal to 0
 
-	void wait(int keyNo, int semNo, int value); // wait until semaphore equal to value (blocking)
+	void wait(int keyNo, int semNo, int value = 0); // wait until semaphore equal to value (blocking)
 	void waitgeq(int keyNo, int semNo, int value); // wait until semaphore at least value
 
 };

@@ -15,9 +15,11 @@
 #include <netdb.h>
 #include <netinet/in.h>
 
+#include "../SemManager.hpp"
+
 // generate sizes in logarithmic scale, in bytes
 #define MINSIZE 1024
-#define SIZELEN 15
+#define SIZELEN 12
 #define SIZE(i) (MINSIZE * (1 << (i)))
 #define MAXSIZE SIZE(SIZELEN)
 #define ARRSIZE (MAXSIZE/sizeof(float))
@@ -25,25 +27,50 @@
 #define ITERS 500
 
 #define RANK 12
-#define NAME "test"
+#define NAME "/tmp/mmap_test"
 #define PORT 8080
+#define VERBOSE false
 
-#define INIT tcp ## _init
-#define SEND tcp ## _send
-#define TERM tcp ## _term
+#define INIT sem ## _init
+#define SEND sem ## _send
+#define TERM sem ## _term
 
-int i, j, k;
-size_t x;
-float *arr, *ptr;
-int id, fd;
-const char *fifoname = "/tmp/test.fifo";
+// semaphore communication
+
+#define ISPROD true
+#define PROSEM 1
+#define CONSEM 0
+#define OWNSEM (ISPROD ? PROSEM : CONSEM)
+#define OPPSEM (ISPROD ? CONSEM : PROSEM)
+
+// wait for opposite semaphore to be decremented
+#define WAIT() do { 		\
+	sem.incr(0, OPPSEM);	\
+	sem.wait(0, OPPSEM);	\
+} while (0)
+
+// decrement own semaphore
+#define SIGNAL() do { 		\
+	sem.decr(0, OWNSEM);	\
+} while (0)
 
 // test methods
 
-void heap_send();
+void sem_init();
+void sem_send();
+void sem_term();
 
+void heap_init();
+void heap_send();
+void heap_term();
+
+void sysv_init();
 void sysv_send();
+void sysv_term();
+
+void mmap_init();
 void mmap_send();
+void mmap_term();
 
 void fifo_init();
 void fifo_send();
@@ -54,12 +81,6 @@ void tcp_send();
 void tcp_term();
 
 #define EMPTY() do {} while (0)
-#define heap_init EMPTY
-#define heap_term EMPTY
-#define sysv_init EMPTY
-#define sysv_term EMPTY
-#define mmap_init EMPTY
-#define mmap_term EMPTY
 
 // time measurement in milliseconds
 
@@ -76,10 +97,25 @@ struct timespec tspec;
 #define START() GETTIME(start)
 #define STOP()  GETTIME(stop)
 
-#define AVGTIME() ((stop - start) / ITERS)
+#define TOTTIME() (stop - start)
+#define AVGTIME() (TOTTIME() / ITERS)
+
+// global variables
+
+int i, j, k;
+size_t x;
+float *arr, *ptr;
+int id, fd;
+const char *fifoname = "/tmp/test.fifo";
+
+SemManager sem("/tmp", RANK, VERBOSE, ISPROD); // use only 0th key, first semaphore for producer to wait, second for consumer to wait
 
 int main()
 {
+	// reset semaphores
+	sem.set(0, 0, 0);
+	sem.set(0, 1, 0);
+
 	// create random data
 	std::cout << "Array size: " << ARRSIZE << std::endl;
 	arr = new float[ARRSIZE];
@@ -89,9 +125,16 @@ int main()
 	}
 	std::cout << "Initialized data" << std::endl;
 
-	// initialize pipe, tcp etc.
-	INIT();
+	// initialize channel
+	START();
+
+	INIT();   // create channel
+	SIGNAL(); // signal consumer that channel created
+	WAIT();   // wait for consumer to attach
+
+	STOP();
 	std::cout << "Initialized resource" << std::endl;
+	std::cout << "init time: " << TOTTIME() << " us" << std::endl;
 
 	// std::cout << "Start? ";
 	// std::cin.get();
@@ -105,7 +148,9 @@ int main()
 		START();
 
 		for (j = 0; j < ITERS; j++) {
-			SEND();
+			SEND();   // send message
+			SIGNAL(); // alert consumer to receive message
+			WAIT();   // wait till consumer processes message
 		}
 
 		// record end time
@@ -115,38 +160,87 @@ int main()
 		std::cout << "size: " << x << "\ttime: " << AVGTIME() << " us" << std::endl;
 	}
 
-	// delete fifo etc.
-	TERM();
+	// delete channel
+	START();
+
+	SIGNAL(); // signal consumer you're ready to terminate
+	WAIT();   // wait for consumer to detach
+	TERM();   // delete resource
+
+	STOP();
 	std::cout << "Deleted resource" << std::endl;
+	std::cout << "term time: " << TOTTIME() << " us" << std::endl;
 
 	delete[] arr;
 	std::cout << "Deleted data" << std::endl;
 }
 
+// semaphore I/O
+
+void sem_init()
+{
+
+	// SIGNAL(); // signal consumer that you have joined
+	// WAIT();   // wait for consumer to join
+}
+
+void sem_send()
+{
+	// SIGNAL(); // signal consumer waiting to decrement 1st semaphore
+	// transfer memory etc.
+	// WAIT(); // wait for consumer to increment 0th semaphore
+	// sem.wait(0, 0); // for protection, to move in tandem with consumer
+}
+
+void sem_term()
+{
+	// SIGNAL(); // signal consumer that you have finished
+	// WAIT(); // wait for consumer to finish
+	// destroy memory etc.
+}
+
 // local memory, as control
+
+void heap_init()
+{
+	ptr = (float *) malloc(x); // acquire pointer
+}
 
 void heap_send()
 {
-	ptr = (float *) malloc(x); // acquire pointer
 	memcpy(ptr, arr, x); // send data
+}
+
+void heap_term()
+{
 	free(ptr); // release pointer
 }
 
 // system v shm
 
-void sysv_send()
+void sysv_init()
 {
 	// acquire id
 	key_t key = ftok("/tmp", RANK);
-	id = shmget(key, x, 0666|IPC_CREAT);
+	id = shmget(key, MAXSIZE, 0666|IPC_CREAT);
 	if (id < 0) { perror("shmget"); exit(1); }
 
 	// acquire pointer
 	ptr = (float *) shmat(id, NULL, 0);
 	if (ptr == MAP_FAILED) { perror("shmat"); exit(1); }
 
+	// possibly alert consumer
+}
+
+void sysv_send()
+{
 	// send data
 	memcpy(ptr, arr, x);
+}
+
+void sysv_term()
+{
+	// possibly wait for consumer to terminate
 
 	// release pointer
 	shmdt(ptr);
@@ -157,22 +251,31 @@ void sysv_send()
 
 // posix shm
 
-void mmap_send()
+void mmap_init()
 {
 	// acquire id
 	fd = shm_open(NAME, O_CREAT | O_EXCL | O_RDWR, 0666);
 	if (fd < 0) { perror("shm_open"); exit(1); }
-	ftruncate(fd, x);
+	ftruncate(fd, MAXSIZE);
 
 	// acquire pointer
-	ptr = (float *) mmap(NULL, x, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	ptr = (float *) mmap(NULL, MAXSIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (ptr == MAP_FAILED) { perror("mmap"); exit(1); }
 	close(fd);
 
+	// signal consumer
+}
+
+void mmap_send()
+{
+
 	// send data
 	memcpy(ptr, arr, x);
+}
 
-	// TODO remove after consumer finishes (or for testing, make consumer delete it)
+void mmap_term()
+{
+	// wait for consumer
 
 	// release pointer
 	munmap(ptr, x);
@@ -200,7 +303,9 @@ void fifo_init()
 void fifo_send()
 {
 	// send data directly
-	write(fd, arr, x);
+	if (write(fd, arr, x) == -1) {
+		perror("write"); exit(1);
+	}
 }
 
 void fifo_term()
@@ -224,14 +329,14 @@ void tcp_init()
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
     servaddr.sin_port = htons(PORT);
     if (bind(id, (struct sockaddr *) &servaddr, sizeof servaddr) != 0) {
-    	close(id);
-    	perror("bind"); exit(1);
+    	perror("bind");
+    	close(id); exit(1);
     }
 
     // listen
     if (listen(id, 5) != 0) {
-    	close(id);
-		perror("listen"); exit(1);
+		perror("listen");
+    	close(id); exit(1);
 	}
 
 	// accept client
@@ -239,15 +344,18 @@ void tcp_init()
 	socklen_t len = sizeof client;
 	fd = accept(id, (struct sockaddr *) &client, &len);
 	if (fd < 0) {
-    	close(id);
-		perror("accept"); exit(1);
+		perror("accept");
+    	close(id); exit(1);
 	}
 }
 
 void tcp_send()
 {
 	// send data directly
-	write(fd, arr, x);
+	if (write(fd, arr, x) == -1) {
+		perror("write");
+		close(id); exit(1);
+	}
 }
 
 void tcp_term()
