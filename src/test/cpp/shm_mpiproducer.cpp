@@ -12,8 +12,8 @@
 #include "ShmAllocator.hpp"
 
 #define SIZE 10000
-#define UPDPER 5000
-#define REALLPER 500
+#define UPDPER 10000
+#define REALLPER 50
 #define VERBOSE false
 #define COPYSTR true
 #define SHMRANK (rank+3)
@@ -21,27 +21,35 @@
 
 #define BARRIER() do { if (SYNCHRONIZE) MPI_Barrier(MPI_COMM_WORLD); } while (0)
 
+#define PNAME(isProp) ((isProp) ? "/etc" : "/tmp")
+
 int rank, size;
 
 bool cont, suspend;
-float *str = NULL, *str1 = NULL;
-ShmAllocator *alloc;
+float *str[2] = {NULL}, *str1[2] = {NULL};
+ShmAllocator *alloc[2];
 
-void initstr() // modify this to copy old state to new array
+void initstr(int isProp) // modify this to copy old state to new array
 {
-	if (!COPYSTR || str1 == NULL) {
+	if (!COPYSTR || str1[isProp] == NULL) {
 		for (int i = 0; i < SIZE/sizeof(float); ++i) {
-			str[i] = ((7*i) % 20 - 10) / 5.0;
+			str[isProp][i] = ((7*i) % 20 - 10) / 5.0;
 		}
 	} else {
 		for (int i = 0; i < SIZE/sizeof(float); ++i) {
-			str[i] = str1[i];
+			str[isProp][i] = str1[isProp][i];
 		}
 	}
 }
 
 void detach(int signal);
-void reall();
+void reall(int isProp);
+
+void reall()
+{
+	reall(0);
+	reall(1);
+}
 
 int update()
 {
@@ -49,7 +57,7 @@ int update()
 
 	// move each entry in array based on bits of cnt
 	for (int i = 0; i < SIZE/sizeof(float); ++i) {
-		str[i] += 0.02 * ((cnt & (1 << (i & ((1 << 4) - 1)))) ? 1 : -1);
+		str[0][i] += 0.02 * ((cnt & (1 << (i & ((1 << 4) - 1)))) ? 1 : -1);
 	}
 
 	++cnt;
@@ -61,17 +69,17 @@ int update()
 	return cont; // whether to continue
 }
 
-void reall()
+void reall(int i)
 {
 	// generate new key
-	str1 = str;
+	str1[i] = str[i];
 
-	str = (float *) alloc->shm_alloc(SIZE);
-	initstr();
+	str[i] = (float *) alloc[i]->shm_alloc(SIZE);
+	initstr(i);
 
 	// detach from old shm, release semaphore // detach after attaching to new, and copy from old to new
-	alloc->shm_free(str1); // need not check for null
-	str1 = NULL;
+	alloc[i]->shm_free(str1[i]); // need not check for null
+	str1[i] = NULL;
 }
 
 void detach(int signal)
@@ -93,8 +101,10 @@ void terminate()
 
 	std::cout << "rank " << rank << " finished waiting" << std::endl;
 
-	alloc->shm_free(str);
-	str = NULL;
+	for (int i = 0; i < 2; ++i) {
+		alloc[i]->shm_free(str[i]);
+		str[i] = NULL;
+	}
 
 	std::cout << "rank " << rank << " freed memory" << std::endl;
 
@@ -102,7 +112,8 @@ void terminate()
 
 	// std::cout << "rank " << rank << " with offset " << offset << " alloc: " << ((long) alloc) << std::endl;
 
-	delete alloc;
+	for (int i = 0; i < 2; ++i)
+		delete alloc[i];
 
 	std::cout << "rank " << rank << " deleted alloc" << std::endl;
 }
@@ -158,14 +169,15 @@ int main(int argc, char *argv[])
 
 	std::cout << "starting producer with rank " << rank << " of size " << size << std::endl;
 
-	alloc = new ShmAllocator("/tmp", SHMRANK, VERBOSE);
+	for (int i = 0; i < 2; ++i)
+		alloc[i] = new ShmAllocator(PNAME(i), SHMRANK, VERBOSE);
 
-	str = NULL;
+	// str = NULL;
 	reall();
 
 	// BARRIER();
 
-	std::cout << "Data written into memory: " << str[0] << std::endl;
+	std::cout << "Data written into memory: " << str[0][0] << std::endl;
 
 	std::cin.get();
 

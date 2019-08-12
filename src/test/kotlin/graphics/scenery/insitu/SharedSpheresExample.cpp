@@ -35,11 +35,11 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
 
 	int i = (int) isProp;
 
-	if (myRank != worldRank) {
+	if (buf[i] == NULL || myRank != worldRank) {
 		myRank = worldRank;
 		if (buf[i] != NULL)
 			delete buf[i];
-		buf[i] = new ShmBuffer(i ? PROPPNAME : DATAPNAME, myRank, SIZE, VERBOSE);
+		buf[i] = new ShmBuffer(i ? PROPPNAME : DATAPNAME, myRank, SIZE, VERBOSE); // TODO make size changeable later
 	}
 
 	buf[i]->update_key();

@@ -18,7 +18,8 @@ import kotlin.system.exitProcess
 class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
     // lateinit var buffer: IntBuffer
-    lateinit var result: FloatBuffer
+    lateinit var data: FloatBuffer
+    lateinit var props: DoubleBuffer
     lateinit var spheres: ArrayList<Sphere>
     var rank = -1
     var size = -1
@@ -35,12 +36,12 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
                 Renderer.createRenderer(hub, applicationName, scene, 512, 512))
 
         spheres = ArrayList()
-        result.rewind()
-        while (result.remaining() > 3) {
+        data.rewind()
+        while (data.remaining() > 3) {
             val s = Sphere(Random.randomFromRange(0.04f, 0.2f), 10)
-            val x = result.get()
-            val y = result.get()
-            val z = result.get()
+            val x = data.get()
+            val y = data.get()
+            val z = data.get()
             // println("x is $x y is $y z is $z")
             s.position = GLVector(x, y, z)
             scene.addChild(s)
@@ -79,7 +80,15 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         // execute getResult again only after it has finished waiting
         timer(initialDelay = 10, period = 10) {
             if (cont) // may also synchronize cont with stop()
-                getResult()
+                getData()
+            else
+                cancel()
+        }
+
+        // execute getResult again only after it has finished waiting
+        timer(initialDelay = 10, period = 10) {
+            if (cont) // may also synchronize cont with stop()
+                getProps()
             else
                 cancel()
         }
@@ -89,18 +98,29 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         // check buffer if memory location changed
         // this.getResult()
 
-        result.rewind()
+        data.rewind()
+        props.rewind()
         for (s in spheres) {
-            val x = result.get()
-            val y = result.get()
-            val z = result.get()
+            val x = data.get()
+            val y = data.get()
+            val z = data.get()
             //println("x is $x y is $y z is $z")
             s.position = GLVector(x, y, z) // isn't this also a copy? can we just set s.position.mElements to a buffer?
+
+            val vx = props.get().toFloat()
+            /*
+            val vy = props.get().toFloat()
+            val vz = props.get().toFloat()
+            val fx = props.get()
+            val fy = props.get()
+            val fz = props.get()
+
+             */
+            val speed = vx // GLVector(vx, vy, vz).magnitude()
         }
     }
 
-    // later define a mutex and prevent update from using result while this function is executed
-    private fun getResult() {
+    private fun getData() {
         // communicate rank through semaphores instead of checking all the time
         // Two semaphores each for consumer and producer, one for each rank
         // Producer posts on the rank it is currently using, consumer sees it and changes array
@@ -111,7 +131,22 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         bb.order(ByteOrder.nativeOrder())
         lock.lock()
         this.deleteShm(false)
-        result = bb.asFloatBuffer() // possibly set to result1, then at next update
+        data = bb.asFloatBuffer() // possibly set to data1, then at next update
+        lock.unlock()
+    }
+
+    private fun getProps() {
+        // communicate rank through semaphores instead of checking all the time
+        // Two semaphores each for consumer and producer, one for each rank
+        // Producer posts on the rank it is currently using, consumer sees it and changes array
+        // Consumer then posts on old rank, producer sees and deletes it
+        // Perhaps only two or even one semaphore may suffice, toggling rank at each update
+
+        val bb = this.getSimData(true, shmRank) // waits until current shm is released and other shm is acquired
+        bb.order(ByteOrder.nativeOrder())
+        lock.lock()
+        this.deleteShm(true)
+        props = bb.asDoubleBuffer() // possibly set to data1, then at next update
         lock.unlock()
     }
 
@@ -157,13 +192,14 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
             shmRank = rank + 3 // later assign it based on myrank (should not be zero)
             // MPI.COMM_WORLD.barrier() // wait for producer to allocate its memory
-            this.getResult()
-            println(result.remaining())
+            this.getData()
+            this.getProps()
+            println(data.remaining())
 
             /*
-            while(result.hasRemaining())
-                println(message = "Java says: ${result.get()} (${result.remaining()})")
-            result.rewind()
+            while(data.hasRemaining())
+                println(message = "Java says: ${data.get()} (${data.remaining()})")
+            data.rewind()
              */
 
             //this.deleteShm()
