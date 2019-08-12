@@ -108,15 +108,13 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             s.position = GLVector(x, y, z) // isn't this also a copy? can we just set s.position.mElements to a buffer?
 
             val vx = props.get().toFloat()
-            /*
             val vy = props.get().toFloat()
             val vz = props.get().toFloat()
             val fx = props.get()
             val fy = props.get()
             val fz = props.get()
 
-             */
-            val speed = vx // GLVector(vx, vy, vz).magnitude()
+            val speed = GLVector(vx, vy, vz).magnitude()
         }
     }
 
@@ -195,6 +193,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             this.getData()
             this.getProps()
             println(data.remaining())
+            println(props.remaining())
 
             /*
             while(data.hasRemaining())

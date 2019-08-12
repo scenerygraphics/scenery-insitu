@@ -11,7 +11,7 @@
 
 #include "ShmAllocator.hpp"
 
-#define SIZE 10000
+#define SIZE(i) (i ? 40000 : 10000)
 #define UPDPER 10000
 #define REALLPER 50
 #define VERBOSE false
@@ -32,11 +32,11 @@ ShmAllocator *alloc[2];
 void initstr(int isProp) // modify this to copy old state to new array
 {
 	if (!COPYSTR || str1[isProp] == NULL) {
-		for (int i = 0; i < SIZE/sizeof(float); ++i) {
+		for (int i = 0; i < SIZE(isProp)/sizeof(float); ++i) {
 			str[isProp][i] = ((7*i) % 20 - 10) / 5.0;
 		}
 	} else {
-		for (int i = 0; i < SIZE/sizeof(float); ++i) {
+		for (int i = 0; i < SIZE(isProp)/sizeof(float); ++i) {
 			str[isProp][i] = str1[isProp][i];
 		}
 	}
@@ -56,8 +56,12 @@ int update()
 	static int cnt = 0;
 
 	// move each entry in array based on bits of cnt
-	for (int i = 0; i < SIZE/sizeof(float); ++i) {
-		str[0][i] += 0.02 * ((cnt & (1 << (i & ((1 << 4) - 1)))) ? 1 : -1);
+	float vel; // increment per second
+	for (int i = 0; i < SIZE(0)/sizeof(float); ++i) {
+		vel = 0.02 * ((cnt & (1 << (i & ((1 << 4) - 1)))) ? 1 : -1);
+		str[0][i] += vel * UPDPER / 1000000;
+		str[1][6*(i/6)+i%3+3] = (vel - str[1][6*(i/6)+i%3]) * 1000000 / UPDPER; // acceleration
+		str[1][6*(i/6)+i%3] = vel; // velocity
 	}
 
 	++cnt;
@@ -74,7 +78,7 @@ void reall(int i)
 	// generate new key
 	str1[i] = str[i];
 
-	str[i] = (float *) alloc[i]->shm_alloc(SIZE);
+	str[i] = (float *) alloc[i]->shm_alloc(SIZE(i));
 	initstr(i);
 
 	// detach from old shm, release semaphore // detach after attaching to new, and copy from old to new

@@ -12,7 +12,8 @@ using namespace std;
 
 #define DATAPNAME "/tmp"
 #define PROPPNAME "/etc"
-#define SIZE 2024
+#define DATASIZE (250*sizeof(float))
+#define PROPSIZE (500*sizeof(double))
 #define VERBOSE false
 
 ShmBuffer *buf[] = {NULL, NULL};
@@ -39,7 +40,7 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
 		myRank = worldRank;
 		if (buf[i] != NULL)
 			delete buf[i];
-		buf[i] = new ShmBuffer(i ? PROPPNAME : DATAPNAME, myRank, SIZE, VERBOSE); // TODO make size changeable later
+		buf[i] = new ShmBuffer(i ? PROPPNAME : DATAPNAME, myRank, i ? PROPSIZE : DATASIZE, VERBOSE); // TODO make size changeable later
 	}
 
 	buf[i]->update_key();
@@ -48,7 +49,7 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
 	if (VERBOSE)
 		std::cout<<"Hello! We are in SimData! Data read from memory:" <<str[i][0] << std::endl;
 
-	jobject bb = (env)->NewDirectByteBuffer((void*) str[i], 1000);
+	jobject bb = (env)->NewDirectByteBuffer((void*) str[i], i ? PROPSIZE : DATASIZE);
 
 	return bb;
 }
