@@ -25,16 +25,16 @@
 #define MAXSIZE SIZE(SIZELEN)
 #define ARRSIZE (MAXSIZE/sizeof(float))
 
-#define ITERS 500
+#define ITERS 1
 
 #define RANK 12
 #define NAME "test"
 #define PORT 8080
-#define VERBOSE false
+#define VERBOSE true
 
-#define INIT sem ## _init
-#define RECV sem ## _recv
-#define TERM sem ## _term
+#define INIT fifo ## _init
+#define RECV fifo ## _recv
+#define TERM fifo ## _term
 
 // semaphore communication
 
@@ -47,12 +47,16 @@
 // wait for opposite semaphore to be decremented
 #define WAIT() do { 		\
 	sem.incr(0, OPPSEM);	\
+	if (VERBOSE) std::cout << "waiting for " << OPPSEM << std::endl; \
 	sem.wait(0, OPPSEM);	\
+	if (VERBOSE) std::cout << "waited for " << OPPSEM << std::endl; \
 } while (0)
 
 // decrement own semaphore
 #define SIGNAL() do { 		\
+	if (VERBOSE) std::cout << "decrementing " << OWNSEM << std::endl; \
 	sem.decr(0, OWNSEM);	\
+	if (VERBOSE) std::cout << "decremented " << OWNSEM << std::endl; \
 } while (0)
 
 // test methods
