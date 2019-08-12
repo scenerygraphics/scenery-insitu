@@ -69,7 +69,10 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
         fixedRateTimer(initialDelay = 5, period = 5) {
             lock.lock()
-            update()
+            if (cont)
+                update()
+            else
+                cancel()
             lock.unlock()
         }
 
@@ -77,6 +80,8 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         timer(initialDelay = 10, period = 10) {
             if (cont) // may also synchronize cont with stop()
                 getResult()
+            else
+                cancel()
         }
     }
 
@@ -102,24 +107,24 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         // Consumer then posts on old rank, producer sees and deletes it
         // Perhaps only two or even one semaphore may suffice, toggling rank at each update
 
-        val bb = this.getSimData(shmRank) // waits until current shm is released and other shm is acquired
+        val bb = this.getSimData(false, shmRank) // waits until current shm is released and other shm is acquired
         bb.order(ByteOrder.nativeOrder())
         lock.lock()
-        this.deleteShm()
+        this.deleteShm(false)
         result = bb.asFloatBuffer() // possibly set to result1, then at next update
         lock.unlock()
     }
 
     private external fun sayHello(): Int
-    private external fun getSimData(worldRank:Int): ByteBuffer
+    private external fun getSimData(isProp: Boolean, worldRank:Int): ByteBuffer
 
-    private external fun deleteShm()
+    private external fun deleteShm(isProp: Boolean)
     private external fun terminate()
 
     fun stop() {
         lock.lock()
         println("Acquired lock")
-        deleteShm()
+        deleteShm(false)
         terminate()
         println("Called terminate")
         cont = false
