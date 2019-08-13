@@ -12,7 +12,7 @@
 #include "ShmAllocator.hpp"
 
 #define SIZE(i) (i ? 40000 : 10000)
-#define UPDPER 5000
+#define UPDPER 20000
 #define REALLPER 50
 #define VERBOSE false
 #define COPYSTR true
@@ -23,21 +23,38 @@
 
 #define PNAME(isProp) ((isProp) ? "/etc" : "/tmp")
 
+#define PTR(isProp) ((isProp) ? ((void *) props) : ((void *) data))
+#define PTR1(isProp) ((isProp) ? ((void *) props1) : ((void *) data1))
+
 int rank, size;
 
 bool cont, suspend;
-float *str[2] = {NULL}, *str1[2] = {NULL};
+float *data = NULL, *data1 = NULL;
+double *props = NULL, *props1 = NULL;
 ShmAllocator *alloc[2];
 
-void initstr(int isProp) // modify this to copy old state to new array
+void initdata()
 {
-	if (!COPYSTR || str1[isProp] == NULL) {
-		for (int i = 0; i < SIZE(isProp)/sizeof(float); ++i) {
-			str[isProp][i] = ((7*i) % 20 - 10) / 5.0;
+	if (!COPYSTR || data1 == NULL) {
+		for (int i = 0; i < SIZE(0)/sizeof(float); ++i) {
+			data[i] = ((7*i) % 20 - 10) / 5.0;
 		}
 	} else {
-		for (int i = 0; i < SIZE(isProp)/sizeof(float); ++i) {
-			str[isProp][i] = str1[isProp][i];
+		for (int i = 0; i < SIZE(0)/sizeof(float); ++i) {
+			data[i] = data1[i];
+		}
+	}
+}
+
+void initprops()
+{
+	if (!COPYSTR || props1 == NULL) {
+		for (int i = 0; i < SIZE(0)/sizeof(float); ++i) {
+			props[i] = i; // ((7*i) % 20 - 10) / 5.0;
+		}
+	} else {
+		for (int i = 0; i < SIZE(0)/sizeof(float); ++i) {
+			props[i] = props1[i];
 		}
 	}
 }
@@ -59,9 +76,10 @@ int update()
 	float vel; // increment, just as placeholder for properties
 	for (int i = 0; i < SIZE(0)/sizeof(float); ++i) {
 		vel = 0.02 * ((cnt & (1 << (i & ((1 << 4) - 1)))) ? 1 : -1);
-		str[0][i] += vel;
-		str[1][6*(i/6)+i%3+3] = (vel - str[1][6*(i/6)+i%3]) * 1000000 / UPDPER; // acceleration
-		str[1][6*(i/6)+i%3] = vel; // velocity
+		data[i] += vel;
+		vel = vel * 1000000 / UPDPER;
+		props[6*(i/3)+i%3+3] = 1; // (vel - str[1][6*(i/3)+i%3]) * 1000000 / UPDPER; // acceleration
+		props[6*(i/3)+i%3] = vel; // velocity
 	}
 
 	++cnt;
@@ -73,26 +91,34 @@ int update()
 	return cont; // whether to continue
 }
 
-void reall(int i)
+void reall(int isProp)
 {
-	// generate new key
-	str1[i] = str[i];
-
-	str[i] = (float *) alloc[i]->shm_alloc(SIZE(i));
-	initstr(i);
+	void *ptr = alloc[isProp]->shm_alloc(SIZE(isProp));
+	if (isProp) {
+		props1 = props;
+		props = (double *) ptr;
+		initprops();
+	} else {
+		data1 = data;
+		data = (float *) ptr;
+		initdata();
+	}
 
 	// testing
-	if (str1[i] != NULL) {
+	if (PTR1(isProp) != NULL) {
 		if (VERBOSE) std::cout << "\tallocating from heap" << std::endl;
-		void *ptr = alloc[i]->shm_alloc(10);
+		void *ptr = alloc[isProp]->shm_alloc(10);
 		if (VERBOSE) std::cout << "\tallocated " << ((long) ptr) << " from heap" << std::endl;
-		alloc[i]->shm_free(ptr);
+		alloc[isProp]->shm_free(ptr);
 		if (VERBOSE) std::cout << "\tfreed " << ((long) ptr) << std::endl;
 	}
 
-	// detach from old shm, release semaphore // detach after attaching to new, and copy from old to new
-	alloc[i]->shm_free(str1[i]); // need not check for null
-	str1[i] = NULL;
+	// detach from old shm, release semaphore
+	alloc[isProp]->shm_free(PTR1(isProp)); // need not check for null
+	if (isProp)
+		props1 = NULL;
+	else
+		data1 = NULL;
 }
 
 void detach(int signal)
@@ -102,7 +128,7 @@ void detach(int signal)
 	std::cin >> c;
 	if (c == 'y') {
 		reall();
-		std::cout << "Data written into memory: " << str[0] << std::endl;
+		std::cout << "Data written into memory: " << data[0] << std::endl;
 	} else {
 		printf("\n");
 		cont = false;
@@ -115,9 +141,10 @@ void terminate()
 	std::cout << "rank " << rank << " finished waiting" << std::endl;
 
 	for (int i = 0; i < 2; ++i) {
-		alloc[i]->shm_free(str[i]);
-		str[i] = NULL;
+		alloc[i]->shm_free(PTR(i));
 	}
+	data = NULL;
+	props = NULL;
 
 	std::cout << "rank " << rank << " freed memory" << std::endl;
 
@@ -190,7 +217,7 @@ int main(int argc, char *argv[])
 
 	// BARRIER();
 
-	std::cout << "Data written into memory: " << str[0][0] << std::endl;
+	std::cout << "Data written into memory: " << data[0] << std::endl;
 
 	std::cin.get();
 

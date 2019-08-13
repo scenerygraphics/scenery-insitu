@@ -28,6 +28,8 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
     val lock = ReentrantLock()
     var cont = true // whether to continue updating memory
 
+    lateinit var color: GLVector
+
     override fun init() {
         settings.set("Input.SlowMovementSpeed", 0.5f)
         settings.set("Input.FastMovementSpeed", 1.0f)
@@ -44,6 +46,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val z = data.get()
             // println("x is $x y is $y z is $z")
             s.position = GLVector(x, y, z)
+            color = s.material.diffuse
             scene.addChild(s)
             spheres.add(s)
         }
@@ -114,7 +117,12 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val fy = props.get()
             val fz = props.get()
 
-            val speed = GLVector(vx, vy, vz).magnitude()
+            // val speed = GLVector(vx, vy, vz).magnitude()
+            val direction = GLVector(vx, vy, vz).normalized
+
+            s.material.diffuse = color.times(.8.toFloat())
+                       .plus(direction.times(.2.toFloat()))
+            // s.material.diffuse = direction
         }
     }
 
@@ -195,11 +203,13 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             println(data.remaining())
             println(props.remaining())
 
-            /*
             while(data.hasRemaining())
                 println(message = "Java says: ${data.get()} (${data.remaining()})")
             data.rewind()
-             */
+            println()
+            while(props.hasRemaining())
+                println(message = "Java says: ${props.get()} (${props.remaining()})")
+            props.rewind()
 
             //this.deleteShm()
 
