@@ -24,7 +24,7 @@
 
 #define CONSEM 0   // index of semaphore for consumer
 #define PROSEM 1   // index of semaphore for producer
-#define KEYINIT -1 // initial value of current_key to signify no previous memory allocated
+#define KEYINIT -2 // initial value of current_key to signify no previous memory allocated
 
 #define PROJ_ID(rank, toggle) (2*(rank)+1+(toggle)) // generate proj_id to send to ftok
 
@@ -58,17 +58,21 @@ ShmAllocator::~ShmAllocator()
 
 void *ShmAllocator::shm_alloc(size_t size)
 {
-	// if current key is used, toggle it
-	current_key &= 1; // -1 becomes 1
-	// if (used[current_key]) // does not change key if allocating after freeing
+	current_key &= 1; // -2 becomes 0
+
+	TESTPRINT("trying lock for %d\n", current_key);
+	if (!used[current_key].try_lock()) {   // if current key locked, toggle it
 		current_key ^= 1;
+		TESTPRINT("trying lock for %d\n", current_key);
+		if (!used[current_key].try_lock()) // try locking other key
+			return malloc(size); // allocate from heap memory if both keys used
+	}
+	TESTPRINT("locked %d\n", current_key);
 	TESTPRINT("rank:%d\tkey:%d\n", current_key, sems[current_key]); // test
 
 	// assert !used[current_key]; user must not be able to allocate more than twice
 	// wait for current key to stop being used by consumer
 	// technically used is also like a semaphore
-	used[current_key].lock(); // wait for it to be unused, then mark again
-	// TODO change this later to use heap memory and change used back to bool
 
 	// allocate memory with new key
 	if ((shmids[current_key] = shmget(sems[current_key], size, 0666|IPC_CREAT)) == -1) {
@@ -104,8 +108,12 @@ void ShmAllocator::shm_free(void *ptr)
 		if (ptrs[key] == ptr) // here, actually check if ptr lies in the interval allocated for ptrs[key], possibly storing sizes
 			break;
 	// if no key found, return
-	if (key == NKEYS)
-		return; // TODO change this to free()
+	if (key == NKEYS) {
+		TESTPRINT("Pointer %ld not found in shm\n", (long) ptr);
+		free(ptr);
+		return;
+	}
+	TESTPRINT("Pointer %ld found assigned to key %d\n", (long) ptr, key);
 
 	// assert used[key]
 

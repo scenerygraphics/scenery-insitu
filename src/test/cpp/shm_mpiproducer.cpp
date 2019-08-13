@@ -12,7 +12,7 @@
 #include "ShmAllocator.hpp"
 
 #define SIZE(i) (i ? 40000 : 10000)
-#define UPDPER 10000
+#define UPDPER 5000
 #define REALLPER 50
 #define VERBOSE false
 #define COPYSTR true
@@ -56,10 +56,10 @@ int update()
 	static int cnt = 0;
 
 	// move each entry in array based on bits of cnt
-	float vel; // increment per second
+	float vel; // increment, just as placeholder for properties
 	for (int i = 0; i < SIZE(0)/sizeof(float); ++i) {
 		vel = 0.02 * ((cnt & (1 << (i & ((1 << 4) - 1)))) ? 1 : -1);
-		str[0][i] += vel * UPDPER / 1000000;
+		str[0][i] += vel;
 		str[1][6*(i/6)+i%3+3] = (vel - str[1][6*(i/6)+i%3]) * 1000000 / UPDPER; // acceleration
 		str[1][6*(i/6)+i%3] = vel; // velocity
 	}
@@ -80,6 +80,15 @@ void reall(int i)
 
 	str[i] = (float *) alloc[i]->shm_alloc(SIZE(i));
 	initstr(i);
+
+	// testing
+	if (str1[i] != NULL) {
+		if (VERBOSE) std::cout << "\tallocating from heap" << std::endl;
+		void *ptr = alloc[i]->shm_alloc(10);
+		if (VERBOSE) std::cout << "\tallocated " << ((long) ptr) << " from heap" << std::endl;
+		alloc[i]->shm_free(ptr);
+		if (VERBOSE) std::cout << "\tfreed " << ((long) ptr) << std::endl;
+	}
 
 	// detach from old shm, release semaphore // detach after attaching to new, and copy from old to new
 	alloc[i]->shm_free(str1[i]); // need not check for null
