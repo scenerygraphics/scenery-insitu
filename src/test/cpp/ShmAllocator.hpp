@@ -42,7 +42,7 @@ class ShmAllocator {
     void wait_del(int key); // wait to delete ptrs[key], called from shm_free
 
 public:
-	ShmAllocator(std::string pname, int rank, bool verbose = true); // generate two keys per rank, pass pname to ftok, initialize semaphores
+	ShmAllocator(std::string pname, int rank, bool verbose = false); // generate two keys per rank, pass pname to ftok, initialize semaphores
 	~ShmAllocator(); // delete semaphores and any remaining memory segments
 
 	void *shm_alloc(size_t size); // allocate shared memory of given size

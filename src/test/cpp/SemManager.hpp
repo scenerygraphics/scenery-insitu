@@ -10,6 +10,16 @@
 #include <string>
 #include <sys/sem.h>
 
+#ifndef __APPLE__
+union semun {
+   int              val;    /* Value for SETVAL */
+   struct semid_ds *buf;    /* Buffer for IPC_STAT, IPC_SET */
+   unsigned short  *array;  /* Array for GETALL, SETALL */
+   struct seminfo  *__buf;  /* Buffer for IPC_INFO
+							   (Linux-specific) */
+};
+#endif
+
 #define NKEYS   2 // number of keys per each rank
 #define NSEMS   2 // number of semaphores per key (one for consumer, one for producer)
 #define SEMOPS 10 // max number of consecutive semaphore calls supported
