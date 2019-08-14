@@ -13,12 +13,13 @@ import graphics.scenery.backends.Renderer
 import graphics.scenery.numerics.Random
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.*
+import kotlin.math.sqrt
 import kotlin.system.exitProcess
 
 class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
     // lateinit var buffer: IntBuffer
-    lateinit var data: FloatBuffer
+    lateinit var data: DoubleBuffer
     lateinit var props: DoubleBuffer
     lateinit var spheres: ArrayList<Sphere>
     var rank = -1
@@ -40,10 +41,10 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         spheres = ArrayList()
         data.rewind()
         while (data.remaining() > 3) {
-            val s = Sphere(Random.randomFromRange(0.04f, 0.2f), 10)
-            val x = data.get()
-            val y = data.get()
-            val z = data.get()
+            val s = Sphere(Random.randomFromRange(0.04f, 0.02f), 10)
+            val x = data.get().toFloat()
+            val y = data.get().toFloat()
+            val z = data.get().toFloat()
             // println("x is $x y is $y z is $z")
             s.position = GLVector(x, y, z)
             color = s.material.diffuse
@@ -104,9 +105,9 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         data.rewind()
         props.rewind()
         for (s in spheres) {
-            val x = data.get()
-            val y = data.get()
-            val z = data.get()
+            val x = data.get().toFloat()
+            val y = data.get().toFloat()
+            val z = data.get().toFloat()
             //println("x is $x y is $y z is $z")
             s.position = GLVector(x, y, z) // isn't this also a copy? can we just set s.position.mElements to a buffer?
 
@@ -117,12 +118,14 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val fy = props.get()
             val fz = props.get()
 
-            // val speed = GLVector(vx, vy, vz).magnitude()
+            val speed = GLVector(vx, vy, vz).magnitude()
             val direction = GLVector(vx, vy, vz).normalized
+            val disp = (speed - 100f) / 50f // rescaling speed, between 0 and 2 (just for this particular simulation; otherwise need to know average and stddev)
+            val scale = sqrt(5f) * disp / sqrt(1+disp*disp) // some sigmoidal scale factor, between 0 and 2
 
-            s.material.diffuse = color.times(.8.toFloat())
-                       .plus(direction.times(.2.toFloat()))
+            // s.material.diffuse = color.times(scale) // color.times(.8.toFloat()).plus(direction.times(.2.toFloat()))
             // s.material.diffuse = direction
+            s.material.diffuse = color.times(.8f).plus(direction.times(.2f).times(scale)
         }
     }
 
@@ -137,7 +140,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         bb.order(ByteOrder.nativeOrder())
         lock.lock()
         this.deleteShm(false)
-        data = bb.asFloatBuffer() // possibly set to data1, then at next update
+        data = bb.asDoubleBuffer() // possibly set to data1, then at next update
         lock.unlock()
     }
 
@@ -166,6 +169,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         lock.lock()
         println("Acquired lock")
         deleteShm(false)
+        deleteShm(true)
         terminate()
         println("Called terminate")
         cont = false
@@ -196,18 +200,18 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val a = this.sayHello()
             log.info(a.toString())
 
-            shmRank = rank + 3 // later assign it based on myrank (should not be zero)
+            shmRank = rank + 1 // later assign it based on myrank (should not be zero)
             // MPI.COMM_WORLD.barrier() // wait for producer to allocate its memory
             this.getData()
             this.getProps()
             println(data.remaining())
             println(props.remaining())
 
-            while(data.hasRemaining())
+            for (i in 1..30) // while(data.hasRemaining())
                 println(message = "Java says: ${data.get()} (${data.remaining()})")
             data.rewind()
             println()
-            while(props.hasRemaining())
+            for (i in 1..30) // while(props.hasRemaining())
                 println(message = "Java says: ${props.get()} (${props.remaining()})")
             props.rewind()
 

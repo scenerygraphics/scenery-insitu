@@ -11,12 +11,12 @@
 
 #include "ShmBuffer.hpp"
 
-#define SIZE 10000
+#define SIZE 1000
 #define UPDPER 5000
 #define PRINTPER 1001
 #define VERBOSE false
 #define COPYSTR true
-#define SHMRANK (rank+3)
+#define SHMRANK (rank+1)
 #define SYNCHRONIZE true
 
 #define BARRIER() do { if (SYNCHRONIZE) MPI_Barrier(MPI_COMM_WORLD); } while (0)

@@ -10,14 +10,16 @@ using namespace std;
 
 #include "ShmBuffer.hpp"
 
-#define DATAPNAME "/tmp"
-#define PROPPNAME "/etc"
-#define DATASIZE (250*sizeof(float))
-#define PROPSIZE (500*sizeof(double))
+#define PNAME(isProp) ((isProp) ? "/home" : "/tmp")
+
+#define DTYPE double
+#define GRIDLEN 10
+#define NUMPARS (GRIDLEN*GRIDLEN*GRIDLEN)
+#define SIZE(i) (i ? 6*NUMPARS*sizeof(DTYPE) : 3*NUMPARS*sizeof(DTYPE))
 #define VERBOSE false
 
 ShmBuffer *buf[] = {NULL, NULL};
-float *str[] = {NULL, NULL};
+DTYPE *str[] = {NULL, NULL};
 int myRank = -1;
 
 // Implementation of the native method sayHello()
@@ -40,16 +42,16 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
 		myRank = worldRank;
 		if (buf[i] != NULL)
 			delete buf[i];
-		buf[i] = new ShmBuffer(i ? PROPPNAME : DATAPNAME, myRank, i ? PROPSIZE : DATASIZE, VERBOSE); // TODO make size changeable later
+		buf[i] = new ShmBuffer(PNAME(i), myRank, SIZE(i), VERBOSE); // TODO make size changeable later
 	}
 
 	buf[i]->update_key();
-	str[i] = (float *) buf[i]->attach();
+	str[i] = (DTYPE *) buf[i]->attach();
 
 	if (VERBOSE)
-		std::cout<<"Hello! We are in SimData! Data read from memory:" <<str[i][0] << std::endl;
+		std::cout<<"Hello! We are in SimData! Data read from memory:" << str[i][0] << std::endl;
 
-	jobject bb = (env)->NewDirectByteBuffer((void*) str[i], i ? PROPSIZE : DATASIZE);
+	jobject bb = (env)->NewDirectByteBuffer((void*) str[i], SIZE(i));
 
 	return bb;
 }

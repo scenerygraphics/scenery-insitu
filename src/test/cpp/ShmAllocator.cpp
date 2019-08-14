@@ -132,6 +132,7 @@ void ShmAllocator::shm_free(void *ptr)
 void ShmAllocator::wait_del(int key)
 {
 	// wait for consumer to stop using key
+	// TODO possibly call semtimedop here
 	sems.wait(key, CONSEM, 0); // need to check if this is busy waiting
 
 	// execute after waiting so that another allocate call to the key would not mess things up

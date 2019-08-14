@@ -11,50 +11,64 @@
 
 #include "ShmAllocator.hpp"
 
-#define SIZE(i) (i ? 40000 : 10000)
-#define UPDPER 20000
-#define REALLPER 50
+#define DTYPE double
 #define VERBOSE false
 #define COPYSTR true
-#define SHMRANK (rank+3)
+#define SHMRANK (rank+1)
 #define SYNCHRONIZE true
+#define UPDPER 50
+#define REALLPER 1
+#define PRINTPER 7777
+
+// simulate simple harmonic oscillator
+#define GRIDLEN 10
+#define CENTER(i) (1.5*(2*i-GRIDLEN)/GRIDLEN)
+#define NUMPARS (GRIDLEN*GRIDLEN*GRIDLEN)
+#define SIZE(i) (i ? 6*NUMPARS*sizeof(DTYPE) : 3*NUMPARS*sizeof(DTYPE))
+#define OSCPER .05 // period of oscillation in seconds
+#define FOURPISQ 39.4784  // 4pi^2
+#define DT (UPDPER/1000000.) // time increment
+#define POS(i, j) str[0][3*i+j]   // jth component of position vector of ith particle
+#define VEL(i, j) str[1][6*i+j]   // jth component of velocity vector of ith particle
+#define ACC(i, j) str[1][6*i+j+3] // jth component of acceleration vector of ith particle
 
 #define BARRIER() do { if (SYNCHRONIZE) MPI_Barrier(MPI_COMM_WORLD); } while (0)
 
-#define PNAME(isProp) ((isProp) ? "/etc" : "/tmp")
+#define PNAME(isProp) ((isProp) ? "/home" : "/tmp")
 
-#define PTR(isProp) ((isProp) ? ((void *) props) : ((void *) data))
-#define PTR1(isProp) ((isProp) ? ((void *) props1) : ((void *) data1))
+#define PTR(isProp) str[isProp] // ((isProp) ? ((void *) props) : ((void *) data))
+#define PTR1(isProp) str1[isProp] // ((isProp) ? ((void *) props1) : ((void *) data1))
 
 int rank, size;
 
 bool cont, suspend;
-float *data = NULL, *data1 = NULL;
-double *props = NULL, *props1 = NULL;
+DTYPE *str[] = {NULL, NULL}, *str1[] = {NULL, NULL};
 ShmAllocator *alloc[2];
 
-void initdata()
+void initptr(int isProp)
 {
-	if (!COPYSTR || data1 == NULL) {
-		for (int i = 0; i < SIZE(0)/sizeof(float); ++i) {
-			data[i] = ((7*i) % 20 - 10) / 5.0;
+	if (!COPYSTR || PTR1(isProp) == NULL) {
+		if (isProp) {
+			// initially no velocity or acceleration
+			for (int i = 0; i < SIZE(isProp)/sizeof(DTYPE); ++i) {
+				PTR(isProp)[i] = 0;
+			}
+		} else {
+			// initially points arranged in a grid
+			for (int i = 0; i < GRIDLEN; ++i) {
+				for (int j = 0; j < GRIDLEN; ++j) {
+					for (int k = 0; k < GRIDLEN; ++k) {
+						int p = GRIDLEN*(GRIDLEN*i+j)+k; // particle number
+						POS(p, 0) = CENTER(i);
+						POS(p, 1) = CENTER(j);
+						POS(p, 2) = CENTER(k);
+					}
+				}
+			}
 		}
 	} else {
-		for (int i = 0; i < SIZE(0)/sizeof(float); ++i) {
-			data[i] = data1[i];
-		}
-	}
-}
-
-void initprops()
-{
-	if (!COPYSTR || props1 == NULL) {
-		for (int i = 0; i < SIZE(0)/sizeof(float); ++i) {
-			props[i] = i; // ((7*i) % 20 - 10) / 5.0;
-		}
-	} else {
-		for (int i = 0; i < SIZE(0)/sizeof(float); ++i) {
-			props[i] = props1[i];
+		for (int i = 0; i < SIZE(isProp)/sizeof(DTYPE); ++i) {
+			PTR(isProp)[i] = PTR1(isProp)[i];
 		}
 	}
 }
@@ -73,13 +87,23 @@ int update()
 	static int cnt = 0;
 
 	// move each entry in array based on bits of cnt
+	/*
 	float vel; // increment, just as placeholder for properties
-	for (int i = 0; i < SIZE(0)/sizeof(float); ++i) {
+	for (int i = 0; i < SIZE(0)/sizeof(DTYPE); ++i) {
 		vel = 0.02 * ((cnt & (1 << (i & ((1 << 4) - 1)))) ? 1 : -1);
 		data[i] += vel;
 		vel = vel * 1000000 / UPDPER;
 		props[6*(i/3)+i%3+3] = 1; // (vel - str[1][6*(i/3)+i%3]) * 1000000 / UPDPER; // acceleration
 		props[6*(i/3)+i%3] = vel; // velocity
+	}
+	*/
+
+	for (int i = 0; i < NUMPARS; ++i) {
+		for (int j = 0; j < 3; ++j) {
+			ACC(i, j) = -POS(i, j) * FOURPISQ / OSCPER / OSCPER; // compute acceleration here to avoid initialization
+			VEL(i, j) = VEL(i, j) + DT*ACC(i, j);
+			POS(i, j) = POS(i, j) + DT*VEL(i, j);
+		}
 	}
 
 	++cnt;
@@ -88,23 +112,23 @@ int update()
 		reall();
 	// 	detach(0);
 
+	if (cnt % PRINTPER == 0) {
+		printf("Position:\t(%lf, %lf, %lf)\n", POS(0,0), POS(0,1), POS(0,2));
+		printf("Velocity:\t(%lf, %lf, %lf)\n", VEL(0,0), VEL(0,1), VEL(0,2));
+		printf("Acceleration:\t(%lf, %lf, %lf)\n", ACC(0,0), ACC(0,1), ACC(0,2));
+	}
+
 	return cont; // whether to continue
 }
 
 void reall(int isProp)
 {
 	void *ptr = alloc[isProp]->shm_alloc(SIZE(isProp));
-	if (isProp) {
-		props1 = props;
-		props = (double *) ptr;
-		initprops();
-	} else {
-		data1 = data;
-		data = (float *) ptr;
-		initdata();
-	}
+	PTR1(isProp) = PTR(isProp);
+	PTR(isProp) = (DTYPE *) ptr;
+	initptr(isProp);
 
-	// testing
+	// testing heap allocation
 	if (PTR1(isProp) != NULL) {
 		if (VERBOSE) std::cout << "\tallocating from heap" << std::endl;
 		void *ptr = alloc[isProp]->shm_alloc(10);
@@ -115,10 +139,7 @@ void reall(int isProp)
 
 	// detach from old shm, release semaphore
 	alloc[isProp]->shm_free(PTR1(isProp)); // need not check for null
-	if (isProp)
-		props1 = NULL;
-	else
-		data1 = NULL;
+	PTR1(isProp) = NULL;
 }
 
 void detach(int signal)
@@ -128,7 +149,7 @@ void detach(int signal)
 	std::cin >> c;
 	if (c == 'y') {
 		reall();
-		std::cout << "Data written into memory: " << data[0] << std::endl;
+		std::cout << "Data written into memory: " << PTR(0)[0] << std::endl;
 	} else {
 		printf("\n");
 		cont = false;
@@ -142,9 +163,8 @@ void terminate()
 
 	for (int i = 0; i < 2; ++i) {
 		alloc[i]->shm_free(PTR(i));
+		PTR(i) = NULL;
 	}
-	data = NULL;
-	props = NULL;
 
 	std::cout << "rank " << rank << " freed memory" << std::endl;
 
@@ -217,7 +237,7 @@ int main(int argc, char *argv[])
 
 	// BARRIER();
 
-	std::cout << "Data written into memory: " << data[0] << std::endl;
+	std::cout << "Data written into memory: " << PTR(0)[0] << std::endl;
 
 	std::cin.get();
 

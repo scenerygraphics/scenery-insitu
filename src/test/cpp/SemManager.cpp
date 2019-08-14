@@ -81,7 +81,7 @@ void SemManager::wait(int keyNo, int semNo, int value)
 	if (value == 0) {
 		semops[0].sem_num = semNo;
 		semops[0].sem_op  = 0;
-		semops[0].sem_flg = 0;
+		semops[0].sem_flg = 0; // TODO possibly pass SEM_UNDO here in consumer
 		if (semop(semids[keyNo], semops, 1) == -1) {
 			perror("semop"); std::exit(1);
 		}
