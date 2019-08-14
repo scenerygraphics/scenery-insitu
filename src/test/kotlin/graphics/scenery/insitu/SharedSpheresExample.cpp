@@ -13,7 +13,7 @@ using namespace std;
 #define PNAME(isProp) ((isProp) ? "/home" : "/tmp")
 
 #define DTYPE double
-#define GRIDLEN 10
+#define GRIDLEN 11
 #define NUMPARS (GRIDLEN*GRIDLEN*GRIDLEN)
 #define SIZE(i) (i ? 6*NUMPARS*sizeof(DTYPE) : 3*NUMPARS*sizeof(DTYPE))
 #define VERBOSE false

@@ -125,7 +125,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
             // s.material.diffuse = color.times(scale) // color.times(.8.toFloat()).plus(direction.times(.2.toFloat()))
             // s.material.diffuse = direction
-            s.material.diffuse = color.times(.8f).plus(direction.times(.2f).times(scale)
+            s.material.diffuse = color.times(.5f).plus(direction.times(.5f)).times(scale)
         }
     }
 

@@ -21,8 +21,8 @@
 #define PRINTPER 7777
 
 // simulate simple harmonic oscillator
-#define GRIDLEN 10
-#define CENTER(i) (1.5*(2*i-GRIDLEN)/GRIDLEN)
+#define GRIDLEN 11
+#define CENTER(i) (1.5*(2*i-(GRIDLEN-1))/(GRIDLEN-1))
 #define NUMPARS (GRIDLEN*GRIDLEN*GRIDLEN)
 #define SIZE(i) (i ? 6*NUMPARS*sizeof(DTYPE) : 3*NUMPARS*sizeof(DTYPE))
 #define OSCPER .05 // period of oscillation in seconds
