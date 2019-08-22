@@ -136,18 +136,21 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             if (max < speed)
                 max = speed
 
-            val avg = (max - min) / 2 // sum / count
+            val avg = sum / count
             val std = (max - min) / sqrt(12f) // simplistic assumption of uniform distribution
 
             // instead of just scaling speed linearly, apply sigmoid to get sharper blue and red
             val a = 50f // to scale sigmoid function applied to disp, the larger the value the sharper the contrast
-            val disp = (speed - avg) / (max - min) * 2*a // rescaling speed, between -a and a (just for this particular simulation; otherwise need to know average and stddev)
-            val scale = disp / sqrt(1+disp*disp) * sqrt(1+a*a) / a // some sigmoidal scale factor, between -1 and 1
+            // val disp = (speed - avg) / (max - min) * 2*a // rescaling speed, between -a and a (just for this particular simulation; otherwise need to know average and stddev)
+            val disp = (speed - avg) / std * a // speed / avg * a
+            val mindisp = (min - avg) / std * a
+            val scale = disp / sqrt(1+disp*disp) - mindisp / sqrt(1+mindisp*mindisp) // * sqrt(1+a*a) / a // some sigmoidal scale factor, between -1 and 1, average 0
 
             // s.material.diffuse = color.times(scale) // color.times(.8.toFloat()).plus(direction.times(.2.toFloat()))
             // s.material.diffuse = direction
             // s.material.diffuse = color.times(.5f).plus(direction.times(.5f)).times(scale)
-            s.material.diffuse = GLVector(127 * (1 + scale), 0f, 127 * (1 - scale)) // blue for low speed, red for high
+            // s.material.diffuse = GLVector(127 * (1 + scale), 0f, 127 * (1 - scale)) // blue for low speed, red for high
+            s.material.diffuse = GLVector(255 * scale, 0f, 255 * (1 - scale)) // blue for low speed, red for high
         }
     }
 
@@ -222,7 +225,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val a = this.sayHello()
             log.info(a.toString())
 
-            shmRank = rank + 1 // later assign it based on myrank (should not be zero)
+            shmRank = rank // later assign it based on myrank (should not be zero)
             // MPI.COMM_WORLD.barrier() // wait for producer to allocate its memory
             this.getData()
             this.getProps()

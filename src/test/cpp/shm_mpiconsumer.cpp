@@ -16,7 +16,7 @@
 #define PRINTPER 1001
 #define VERBOSE false
 #define COPYSTR true
-#define SHMRANK (rank+1)
+#define SHMRANK (rank)
 #define SYNCHRONIZE true
 
 #define BARRIER() do { if (SYNCHRONIZE) MPI_Barrier(MPI_COMM_WORLD); } while (0)

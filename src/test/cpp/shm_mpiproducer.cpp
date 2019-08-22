@@ -14,7 +14,7 @@
 #define DTYPE double
 #define VERBOSE false
 #define COPYSTR true
-#define SHMRANK (rank+1)
+#define SHMRANK (rank)
 #define SYNCHRONIZE true
 #define UPDPER 50
 #define REALLPER 1
