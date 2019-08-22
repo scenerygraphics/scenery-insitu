@@ -1,39 +1,4 @@
-#include <iostream>
-#include <unistd.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <errno.h>
-#include <inttypes.h>
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <netinet/in.h>
-
-#include "../SemManager.hpp"
-
-// generate sizes in logarithmic scale, in bytes
-#define MINSIZE 1024
-#define SIZELEN 12
-#define SIZE(i) (MINSIZE * (1 << (i)))
-#define MAXSIZE SIZE(SIZELEN)
-#define ARRSIZE (MAXSIZE/sizeof(float))
-
-#define ITERS 1
-
-#define RANK 12
-#define NAME "/tmp/mmap_test"
-#define PORT 8080
-#define VERBOSE true
-
-#define INIT fifo ## _init
-#define SEND fifo ## _send
-#define TERM fifo ## _term
+#include "test_params.hpp"
 
 // semaphore communication
 
@@ -42,6 +7,13 @@
 #define CONSEM 0
 #define OWNSEM (ISPROD ? PROSEM : CONSEM)
 #define OPPSEM (ISPROD ? CONSEM : PROSEM)
+
+#if LONE
+
+#define WAIT() EMPTY()
+#define SIGNAL() EMPTY()
+
+#else
 
 // wait for opposite semaphore to be decremented
 #define WAIT() do { 		\
@@ -58,51 +30,7 @@
 	if (VERBOSE) std::cout << "decremented " << OWNSEM << std::endl; \
 } while (0)
 
-// test methods
-
-void sem_init();
-void sem_send();
-void sem_term();
-
-void heap_init();
-void heap_send();
-void heap_term();
-
-void sysv_init();
-void sysv_send();
-void sysv_term();
-
-void mmap_init();
-void mmap_send();
-void mmap_term();
-
-void fifo_init();
-void fifo_send();
-void fifo_term();
-
-void tcp_init();
-void tcp_send();
-void tcp_term();
-
-#define EMPTY() do {} while (0)
-
-// time measurement in milliseconds
-
-long start, stop;
-struct timespec tspec;
-
-#define GETTIME(var) do { 									\
-	if (clock_gettime( CLOCK_REALTIME, &tspec) < 0) {		\
-		perror("clock_gettime"); exit(1);					\
-	}														\
-	var = tspec.tv_sec * 1000000L + tspec.tv_nsec / 1000;	\
-} while (0)
-
-#define START() GETTIME(start)
-#define STOP()  GETTIME(stop)
-
-#define TOTTIME() (stop - start)
-#define AVGTIME() (TOTTIME() / ITERS)
+#endif
 
 // global variables
 
@@ -129,9 +57,15 @@ int main()
 	}
 	std::cout << "Initialized data" << std::endl;
 
+	// wait for consumer to start
+	std::cout << "Waiting for consumer" << std::endl;
+	SIGNAL(); // signal you are open
+	WAIT();   // wait for consumer to attach
+
+	std::cout << "Initializing resource" << std::endl;
+
 	// initialize channel
 	START();
-
 	INIT();   // create channel
 	SIGNAL(); // signal consumer that channel created
 	WAIT();   // wait for consumer to attach
@@ -152,9 +86,13 @@ int main()
 		START();
 
 		for (j = 0; j < ITERS; j++) {
+			// if (VERBOSE) printf("sending\n");
 			SEND();   // send message
-			SIGNAL(); // alert consumer to receive message
+			// if (VERBOSE) printf("sent\n");
 			WAIT();   // wait till consumer processes message
+
+			if (j % COMPINT == 0)
+				compute(); // perform compute-intensive operation after each iteration
 		}
 
 		// record end time
@@ -194,6 +132,20 @@ void sem_send()
 	// transfer memory etc.
 	// WAIT(); // wait for consumer to increment 0th semaphore
 	// sem.wait(0, 0); // for protection, to move in tandem with consumer
+
+	size_t offset = 0, remaining = x, res;
+	size_t limit = PARTITION ? PIPESIZE : x;
+	while (remaining) {
+		res = MIN(limit, remaining);
+		// memcpy(ptr+offset/sizeof(float), arr+offset/sizeof(float), res);
+		offset += res;
+		remaining -= res;
+
+		SIGNAL(); // alert consumer for new data (like write wakes up read call)
+		if (remaining) {
+			WAIT(); // wait for consumer to clean up (like write waits for space in buffer)
+		}
+	}
 }
 
 void sem_term()
@@ -207,7 +159,7 @@ void sem_term()
 
 void heap_init()
 {
-	ptr = (float *) malloc(x); // acquire pointer
+	ptr = (float *) malloc(MAXSIZE); // acquire pointer
 }
 
 void heap_send()
@@ -239,7 +191,21 @@ void sysv_init()
 void sysv_send()
 {
 	// send data
-	memcpy(ptr, arr, x);
+	// memcpy(ptr, arr, x);
+
+	// for a fair comparison, loop here as well as in fifo_send
+	size_t offset = 0, remaining = x, res;
+	size_t limit = PARTITION ? PIPESIZE : x;
+	while (remaining) {
+		memcpy(ptr+offset/sizeof(float), arr+offset/sizeof(float), res = MIN(limit, remaining));
+		offset += res;
+		remaining -= res;
+
+		SIGNAL(); // alert consumer for new data (like write wakes up read call)
+		if (remaining) {
+			WAIT(); // wait for consumer to clean up (like write waits for space in buffer)
+		}
+	}
 }
 
 void sysv_term()
@@ -258,7 +224,7 @@ void sysv_term()
 void mmap_init()
 {
 	// acquire id
-	fd = shm_open(NAME, O_CREAT | O_EXCL | O_RDWR, 0666);
+	fd = shm_open(NAME, O_CREAT | O_RDWR, 0666);
 	if (fd < 0) { perror("shm_open"); exit(1); }
 	ftruncate(fd, MAXSIZE);
 
@@ -266,15 +232,26 @@ void mmap_init()
 	ptr = (float *) mmap(NULL, MAXSIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (ptr == MAP_FAILED) { perror("mmap"); exit(1); }
 	close(fd);
-
-	// signal consumer
 }
 
 void mmap_send()
 {
-
 	// send data
-	memcpy(ptr, arr, x);
+	// memcpy(ptr, arr, x);
+
+	// for a fair comparison, loop here as well as in fifo_send
+	size_t offset = 0, remaining = x, res;
+	size_t limit = PARTITION ? PIPESIZE : x;
+	while (remaining) {
+		memcpy(ptr+offset/sizeof(float), arr+offset/sizeof(float), res = MIN(limit, remaining));
+		offset += res;
+		remaining -= res;
+
+		SIGNAL(); // alert consumer for new data (like write wakes up read call)
+		if (remaining) {
+			WAIT(); // wait for consumer to clean up (like write waits for space in buffer)
+		}
+	}
 }
 
 void mmap_term()
@@ -294,25 +271,41 @@ void mmap_term()
 
 void fifo_init()
 {
+	// create fifo
+
+	remove(fifoname);
 	if (mkfifo(fifoname, 0666) != 0) {
 		perror("mkfifo"); exit(1);
 	}
 
 	if (VERBOSE) std::cout << "created fifo" << std::endl;
 
+
+	// signal consumer to open, wait until it opens
+	SIGNAL();
+	WAIT();
+
 	// open pipe
-	if ((fd = open(fifoname, O_RDWR)) < 0) {
+	if ((fd = open(fifoname, O_WRONLY)) < 0) {
 		perror("open"); exit(1);
 	}
+	// fcntl(fd, F_SETPIPE_SZ, MAXSIZE);
 
 	if (VERBOSE) std::cout << "opened fifo" << std::endl;
 }
 
 void fifo_send()
 {
-	// send data directly
-	if (write(fd, arr, x) == -1) {
-		perror("write"); exit(1);
+	// for large data, write either blocks or reads only 8192 at a time
+	// loop until x bytes read
+	size_t offset = 0, remaining = x, res;
+	while (remaining) {
+		res = write(fd, arr+offset/sizeof(float), MIN(PIPESIZE, remaining));
+		if (res == -1) {
+			perror("write"); exit(1);
+		}
+		offset += res;
+		remaining -= res;
 	}
 }
 
@@ -369,4 +362,62 @@ void tcp_send()
 void tcp_term()
 {
 	close(id);
+}
+
+// compute
+
+#define MATSIZ 100
+
+// compute-intensive matrix multiplication
+void compute()
+{
+#if COMPUTE
+
+	static float **a = new float*[MATSIZ],
+		  		 **b = new float*[MATSIZ],
+		  		 **c = new float*[MATSIZ];
+	static bool initialized = false;
+
+	if (!initialized) {
+		for (int i = 0; i < MATSIZ; ++i) {
+			a[i] = new float[MATSIZ];
+			b[i] = new float[MATSIZ];
+			c[i] = new float[MATSIZ];
+		}
+
+		// initialize matrices arbitrarily
+		float val = 0;
+		for (int i = 0; i < MATSIZ; ++i) {
+			for (int j = 0; j < MATSIZ; ++j) {
+				a[i][j] = val = val * (i+1) + (j+1);
+				b[i][j] = val = val / (j+1) - (i+1);
+			}
+		}
+
+		initialized = true;
+	}
+
+	// multiply matrices
+	for (int i = 0; i < MATSIZ; ++i) {
+		for (int j = 0; j < MATSIZ; ++j) {
+			c[i][j] = 0;
+			for (int k = 0; k < MATSIZ; ++k)
+				c[i][j] += a[i][k] * b[k][j];
+		}
+	}
+
+	// TODO here, try something that uses the same array (e.g. iterate x -> 3x + 1 to ptr[0] until you reach the same value) to avoid cache misses
+#endif
+
+	/*
+	for (int i = 0; i < MATSIZ; ++i) {
+		delete[] a[i];
+		delete[] b[i];
+		delete[] c[i];
+	}
+
+	delete[] a;
+	delete[] b;
+	delete[] c;
+	*/
 }

@@ -1,40 +1,4 @@
-#include <iostream>
-#include <unistd.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <errno.h>
-#include <inttypes.h>
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-
-#include "../SemManager.hpp"
-
-// generate sizes in logarithmic scale, in bytes
-#define MINSIZE 1024
-#define SIZELEN 12
-#define SIZE(i) (MINSIZE * (1 << (i)))
-#define MAXSIZE SIZE(SIZELEN)
-#define ARRSIZE (MAXSIZE/sizeof(float))
-
-#define ITERS 1
-
-#define RANK 12
-#define NAME "test"
-#define PORT 8080
-#define VERBOSE true
-
-#define INIT fifo ## _init
-#define RECV fifo ## _recv
-#define TERM fifo ## _term
+#include "test_params.hpp"
 
 // semaphore communication
 
@@ -58,53 +22,6 @@
 	sem.decr(0, OWNSEM);	\
 	if (VERBOSE) std::cout << "decremented " << OWNSEM << std::endl; \
 } while (0)
-
-// test methods
-
-void sem_init();
-void sem_recv();
-void sem_term();
-
-void heap_init();
-void heap_recv();
-void heap_term();
-
-void sysv_init();
-void sysv_recv();
-void sysv_term();
-
-void mmap_init();
-void mmap_recv();
-void mmap_term();
-
-void fifo_init();
-void fifo_recv();
-void fifo_term();
-
-void tcp_init();
-void tcp_recv();
-void tcp_term();
-
-#define EMPTY() do {} while (0)
-
-// time measurement in milliseconds
-
-long start, stop;
-struct timespec tspec;
-
-#define GETTIME(var) do { 									\
-	if (clock_gettime( CLOCK_REALTIME, &tspec) < 0) {		\
-		perror("clock_gettime"); exit(1);					\
-	}														\
-	var = tspec.tv_sec * 1000000L + tspec.tv_nsec / 1000;	\
-} while (0)
-
-#define START() GETTIME(start)
-#define STOP()  GETTIME(stop)
-
-#define TOTTIME() (stop - start)
-#define AVGTIME() (TOTTIME() / ITERS)
-
 // global variables
 
 int i, j, k;
@@ -120,6 +37,11 @@ int main()
 	// create random data
 	std::cout << "Array size: " << ARRSIZE << std::endl;
 	arr = new float[ARRSIZE];
+
+	// signal producer you are ready
+	WAIT();
+	SIGNAL();
+	std::cout << "Signaled producer" << std::endl;
 
 	// initialize channel
 	START();
@@ -142,8 +64,9 @@ int main()
 		START();
 
 		for (j = 0; j < ITERS; j++) {
-			WAIT();   // wait for producer to send data
+			if (VERBOSE) printf("receiving\n");
 			RECV();   // receive data
+			if (VERBOSE) printf("received\n");
 			SIGNAL(); // signal producer that you received data
 		}
 
@@ -181,6 +104,20 @@ void sem_recv()
 	// WAIT();   // wait for producer to increment 1st semaphore
 	// receive data etc.
 	// SIGNAL(); // signal producer to decrement 0th semaphore
+
+	size_t offset = 0, remaining = x, res;
+	size_t limit = PARTITION ? PIPESIZE : x;
+	while (remaining) {
+		WAIT(); // wait for new data (like read waits for write)
+		res = MIN(limit, remaining);
+		// memcpy(arr+offset/sizeof(float), ptr+offset/sizeof(float), res);
+		offset += res;
+		remaining -= res;
+
+		if (remaining) {
+			SIGNAL(); // alert producer it can write again (like read empties buffer)
+		}
+	}
 }
 
 void sem_term()
@@ -194,14 +131,14 @@ void sem_term()
 
 void heap_init()
 {
-	ptr = (float *) malloc(x); // acquire pointer
+	ptr = (float *) malloc(MAXSIZE); // acquire pointer
 }
 
 void heap_recv()
 {
-	ptr = (float *) malloc(x); // acquire pointer
+	// ptr = (float *) malloc(x); // acquire pointer
 	memcpy(arr, ptr, x); // read data
-	free(ptr); // release pointer
+	// free(ptr); // release pointer
 }
 
 void heap_term()
@@ -228,14 +165,22 @@ void sysv_init()
 
 void sysv_recv()
 {
-	// wait for producer to write
-	// WAIT();
-
 	// receive data
-	memcpy(arr, ptr, x);
+	// memcpy(arr, ptr, x);
 
-	// signal producer that you have received
-	// SIGNAL();
+	// for a fair comparison, loop here as well as in fifo_recv
+	size_t offset = 0, remaining = x, res;
+	size_t limit = PARTITION ? PIPESIZE : x;
+	while (remaining) {
+		WAIT(); // wait for new data (like read waits for write)
+		memcpy(arr+offset/sizeof(float), ptr+offset/sizeof(float), res = MIN(limit, remaining));
+		offset += res;
+		remaining -= res;
+
+		if (remaining) {
+			SIGNAL(); // alert producer it can write again (like read empties buffer)
+		}
+	}
 }
 
 void sysv_term()
@@ -259,7 +204,7 @@ void mmap_init()
 	if (fd < 0) { perror("shm_open"); exit(1); }
 	ftruncate(fd, x);
 
-	ptr = (float *) mmap(NULL, x, PROT_READ, MAP_SHARED, fd, 0);
+	ptr = (float *) mmap(NULL, MAXSIZE, PROT_READ, MAP_SHARED, fd, 0);
 	if (ptr == MAP_FAILED) { perror("mmap"); exit(1); }
 	close(fd);
 
@@ -268,7 +213,20 @@ void mmap_init()
 
 void mmap_recv()
 {
-	memcpy(arr, ptr, x);
+	// memcpy(arr, ptr, x);
+
+    size_t offset = 0, remaining = x, res;
+	size_t limit = PARTITION ? PIPESIZE : x;
+	while (remaining) {
+		WAIT(); // wait for new data (like read waits for write)
+		memcpy(arr+offset/sizeof(float), ptr+offset/sizeof(float), res = MIN(limit, remaining));
+		offset += res;
+		remaining -= res;
+
+		if (remaining) {
+			SIGNAL(); // alert producer it can write again (like read empties buffer)
+		}
+	}
 }
 
 void mmap_term()
@@ -285,18 +243,43 @@ void mmap_term()
 
 void fifo_init()
 {
+	SIGNAL(); // signal producer to open fifo
+
 	// potentially wait for file to be created
+	if (VERBOSE) printf("opening fifo\n");
 
 	// open pipe
 	if ((fd = open(fifoname, O_RDONLY)) < 0) {
 		perror("open"); exit(1);
 	}
+
+	if (VERBOSE) printf("opened fifo\n");
+
+	WAIT(); // wait until producer opens
 }
 
 void fifo_recv()
 {
+	/*
 	// receive data directly
-	read(fd, arr, x);
+	int size = read(fd, arr, x);
+	printf("%d\n", size);
+	*/
+
+	// loop until x bytes read
+	size_t offset = 0, remaining = x, res;
+	while (remaining) {
+		res = read(fd, arr+offset/sizeof(float), MIN(PIPESIZE, remaining));
+		// if (errno == EAGAIN)
+		// 	res = 0; // try again
+		if (res == -1) {
+			perror("read"); exit(1);
+		}
+		offset += res;
+		remaining -= res;
+		// if (VERBOSE && res)
+		// 	printf("read %lu bytes, total %lu, remaining %lu\n", res, offset, remaining);
+	}
 }
 
 void fifo_term()
