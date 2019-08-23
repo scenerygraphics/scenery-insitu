@@ -1,5 +1,6 @@
 package graphics.scenery.insitu
 
+import cleargl.GLTypeEnum
 import cleargl.GLVector
 import mpi.MPIException
 import mpi.MPI
@@ -45,64 +46,127 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         renderer = hub.add(SceneryElement.Renderer,
                 Renderer.createRenderer(hub, applicationName, scene, 512, 512))
 
-        spheres = ArrayList()
-        data.rewind()
-        while (data.remaining() > 3) {
-            val s = Sphere(Random.randomFromRange(0.04f, 0.02f), 10)
-            val x = data.get().toFloat()
-            val y = data.get().toFloat()
-            val z = data.get().toFloat()
-            // println("x is $x y is $y z is $z")
-            s.position = GLVector(x, y, z)
-            color = s.material.diffuse
-            scene.addChild(s)
-            spheres.add(s)
+        val r = renderer as Renderer
+        r.activateParallelRendering()
+
+        if(MPI.COMM_WORLD.rank != 0) {
+
+            spheres = ArrayList()
+            data.rewind()
+            while (data.remaining() > 3) {
+                val s = Sphere(Random.randomFromRange(0.04f, 0.02f), 10)
+                val x = data.get().toFloat()
+                val y = data.get().toFloat()
+                val z = data.get().toFloat()
+                // println("x is $x y is $y z is $z")
+                s.position = GLVector(x, y, z)
+                color = s.material.diffuse
+                scene.addChild(s)
+                spheres.add(s)
+            }
+
+            val box = Box(GLVector(10.0f, 10.0f, 10.0f), insideNormals = true)
+            box.material.diffuse = GLVector(1.0f, 1.0f, 1.0f)
+            box.material.cullingMode = Material.CullingMode.Front
+            scene.addChild(box)
+
+            val light = PointLight(radius = 15.0f)
+            light.position = GLVector(0.0f, 0.0f, 2.0f)
+            light.intensity = 100.0f
+            light.emissionColor = GLVector(1.0f, 1.0f, 1.0f)
+            scene.addChild(light)
+
+            val cam: Camera = DetachedHeadCamera()
+            with(cam) {
+                position = GLVector(0.0f, 0.0f, 5.0f)
+                perspectiveCamera(50.0f, 512.0f, 512.0f)
+                active = true
+
+                scene.addChild(this)
+            }
+
+            fixedRateTimer(initialDelay = 5, period = 5) {
+                lock.lock()
+                if (cont)
+                    update()
+                else
+                    cancel()
+                lock.unlock()
+            }
+
+            // execute getResult again only after it has finished waiting
+            timer(initialDelay = 10, period = 10) {
+                if (cont) // may also synchronize cont with stop()
+                    getData()
+                else
+                    cancel()
+            }
+
+            // execute getResult again only after it has finished waiting
+            timer(initialDelay = 10, period = 10) {
+                if (cont) // may also synchronize cont with stop()
+                    getProps()
+                else
+                    cancel()
+            }
         }
 
-        val box = Box(GLVector(10.0f, 10.0f, 10.0f), insideNormals = true)
-        box.material.diffuse = GLVector(1.0f, 1.0f, 1.0f)
-        box.material.cullingMode = Material.CullingMode.Front
-        scene.addChild(box)
+        if(MPI.COMM_WORLD.rank == 0) {
+            val fsb = NaiveCompositor()
+            // fsb.material = ShaderMaterial.fromFiles("depthCombiner.vert", "depthCombiner.frag")
+            scene.addChild(fsb)
 
-        val light = PointLight(radius = 15.0f)
-        light.position = GLVector(0.0f, 0.0f, 2.0f)
-        light.intensity = 100.0f
-        light.emissionColor = GLVector(1.0f, 1.0f, 1.0f)
-        scene.addChild(light)
+            val light = PointLight(radius = 15.0f)
+            light.position = GLVector(0.0f, 0.0f, 2.0f)
+            light.intensity = 10.0f
+            light.emissionColor = GLVector(1.0f, 1.0f, 1.0f)
+            scene.addChild(light)
 
-        val cam: Camera = DetachedHeadCamera()
-        with(cam) {
-            position = GLVector(0.0f, 0.0f, 5.0f)
-            perspectiveCamera(50.0f, 512.0f, 512.0f)
-            active = true
+            val cam: Camera = DetachedHeadCamera()
+            with(cam) {
+                position = GLVector(0.0f, 0.0f, 5.0f)
+                perspectiveCamera(50.0f, 512.0f, 512.0f)
+                active = true
 
-            scene.addChild(this)
+                scene.addChild(this)
+            }
+
+            thread {
+                while(true) {
+                    val image = ByteArray(512 * 512 * 3 + 512 * 512 * 4)
+
+//                    val result = BufferedImage(512, 512, BufferedImage.TYPE_3BYTE_BGR)
+//                    result.data = Raster.createRaster(result.getSampleModel(), DataBufferByte(image.sliceArray(0..512*512*3), 512 * 512 * 3), Point() )
+
+//                    ImageIO.write(result, "png", File("/Users/argupta/result1.png"))
+//                    FileOutputStream(File("/Users/argupta/depth1.raw")).write(image, 512 * 512 * 3, 512 * 512 * 4)
+//                    result.data = Raster.createRaster(result.getSampleModel(), DataBufferByte(image.sliceArray(0..512*512*3), 512 * 512 * 3), Point() )
+
+//                    ImageIO.write(result, "png", File("/Users/argupta/result2.png"))
+//                    FileOutputStream(File("/Users/argupta/depth2.raw")).write(image, 512 * 512 * 3, 512 * 512 * 4)
+//                fsb.material.textures["color1"] = "fromBuffer:color1"
+//                fsb.material.transferTextures["color1"] = GenericTexture("whatever", contents = whatComesOverTheNetwork)
+
+                    val dimensions = GLVector()
+
+                    for(rank in 1 until MPI.COMM_WORLD.size) {
+                        MPI.COMM_WORLD.recv(image, 512 * 512 * 3 + 512 * 512 * 4, MPI.BYTE, rank, 0)
+                        logger.debug("received from process $rank")
+                        val colorName = "ColorBuffer$rank"
+                        val depthName = "DepthBuffer$rank"
+                        val color = ByteBuffer.wrap(image.sliceArray(0..512*512*3))
+                        val depth = ByteBuffer.wrap(image.sliceArray(512*512*3 until image.size))
+                        fsb.material.textures[colorName] = "fromBuffer:$colorName"
+                        fsb.material.transferTextures[colorName] = GenericTexture("whatever", GLVector(512.0f, 512.0f, 1.0f), 3, contents = color)
+
+                        fsb.material.textures[depthName] = "fromBuffer:$depthName"
+                        fsb.material.transferTextures[depthName] = GenericTexture("whatever", GLVector(512.0f, 512.0f, 1.0f), 1, type = GLTypeEnum.Float, contents = depth)
+                        fsb.material.needsTextureReload = true
+                    }
+                }
+            }
         }
 
-        fixedRateTimer(initialDelay = 5, period = 5) {
-            lock.lock()
-            if (cont)
-                update()
-            else
-                cancel()
-            lock.unlock()
-        }
-
-        // execute getResult again only after it has finished waiting
-        timer(initialDelay = 10, period = 10) {
-            if (cont) // may also synchronize cont with stop()
-                getData()
-            else
-                cancel()
-        }
-
-        // execute getResult again only after it has finished waiting
-        timer(initialDelay = 10, period = 10) {
-            if (cont) // may also synchronize cont with stop()
-                getProps()
-            else
-                cancel()
-        }
     }
 
     private fun update() {
@@ -140,7 +204,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             val std = (max - min) / sqrt(12f) // simplistic assumption of uniform distribution
 
             // instead of just scaling speed linearly, apply sigmoid to get sharper blue and red
-            val a = 50f // to scale sigmoid function applied to disp, the larger the value the sharper the contrast
+            val a = 5f // to scale sigmoid function applied to disp, the larger the value the sharper the contrast
             // val disp = (speed - avg) / (max - min) * 2*a // rescaling speed, between -a and a (just for this particular simulation; otherwise need to know average and stddev)
             val disp = (speed - avg) / std * a // speed / avg * a
             val mindisp = (min - avg) / std * a
@@ -216,35 +280,37 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         else
             println("Hello world from $pName rank $rank of $size")
 
-
-        System.loadLibrary("shmSpheresTrial")
         val log = LoggerFactory.getLogger("JavaMPI")
-        log.info("Hi, I am Aryaman's shared memory example")
 
-        try {
-            val a = this.sayHello()
-            log.info(a.toString())
+        if(MPI.COMM_WORLD.rank != 0) {
+            System.loadLibrary("shmSpheresTrial")
+            log.info("Hi, I am Aryaman's shared memory example")
 
-            shmRank = rank // later assign it based on myrank (should not be zero)
-            // MPI.COMM_WORLD.barrier() // wait for producer to allocate its memory
-            this.getData()
-            this.getProps()
-            println(data.remaining())
-            println(props.remaining())
+            try {
+                val a = this.sayHello()
+                log.info(a.toString())
 
-            for (i in 1..30) // while(data.hasRemaining())
-                println(message = "Java says: ${data.get()} (${data.remaining()})")
-            data.rewind()
-            println()
-            for (i in 1..30) // while(props.hasRemaining())
-                println(message = "Java says: ${props.get()} (${props.remaining()})")
-            props.rewind()
+                shmRank = rank // later assign it based on myrank (should not be zero)
+                // MPI.COMM_WORLD.barrier() // wait for producer to allocate its memory
+                this.getData()
+                this.getProps()
+                println(data.remaining())
+                println(props.remaining())
 
-            //this.deleteShm()
+                for (i in 1..30) // while(data.hasRemaining())
+                    println(message = "Java says: ${data.get()} (${data.remaining()})")
+                data.rewind()
+                println()
+                for (i in 1..30) // while(props.hasRemaining())
+                    println(message = "Java says: ${props.get()} (${props.remaining()})")
+                props.rewind()
+
+                //this.deleteShm()
 
 
-        } catch (e: MPIException) {
-            e.printStackTrace()
+            } catch (e: MPIException) {
+                e.printStackTrace()
+            }
         }
         super.main()
         log.info("Done here.")
