@@ -146,7 +146,7 @@
         <dependency>
             <groupId>graphics.scenery</groupId>
             <artifactId>scenery</artifactId>
-            <version>0.7.0-beta-4-SNAPSHOT</version>
+            <version>0.7.0-beta-6-SNAPSHOT</version>
         </dependency>
 
         <dependency>
