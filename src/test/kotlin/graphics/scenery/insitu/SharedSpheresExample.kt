@@ -290,7 +290,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
                 val a = this.sayHello()
                 log.info(a.toString())
 
-                shmRank = rank // later assign it based on myrank (should not be zero)
+                shmRank = rank - 1// later assign it based on myrank (should not be zero)
                 // MPI.COMM_WORLD.barrier() // wait for producer to allocate its memory
                 this.getData()
                 this.getProps()
