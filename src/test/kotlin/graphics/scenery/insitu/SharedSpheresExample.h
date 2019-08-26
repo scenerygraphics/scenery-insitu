@@ -21,7 +21,7 @@ JNIEXPORT int JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_sayHello
  * Signature: ()Ljava/nio/ByteBuffer;
  */
 JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getSimData
-  (JNIEnv *, jobject, int);
+  (JNIEnv *, jobject, jboolean, int);
 
 /*
  * Class:     SharedSpheresExample
@@ -29,6 +29,14 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
  * Signature: ()V
  */
 JNIEXPORT void JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_deleteShm
+  (JNIEnv *, jobject, jboolean);
+
+/*
+ * Class:     SharedSpheresExample
+ * Method:    deleteShm
+ * Signature: ()V
+ */
+JNIEXPORT void JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_terminate
   (JNIEnv *, jobject);
 
 #ifdef __cplusplus
