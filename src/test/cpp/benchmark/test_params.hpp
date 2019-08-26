@@ -20,29 +20,31 @@
 
 // generate sizes in logarithmic scale, in bytes
 #define MINSIZE 1024
-#define SIZELEN 22
+#define SIZELEN 20 // 22
 #define SIZE(i) ((size_t) MINSIZE * (1 << (i)))
-#define MAXSIZE SIZE(SIZELEN)
+#define MAXSIZE SIZE(SIZELEN-1)
 #define ARRSIZE (MAXSIZE/sizeof(float))
 
 #define PIPESIZE 8192 // maximum pipe size
+#define SOCKSIZE 524288
 #define MIN(x,y) ((x) < (y) ? (x) : (y))
 
-#define ITERS 2000
+#define ITERS 1000
 #define COMPINT 10 // call compute every 10th iteration
 
 #define RANK 12
 #define NAME "/tmp/test.mmap"
 #define PORT 8080
 #define VERBOSE false
-#define COMPUTE true
-#define LONE false // whether to run producer alone
+#define COMPUTE false
+#define LONE true // whether to run producer alone
 #define PARTITION false // whether to break up data sent into smaller pieces (for sysv and mmap)
+#define INITONCE true // whether to initialize memory in the beginning or at each iteration
 
-#define INIT mmap ## _init // create resource in beginning before other side joins
-#define SEND mmap ## _send // send data
-#define RECV mmap ## _recv // receive data
-#define TERM mmap ## _term // delete resource
+#define INIT heap ## _init // create resource in beginning before other side joins
+#define SEND heap ## _send // send data
+#define RECV heap ## _recv // receive data
+#define TERM heap ## _term // delete resource
 
 // test methods
 
