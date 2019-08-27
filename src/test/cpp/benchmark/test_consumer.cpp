@@ -116,6 +116,10 @@ void sem_init()
 
 void sem_recv()
 {
+#if BUSYWAIT
+	WAIT(); // only to subtract from heap_recv
+
+#else
 	// WAIT();   // wait for producer to increment 1st semaphore
 	// receive data etc.
 	// SIGNAL(); // signal producer to decrement 0th semaphore
@@ -133,6 +137,7 @@ void sem_recv()
 			SIGNAL(); // alert producer it can write again (like read empties buffer)
 		}
 	}
+#endif
 }
 
 void sem_term()
@@ -154,6 +159,9 @@ void heap_init()
 
 void heap_recv()
 {
+#if BUSYWAIT
+	WAIT();
+#else
 	// memcpy(arr, ptr, x); // read data
 
 	size_t offset = 0, remaining = x, res;
@@ -168,6 +176,7 @@ void heap_recv()
 			SIGNAL(); // alert producer it can write again (like read empties buffer)
 		}
 	}
+#endif
 }
 
 void heap_term()
@@ -195,6 +204,17 @@ void sysv_init()
 
 void sysv_recv()
 {
+#if BUSYWAIT
+	// loop until value read changes
+	static float oldval = 0;
+	static size_t oldlen = 0;
+
+	size_t len = x/sizeof(float);
+	if (oldlen == len)
+		while (oldval == ptr[len-1]) // wait for last value to change when in the middle of iteration
+			;
+	oldlen = len; oldval = ptr[len-1]; // set oldlen and oldval directly if starting new iteration
+#else
 	// receive data
 	// memcpy(arr, ptr, x);
 
@@ -211,6 +231,7 @@ void sysv_recv()
 			SIGNAL(); // alert producer it can write again (like read empties buffer)
 		}
 	}
+#endif
 }
 
 void sysv_term()
@@ -247,6 +268,17 @@ void mmap_init()
 
 void mmap_recv()
 {
+#if BUSYWAIT
+	// loop until value read changes
+	static float oldval = 0;
+	static size_t oldlen = 0;
+
+	size_t len = x/sizeof(float);
+	if (oldlen == len)
+		while (oldval == ptr[len-1]) // wait for last value to change when in the middle of iteration
+			;
+	oldlen = len; oldval = ptr[len-1]; // set oldlen and oldval directly if starting new iteration
+#else
 	// memcpy(arr, ptr, x);
 
     size_t offset = 0, remaining = x, res;
@@ -261,6 +293,7 @@ void mmap_recv()
 			SIGNAL(); // alert producer it can write again (like read empties buffer)
 		}
 	}
+#endif
 }
 
 void mmap_term()

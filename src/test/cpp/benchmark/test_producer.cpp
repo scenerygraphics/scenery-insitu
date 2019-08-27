@@ -147,6 +147,9 @@ void sem_init()
 
 void sem_send()
 {
+#if BUSYWAIT
+	SIGNAL(); // to subtract from heap_send
+#else
 	// SIGNAL(); // signal consumer waiting to decrement 1st semaphore
 	// transfer memory etc.
 	// WAIT(); // wait for consumer to increment 0th semaphore
@@ -165,6 +168,7 @@ void sem_send()
 			WAIT(); // wait for consumer to clean up (like write waits for space in buffer)
 		}
 	}
+#endif
 }
 
 void sem_term()
@@ -184,6 +188,12 @@ void heap_init()
 
 void heap_send()
 {
+#if BUSYWAIT
+	// update pointer
+	for (int i = 0; i < x/sizeof(float); ++i)
+    	ptr[i]++;
+	SIGNAL(); // subtract the cost of this by also testing heap_send
+#else
 	// memcpy(ptr, arr, x); // send data
 	size_t offset = 0, remaining = x, res;
 	size_t limit = PARTITION ? SOCKSIZE : x;
@@ -197,6 +207,7 @@ void heap_send()
 			WAIT(); // wait for consumer to clean up (like write waits for space in buffer)
 		}
 	}
+#endif
 }
 
 void heap_term()
@@ -225,6 +236,11 @@ void sysv_init()
 
 void sysv_send()
 {
+#if BUSYWAIT
+	// update data directly
+	for (int i = 0; i < x/sizeof(float); ++i)
+		ptr[i]++;
+#else
 	// send data
 	// memcpy(ptr, arr, x);
 
@@ -241,6 +257,7 @@ void sysv_send()
 			WAIT(); // wait for consumer to clean up (like write waits for space in buffer)
 		}
 	}
+#endif
 }
 
 void sysv_term()
@@ -275,6 +292,11 @@ void mmap_init()
 
 void mmap_send()
 {
+#if BUSYWAIT
+	// update data directly
+	for (int i = 0; i < x/sizeof(float); ++i)
+		ptr[i]++;
+#else
 	// send data
 	// memcpy(ptr, arr, x);
 
@@ -291,6 +313,7 @@ void mmap_send()
 			WAIT(); // wait for consumer to clean up (like write waits for space in buffer)
 		}
 	}
+#endif
 }
 
 void mmap_term()
@@ -340,6 +363,11 @@ void fifo_init()
 
 void fifo_send()
 {
+#if BUSYWAIT
+	// update data before sending
+	for (int i = 0; i < x/sizeof(float); ++i)
+		arr[i]++;
+#endif
 	// for large data, write either blocks or reads only 8192 at a time
 	// loop until x bytes read
 	size_t offset = 0, remaining = x, res;
@@ -404,6 +432,11 @@ void tcp_init()
 
 void tcp_send()
 {
+#if BUSYWAIT
+	// update data before sending
+	for (int i = 0; i < x/sizeof(float); ++i)
+		arr[i]++;
+#endif
 	/*
 	// send data directly
 	if (write(fd, arr, x) == -1) {
@@ -471,7 +504,7 @@ void compute()
 		}
 	}
 
-	// TODO here, try something that uses the same array (e.g. iterate x -> 3x + 1 to ptr[0] until you reach the same value) to avoid cache misses
+	// TODO here try something that uses the same array (e.g. iterate x -> 3x + 1 to ptr[0] until you reach the same value) to avoid cache misses
 #endif
 
 	/*
