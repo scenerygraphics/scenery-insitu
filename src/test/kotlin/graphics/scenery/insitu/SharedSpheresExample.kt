@@ -12,7 +12,6 @@ import java.nio.charset.StandardCharsets;
 import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.numerics.Random
-import org.jruby.java.proxies.`MapJavaProxy$INVOKER$i$default_value_get`
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.*
 import kotlin.math.sqrt
