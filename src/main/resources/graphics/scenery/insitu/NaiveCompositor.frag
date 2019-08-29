@@ -50,7 +50,7 @@ void main()
 {
     vec3 colorMin = vec3(0.0);
 
-    const ivec2 coord = ivec2(Vertex.textureCoord * vec2(512.0, 512.0));
+    const ivec2 coord = ivec2(Vertex.textureCoord * vec2(700.0, 700.0));
     float min = texelFetch(DepthBuffer1, coord, 0).r;
     int rank = 1;
     colorMin = texture(ColorBuffer1, Vertex.textureCoord).rgb;

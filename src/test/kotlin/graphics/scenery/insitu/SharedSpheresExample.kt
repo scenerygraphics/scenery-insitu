@@ -2,6 +2,7 @@ package graphics.scenery.insitu
 
 import cleargl.GLTypeEnum
 import cleargl.GLVector
+import com.jogamp.opengl.math.Quaternion
 import mpi.MPIException
 import mpi.MPI
 import org.junit.Test
@@ -18,6 +19,8 @@ import kotlin.math.sqrt
 import kotlin.system.exitProcess
 
 class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
+
+    val windowSize = 700
 
     // lateinit var buffer: IntBuffer
     lateinit var data: DoubleBuffer
@@ -43,7 +46,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         settings.set("Input.FastMovementSpeed", 1.0f)
 
         renderer = hub.add(SceneryElement.Renderer,
-                Renderer.createRenderer(hub, applicationName, scene, 512, 512))
+                Renderer.createRenderer(hub, applicationName, scene, windowSize, windowSize))
 
         val r = renderer as Renderer
         r.activateParallelRendering()
@@ -65,22 +68,22 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             }
 
             val box = Box(GLVector(10.0f, 10.0f, 10.0f), insideNormals = true)
-            box.material.diffuse = GLVector(1.0f, 1.0f, 1.0f)
+            box.material.diffuse = GLVector(0.3f, 0.3f, 0.3f)
             box.material.cullingMode = Material.CullingMode.Front
             scene.addChild(box)
 
             val light = PointLight(radius = 15.0f)
             light.position = GLVector(0.0f, 0.0f, 2.0f)
-            light.intensity = 10.0f
+            light.intensity = 4.0f
             light.emissionColor = GLVector(1.0f, 1.0f, 1.0f)
             scene.addChild(light)
 
             val cam: Camera = DetachedHeadCamera()
             with(cam) {
-                position = GLVector(0.0f, 0.0f, 5.0f)
+                position = GLVector(0.3513025f, 0.11647624f, 2.3089614f)
                 perspectiveCamera(50.0f, 512.0f, 512.0f)
                 active = true
-
+                cam.rotation = Quaternion(-0.10018345f, 0.009550877f, -9.6172147E-4f, 0.9949227f)
                 scene.addChild(this)
             }
 
@@ -132,7 +135,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
             thread {
                 while(true) {
-                    val image = ByteArray(512 * 512 * 3 + 512 * 512 * 4)
+                    val image = ByteArray(windowSize * windowSize * 3 + windowSize * windowSize * 4)
 
 //                    val result = BufferedImage(512, 512, BufferedImage.TYPE_3BYTE_BGR)
 //                    result.data = Raster.createRaster(result.getSampleModel(), DataBufferByte(image.sliceArray(0..512*512*3), 512 * 512 * 3), Point() )
@@ -149,17 +152,17 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
                     val dimensions = GLVector()
 
                     for(rank in 1 until MPI.COMM_WORLD.size) {
-                        MPI.COMM_WORLD.recv(image, 512 * 512 * 3 + 512 * 512 * 4, MPI.BYTE, rank, 0)
+                        MPI.COMM_WORLD.recv(image, windowSize * windowSize * 3 + windowSize * windowSize * 4, MPI.BYTE, rank, 0)
                         logger.debug("received from process $rank")
                         val colorName = "ColorBuffer$rank"
                         val depthName = "DepthBuffer$rank"
-                        val color = ByteBuffer.wrap(image.sliceArray(0..512*512*3))
-                        val depth = ByteBuffer.wrap(image.sliceArray(512*512*3 until image.size))
+                        val color = ByteBuffer.wrap(image.sliceArray(0..windowSize*windowSize*3))
+                        val depth = ByteBuffer.wrap(image.sliceArray(windowSize*windowSize*3 until image.size))
                         fsb.material.textures[colorName] = "fromBuffer:$colorName"
-                        fsb.material.transferTextures[colorName] = GenericTexture("whatever", GLVector(512.0f, 512.0f, 1.0f), 3, contents = color)
+                        fsb.material.transferTextures[colorName] = GenericTexture("whatever", GLVector(windowSize.toFloat(), windowSize.toFloat(), 1.0f), 3, contents = color)
 
                         fsb.material.textures[depthName] = "fromBuffer:$depthName"
-                        fsb.material.transferTextures[depthName] = GenericTexture("whatever", GLVector(512.0f, 512.0f, 1.0f), 1, type = GLTypeEnum.Float, contents = depth)
+                        fsb.material.transferTextures[depthName] = GenericTexture("whatever", GLVector(windowSize.toFloat(), windowSize.toFloat(), 1.0f), 1, type = GLTypeEnum.Float, contents = depth)
                         fsb.material.needsTextureReload = true
                     }
                 }
