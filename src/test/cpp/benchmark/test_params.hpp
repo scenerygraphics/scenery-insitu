@@ -20,7 +20,7 @@
 
 // generate sizes in logarithmic scale, in bytes
 #define MINSIZE 1024
-#define SIZELEN 22 // 22
+#define SIZELEN 15 // 22
 #define SIZE(i) ((size_t) MINSIZE * (1 << (i)))
 #define MAXSIZE SIZE(SIZELEN-1)
 #define ARRSIZE (MAXSIZE/sizeof(float))
@@ -29,23 +29,23 @@
 #define SOCKSIZE 524288
 #define MIN(x,y) ((x) < (y) ? (x) : (y))
 
-#define ITERS 10000 // 5000
+#define ITERS 100 // 5000
 #define COMPINT 10 // call compute every 10th iteration
 
-#define RANK 12
+#define RANK 11
 #define NAME "/tmp/test.mmap"
 #define PORT 8080
 #define VERBOSE false
 #define COMPUTE false
-#define LONE true // whether to run producer alone
-#define PARTITION true // whether to break up data sent into smaller pieces (for sysv and mmap)
-#define INITONCE true // whether to initialize memory in the beginning or at each iteration (irrelevant if BUSYWAIT is true)
+#define LONE false // whether to run producer alone
+#define PARTITION true // whether to break up data sent into smaller pieces (for sysv and mmap, irrelevant if BUSYWAIT is true)
+#define INITONCE true // whether to initialize memory in the beginning or at each iteration
 #define BUSYWAIT true // whether to wait for shared memory updates through semaphore calls or loops
 
-#define INIT mmap ## _init // create resource in beginning before other side joins
-#define SEND mmap ## _send // send data
-#define RECV mmap ## _recv // receive data
-#define TERM mmap ## _term // delete resource
+#define INIT sysv ## _init // create resource in beginning before other side joins
+#define SEND sysv ## _send // send data
+#define RECV sysv ## _recv // receive data
+#define TERM sysv ## _term // delete resource
 
 // test methods
 

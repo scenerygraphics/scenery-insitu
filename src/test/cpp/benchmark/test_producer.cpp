@@ -221,6 +221,8 @@ void heap_term()
 void sysv_init()
 {
 	if (looping ^ INITONCE) {
+		if (VERBOSE) printf("creating shared memory with size %lu\n", x);
+
 		// acquire id
 		key_t key = ftok("/tmp", RANK);
 		id = shmget(key, x, 0666|IPC_CREAT);
@@ -229,6 +231,8 @@ void sysv_init()
 		// acquire pointer
 		ptr = (float *) shmat(id, NULL, 0);
 		if (ptr == MAP_FAILED) { perror("shmat"); exit(1); }
+
+		if (VERBOSE) printf("created shared memory with size %lu\n", x);
 
 		// possibly alert consumer
 	}

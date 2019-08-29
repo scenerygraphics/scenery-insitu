@@ -1,106 +1,130 @@
 package graphics.scenery.insitu.benchmark
 
-// package benchmark
-
-import mpi.MPIException
-import mpi.MPI
 import org.junit.Test
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import java.nio.*
-import java.io.*
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.FloatBuffer
+import kotlin.system.measureNanoTime
 
 class TestConsumer {
 
-    lateinit var result: LongBuffer
-    val duration = 30 // seconds
-    val period = 5L // milliseconds
-    val iters = duration*1000/period
-    lateinit var file: FileWriter
-    var prodTimeOffset = -1L // offset from which to measure producer time
-    var consTimeOffset = -1L // offset from which to measure own time
-    var i = 0
+    val minsize = 1024
+    val sizelen = 15 // 22
+    val iters = 100 // 5000
 
-    private fun init() {
-        prodTimeOffset = result.get(0)
-        consTimeOffset = System.nanoTime() / 1000
-        println("prod: ${prodTimeOffset}\tcons: ${consTimeOffset}")
-    }
+    var len: Int = 0
+    var size: Int = minsize * (1 shl (sizelen - 1)) // 0
+    lateinit var comm : IPCComm
 
-    private fun update() {
-        val stop = System.nanoTime() / 1000
-        val start = result.get(0)
-        val diff = (stop - consTimeOffset) - (start - prodTimeOffset) // to account for phase difference
+    external fun semWait()
+    external fun semSignal()
 
-        i++
-        if (i % 200 == 0)
-            println("prod: ${start}\tcons: ${stop}")
-
-        file.write("${diff}\n")
-    }
-
-    private fun terminate() {
-        file.close()
-    }
-    
-    private external fun sysvReceive(size: Int)
-    private external fun mmapReceive(size: Int)
-
-    private fun pipeInit() {
-        // open file
-    }
-    private fun pipeReceive(size: Int) {
-        // read from file
-    }
-    private fun pipeTerm() {
-        // close file
-    }
-
-    private fun tcpInit() {
-        // open socket
-    }
-    private fun tcpReceive(size: Int) {
-        // read from socket
-    }
-    private fun tcpTerm() {
-        // close socket
-    }
+    external fun sysvInit(size: Int) : ByteBuffer
+    external fun sysvTerm()
 
     @Test
     fun main() {
-
-        val nullArg = arrayOfNulls<String>(0)
-        MPI.Init(nullArg)
-
-        val myrank = MPI.COMM_WORLD.rank
-        val size = MPI.COMM_WORLD.size
-        val pName = MPI.COMM_WORLD.name
-
+        // load dynamic library
         System.loadLibrary("testConsumer")
-        val log = LoggerFactory.getLogger("JavaMPI")
 
-        File("benchmark_logs").mkdir()
-        file = FileWriter("benchmark_logs/kotlin_log0.csv", false);
+        comm = SysVMemory()
 
-        val start = System.nanoTime() / 1000
-        this.sysvReceive(10)
-        val stop = System.nanoTime() / 1000
+        // wait for producer, signal that you are ready
+        semWait()
+        semSignal()
 
-        println("JNI: ${result.get(1)}\tKotlin: ${stop-start}")
+        // initialize channel
+        var time = measureNanoTime {
+            semWait()
+            comm.init()
+            semSignal()
+        }
+        println("init time: ${time/1000} us")
 
+        size = minsize
+        for (i in 1..sizelen) {
+            println("testing with size ${size} bytes")
+            len = size / 4
 
-        init()
+            // iterate
+            time = measureNanoTime {
+                for (j in 1..iters) {
+                    comm.recv()
+                    semSignal()
+                }
+            } / iters
 
-        for (i in 0..iters) {
-            update()
-            Thread.sleep(period)
+            println("size: $size\ttime: ${time/1000} us")
+
+            size *= 2
         }
 
-        log.info("Done here.")
-
-        terminate()
-
-        MPI.Finalize()
+        // delete channel
+        time = measureNanoTime {
+            semWait()
+            comm.term()
+            semSignal()
+        }
+        println("term time: ${time/1000} us")
     }
 
+    abstract inner class IPCComm {
+        abstract fun init()
+        abstract fun recv()
+        abstract fun term()
+    }
+
+    abstract inner class SharedMemory : IPCComm() {
+        lateinit var buf: FloatBuffer
+
+        var oldlen = 0
+        var oldval = 0f
+
+        override fun recv() {
+            // loop on last element of buffer
+            if (oldlen == len)
+                while (oldval == buf.get(len - 1));
+            oldlen = len
+            oldval = buf.get(len - 1)
+        }
+    }
+
+    // first test sysv in java vs. sysv in c++
+    // then sysv vs. mmap in java with computation
+    // then maybe tcp
+    // then init inside loop in java
+    inner class SysVMemory : SharedMemory() {
+        override fun init() {
+            println("creating byte buffer with size $size")
+            val ptr = sysvInit(size)
+            ptr.order(ByteOrder.nativeOrder())
+            buf = ptr.asFloatBuffer()
+            buf.rewind()
+            println("buffer size: ${buf.remaining()}")
+        }
+
+        override fun term() {
+            sysvTerm()
+        }
+    }
+
+    /*
+    inner class PosixMemory : SharedMemory() {
+        external fun attach(len: Long): ByteBuffer
+        external fun detach()
+
+        override fun init() {
+            val ptr = attach(size)
+            buf = ptr.asFloatBuffer()
+        }
+
+        override fun term() {
+            detach()
+        }
+    }
+
+    abstract inner class FileComm : IPCComm()// resource accessed through filesystem
+    // open file, read from file
+
+     */
 }
