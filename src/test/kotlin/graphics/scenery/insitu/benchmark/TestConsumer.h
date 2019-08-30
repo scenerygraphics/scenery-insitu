@@ -34,7 +34,7 @@ JNIEXPORT void JNICALL Java_graphics_scenery_insitu_benchmark_TestConsumer_semSi
  * Signature: ()Ljava/nio/ByteBuffer;
  */
 JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_benchmark_TestConsumer_sysvInit
-  (JNIEnv *, jobject, jint);
+  (JNIEnv *, jobject, jlong);
 
 /*
  * Class:     TestConsumer

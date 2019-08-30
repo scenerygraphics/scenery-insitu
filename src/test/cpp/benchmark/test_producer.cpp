@@ -18,9 +18,9 @@
 // wait for opposite semaphore to be decremented
 #define WAIT() do { 		\
 	sem.incr(0, OPPSEM);	\
-	if (VERBOSE) std::cout << "waiting for " << OPPSEM << std::endl; \
+	if (VERBOSE) std::cout << "waiting for " << OPPSEM << " now " << sem.get(0, OPPSEM) << std::endl; \
 	sem.wait(0, OPPSEM);	\
-	if (VERBOSE) std::cout << "waited for " << OPPSEM << std::endl; \
+	if (VERBOSE) std::cout << "waited for " << OPPSEM << " now " << sem.get(0, OPPSEM) << std::endl; \
 } while (0)
 
 // decrement own semaphore
@@ -288,7 +288,7 @@ void mmap_init()
 		ftruncate(fd, MAXSIZE);
 
 		// acquire pointer
-		ptr = (float *) mmap(NULL, x, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+		ptr = (float *) mmap(NULL, x, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0); // also try MAP_ANONYMOUS
 		if (ptr == MAP_FAILED) { perror("mmap"); exit(1); }
 		close(fd);
 	}

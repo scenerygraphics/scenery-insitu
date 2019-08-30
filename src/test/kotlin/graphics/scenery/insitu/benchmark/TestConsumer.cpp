@@ -61,16 +61,18 @@ SemManager sem("/tmp", RANK, VERBOSE, ISPROD);
 
 JNIEXPORT void JNICALL Java_graphics_scenery_insitu_benchmark_TestConsumer_semWait(JNIEnv *env, jobject thisObj) {
     WAIT();
+    if (VERBOSE) printf("sem %d now %d\n", OPPSEM, sem.get(0, OPPSEM));
 }
 
 JNIEXPORT void JNICALL Java_graphics_scenery_insitu_benchmark_TestConsumer_semSignal(JNIEnv *env, jobject thisObj) {
     SIGNAL();
+    if (VERBOSE) printf("sem %d now %d\n", OWNSEM, sem.get(0, OWNSEM));
 }
 
-JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_benchmark_TestConsumer_sysvInit(JNIEnv *env, jobject thisObj, jint size) {
-	int x = (int) size;
+JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_benchmark_TestConsumer_sysvInit(JNIEnv *env, jobject thisObj, jlong size) {
+	size_t x = (size_t) size;
 
-	printf("creating shared memory with size %d\n", x);
+	printf("creating shared memory with size %lu\n", x);
 
 	key_t key = ftok("/tmp", RANK);
 	shmid = shmget(key, x, 0666|IPC_CREAT);
@@ -80,7 +82,7 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_benchmark_TestConsumer_sy
 	str = (DTYPE *) shmat(shmid, NULL, 0);
 	if (str == MAP_FAILED) { perror("shmat"); exit(1); }
 
-	printf("created shared memory with size %d\n", x);
+	std::cout << "created shared memory with size " << ((jlong) x) << std::endl;
 
 	jobject bb = (env)->NewDirectByteBuffer((void*) str, x);
 
