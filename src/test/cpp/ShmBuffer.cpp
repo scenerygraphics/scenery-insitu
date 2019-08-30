@@ -84,9 +84,9 @@ void ShmBuffer::update_key(bool wait) // should keep some sort of mutex for ptr,
 {
 	if (current_key == KEYINIT) { // called initially
 		std::cout << "looking for available memory" << std::endl; // test
-		find_active();
-		if (current_key == KEYINIT)
-			return; // possibly wait here
+		do {
+			find_active();
+		} while (current_key == KEYINIT); // loop until an active memory segment is found
 		if (verbose) std::cout << "found memory " << current_key << std::endl; // test
 	} else {
 		if (wait) {
