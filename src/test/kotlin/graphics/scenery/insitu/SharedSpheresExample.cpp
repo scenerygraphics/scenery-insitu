@@ -16,7 +16,7 @@ using namespace std;
 #define GRIDLEN 11
 #define NUMPARS (GRIDLEN*GRIDLEN*GRIDLEN)
 #define SIZE(i) (i ? 6*NUMPARS*sizeof(DTYPE) : 3*NUMPARS*sizeof(DTYPE))
-#define VERBOSE false
+#define VERBOSE true
 
 ShmBuffer *buf[] = {NULL, NULL};
 DTYPE *str[] = {NULL, NULL};
@@ -45,7 +45,7 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
 		buf[i] = new ShmBuffer(PNAME(i), myRank, SIZE(i), VERBOSE); // TODO make size changeable later
 	}
 
-	buf[i]->update_key();
+	buf[i]->update_key(false);
 	str[i] = (DTYPE *) buf[i]->attach();
 
 	if (VERBOSE)

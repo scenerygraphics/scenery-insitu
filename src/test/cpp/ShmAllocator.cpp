@@ -88,7 +88,8 @@ void *ShmAllocator::shm_alloc(size_t size)
 	// used[current_key] = true;
 
 	// increment semaphore for new key to signal consumer
-	sems.incr(current_key, PROSEM);
+	if (sems.get(current_key, PROSEM) == 0) // using semaphore as mutex
+        sems.incr(current_key, PROSEM);
 
     // return pointer
     return ptrs[current_key];
