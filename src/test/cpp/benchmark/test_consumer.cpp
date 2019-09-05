@@ -25,10 +25,11 @@
 // global variables
 
 int i, j, k;
-size_t x;
+size_t x = MAXSIZE;
 float *arr, *ptr;
 int id, fd;
 const char *fifoname = "/tmp/test.fifo";
+bool looping = false;
 
 SemManager sem("/tmp", RANK, VERBOSE, ISPROD); // use only 0th key, first semaphore for producer to wait, second for consumer to wait
 
@@ -57,8 +58,15 @@ int main()
 
 	// possibly fork, have one process for producer and another for consumer, make them synchronized
 
+	looping = true;
 	for (i = 0, x = SIZE(i); i < SIZELEN; i++, x = SIZE(i)) {
 		std::cout << "testing with size " << x << " bytes" << std::endl;
+
+		#if !INITONCE
+		WAIT();
+		INIT();
+		SIGNAL();
+		#endif
 
 		// record start time
 		START();
@@ -73,9 +81,16 @@ int main()
 		// record end time
 		STOP();
 
+		#if !INITONCE
+		WAIT();
+		TERM();
+		SIGNAL();
+		#endif
+
 		// store (end time - start time) / ITERS
 		std::cout << "size: " << x << "\ttime: " << AVGTIME() << " us" << std::endl;
 	}
+	looping = false;
 
 	// delete channel
 	START();
@@ -101,12 +116,16 @@ void sem_init()
 
 void sem_recv()
 {
+#if BUSYWAIT
+	WAIT(); // only to subtract from heap_recv
+
+#else
 	// WAIT();   // wait for producer to increment 1st semaphore
 	// receive data etc.
 	// SIGNAL(); // signal producer to decrement 0th semaphore
 
 	size_t offset = 0, remaining = x, res;
-	size_t limit = PARTITION ? PIPESIZE : x;
+	size_t limit = PARTITION ? SOCKSIZE : x;
 	while (remaining) {
 		WAIT(); // wait for new data (like read waits for write)
 		res = MIN(limit, remaining);
@@ -118,6 +137,7 @@ void sem_recv()
 			SIGNAL(); // alert producer it can write again (like read empties buffer)
 		}
 	}
+#endif
 }
 
 void sem_term()
@@ -131,46 +151,76 @@ void sem_term()
 
 void heap_init()
 {
-	ptr = (float *) malloc(MAXSIZE); // acquire pointer
+
+	if (looping ^ INITONCE) {
+		ptr = (float *) malloc(x); // acquire pointer
+	}
 }
 
 void heap_recv()
 {
-	// ptr = (float *) malloc(x); // acquire pointer
-	memcpy(arr, ptr, x); // read data
-	// free(ptr); // release pointer
+#if BUSYWAIT
+	WAIT();
+#else
+	// memcpy(arr, ptr, x); // read data
+
+	size_t offset = 0, remaining = x, res;
+	size_t limit = PARTITION ? SOCKSIZE : x;
+	while (remaining) {
+		WAIT(); // wait for new data (like read waits for write)
+		memcpy(arr+offset/sizeof(float), ptr+offset/sizeof(float), res = MIN(limit, remaining));
+		offset += res;
+		remaining -= res;
+
+		if (remaining) {
+			SIGNAL(); // alert producer it can write again (like read empties buffer)
+		}
+	}
+#endif
 }
 
 void heap_term()
 {
-	free(ptr); // release pointer
+	if (looping ^ INITONCE) {
+		free(ptr); // release pointer
+	}
 }
 
 // system v shm
 
 void sysv_init()
 {
+	if (looping ^ INITONCE) {
+		// acquire id
+		key_t key = ftok("/tmp", RANK);
+		id = shmget(key, x, 0666|IPC_CREAT);
+		if (id < 0) { perror("shmget"); exit(1); }
 
-	// acquire id
-	key_t key = ftok("/tmp", RANK);
-	id = shmget(key, MAXSIZE, 0666|IPC_CREAT);
-	if (id < 0) { perror("shmget"); exit(1); }
-
-	// acquire pointer
-	ptr = (float *) shmat(id, NULL, 0);
-	if (ptr == MAP_FAILED) { perror("shmat"); exit(1); }
-
-
+		// acquire pointer
+		ptr = (float *) shmat(id, NULL, 0);
+		if (ptr == MAP_FAILED) { perror("shmat"); exit(1); }
+	}
 }
 
 void sysv_recv()
 {
+#if BUSYWAIT
+	// loop until value read changes
+	static float oldval = 0;
+	static size_t oldlen = 0;
+
+	size_t len = x/sizeof(float);
+	if (oldlen == len)
+		while (oldval == ptr[len-1]) // wait for last value to change when in the middle of iteration
+			;
+	oldlen = len; oldval = ptr[len-1]; // set oldlen and oldval directly if starting new iteration
+#else
 	// receive data
 	// memcpy(arr, ptr, x);
 
 	// for a fair comparison, loop here as well as in fifo_recv
 	size_t offset = 0, remaining = x, res;
-	size_t limit = PARTITION ? PIPESIZE : x;
+	size_t limit = PARTITION ? SOCKSIZE : x;
 	while (remaining) {
 		WAIT(); // wait for new data (like read waits for write)
 		memcpy(arr+offset/sizeof(float), ptr+offset/sizeof(float), res = MIN(limit, remaining));
@@ -181,42 +231,58 @@ void sysv_recv()
 			SIGNAL(); // alert producer it can write again (like read empties buffer)
 		}
 	}
+#endif
 }
 
 void sysv_term()
 {
-	// WAIT();   // wait for producer to finish
+	if (looping ^ INITONCE) {
+		// WAIT();   // wait for producer to finish
 
-	// release pointer
-	shmdt(ptr);
+		// release pointer
+		shmdt(ptr);
 
-	// SIGNAL(); // signal producer to remove shm
+		// SIGNAL(); // signal producer to remove shm
+	}
 }
 
 // posix shm
 
 void mmap_init()
 {
-	// WAIT(); // wait for consumer to create shared memory
+	if (looping ^ INITONCE) {
+		// WAIT(); // wait for consumer to create shared memory
 
-	// acquire id
-	fd = shm_open(NAME, O_RDONLY, 0666);
-	if (fd < 0) { perror("shm_open"); exit(1); }
-	ftruncate(fd, x);
+		// acquire id
+		fd = shm_open(NAME, O_RDONLY, 0666);
+		if (fd < 0) { perror("shm_open"); exit(1); }
+		ftruncate(fd, x);
 
-	ptr = (float *) mmap(NULL, MAXSIZE, PROT_READ, MAP_SHARED, fd, 0);
-	if (ptr == MAP_FAILED) { perror("mmap"); exit(1); }
-	close(fd);
+		ptr = (float *) mmap(NULL, x, PROT_READ, MAP_SHARED, fd, 0);
+		if (ptr == MAP_FAILED) { perror("mmap"); exit(1); }
+		close(fd);
 
-	// SIGNAL(); // signal producer
+		// SIGNAL(); // signal producer
+	}
 }
 
 void mmap_recv()
 {
+#if BUSYWAIT
+	// loop until value read changes
+	static float oldval = 0;
+	static size_t oldlen = 0;
+
+	size_t len = x/sizeof(float);
+	if (oldlen == len)
+		while (oldval == ptr[len-1]) // wait for last value to change when in the middle of iteration
+			;
+	oldlen = len; oldval = ptr[len-1]; // set oldlen and oldval directly if starting new iteration
+#else
 	// memcpy(arr, ptr, x);
 
     size_t offset = 0, remaining = x, res;
-	size_t limit = PARTITION ? PIPESIZE : x;
+	size_t limit = PARTITION ? SOCKSIZE : x;
 	while (remaining) {
 		WAIT(); // wait for new data (like read waits for write)
 		memcpy(arr+offset/sizeof(float), ptr+offset/sizeof(float), res = MIN(limit, remaining));
@@ -227,22 +293,27 @@ void mmap_recv()
 			SIGNAL(); // alert producer it can write again (like read empties buffer)
 		}
 	}
+#endif
 }
 
 void mmap_term()
 {
-	// WAIT(); // wait for producer to finish
+	if (looping ^ INITONCE) {
+		// WAIT(); // wait for producer to finish
 
-	// release pointer
-	munmap(ptr, x);
+		// release pointer
+		munmap(ptr, x);
 
-	// SIGNAL(); // signal producer that you have finished
+		// SIGNAL(); // signal producer that you have finished
+	}
 }
 
 // named pipes
 
 void fifo_init()
 {
+	if (looping) return;
+
 	SIGNAL(); // signal producer to open fifo
 
 	// potentially wait for file to be created
@@ -284,6 +355,7 @@ void fifo_recv()
 
 void fifo_term()
 {
+	if (looping) return;
 	close(fd);
 }
 
@@ -291,6 +363,9 @@ void fifo_term()
 
 void tcp_init()
 {
+	if (looping) return;
+	SIGNAL(); // signal producer to create socket
+
 	// create socket
 	fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (fd < 0) {
@@ -308,18 +383,38 @@ void tcp_init()
     	perror("connect");
     	close(fd); exit(1);
     }
+
+    WAIT(); // wait until producer opens
 }
 
 void tcp_recv()
 {
+	/*
 	// send data directly
 	if (read(fd, arr, x) <= 0) {
 		perror("read");
 		close(fd); exit(1);
 	}
+	*/
+
+	// loop until x bytes read
+	size_t offset = 0, remaining = x, res;
+	while (remaining) {
+		res = read(fd, arr+offset/sizeof(float), MIN(SOCKSIZE, remaining));
+		// if (errno == EAGAIN)
+		// 	res = 0; // try again
+		if (res == -1) {
+			perror("read"); exit(1);
+		}
+		offset += res;
+		remaining -= res;
+		// if (VERBOSE && res)
+		// 	printf("read %lu bytes, total %lu, remaining %lu\n", res, offset, remaining);
+	}
 }
 
 void tcp_term()
 {
+	if (looping) return;
 	close(fd);
 }

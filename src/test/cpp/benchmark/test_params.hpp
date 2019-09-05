@@ -16,33 +16,37 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#include "../SemManager.hpp"
+#include "SemManager.hpp"
 
 // generate sizes in logarithmic scale, in bytes
 #define MINSIZE 1024
-#define SIZELEN 22
+#define SIZELEN 21 // 22
 #define SIZE(i) ((size_t) MINSIZE * (1 << (i)))
-#define MAXSIZE SIZE(SIZELEN)
+#define MAXSIZE SIZE(SIZELEN-1)
 #define ARRSIZE (MAXSIZE/sizeof(float))
 
 #define PIPESIZE 8192 // maximum pipe size
+#define SOCKSIZE 524288
 #define MIN(x,y) ((x) < (y) ? (x) : (y))
 
-#define ITERS 2000
+#define ITERS 5000 // 5000
 #define COMPINT 10 // call compute every 10th iteration
+#define MATSIZ 100 // matrix size for computation
 
-#define RANK 12
-#define NAME "/tmp/test.mmap"
+#define RANK 11
+#define NAME "/test.mmap"
 #define PORT 8080
 #define VERBOSE false
 #define COMPUTE true
 #define LONE false // whether to run producer alone
-#define PARTITION false // whether to break up data sent into smaller pieces (for sysv and mmap)
+#define PARTITION true // whether to break up data sent into smaller pieces (for sysv and mmap, irrelevant if BUSYWAIT is true)
+#define INITONCE true // whether to initialize memory in the beginning or at each iteration
+#define BUSYWAIT true // whether to wait for shared memory updates through semaphore calls or loops
 
-#define INIT mmap ## _init // create resource in beginning before other side joins
-#define SEND mmap ## _send // send data
-#define RECV mmap ## _recv // receive data
-#define TERM mmap ## _term // delete resource
+#define INIT sem ## _init // create resource in beginning before other side joins
+#define SEND sem ## _send // send data
+#define RECV sem ## _recv // receive data
+#define TERM sem ## _term // delete resource
 
 // test methods
 
