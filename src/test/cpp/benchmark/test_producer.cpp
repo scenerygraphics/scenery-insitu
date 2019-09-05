@@ -468,8 +468,6 @@ void tcp_term()
 
 // compute
 
-#define MATSIZ 100
-
 // compute-intensive matrix multiplication
 void compute()
 {

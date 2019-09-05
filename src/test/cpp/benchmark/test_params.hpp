@@ -16,7 +16,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#include "../SemManager.hpp"
+#include "SemManager.hpp"
 
 // generate sizes in logarithmic scale, in bytes
 #define MINSIZE 1024
@@ -31,6 +31,7 @@
 
 #define ITERS 5000 // 5000
 #define COMPINT 10 // call compute every 10th iteration
+#define MATSIZ 100 // matrix size for computation
 
 #define RANK 11
 #define NAME "/test.mmap"
@@ -42,10 +43,10 @@
 #define INITONCE true // whether to initialize memory in the beginning or at each iteration
 #define BUSYWAIT true // whether to wait for shared memory updates through semaphore calls or loops
 
-#define INIT mmap ## _init // create resource in beginning before other side joins
-#define SEND mmap ## _send // send data
-#define RECV mmap ## _recv // receive data
-#define TERM mmap ## _term // delete resource
+#define INIT sem ## _init // create resource in beginning before other side joins
+#define SEND sem ## _send // send data
+#define RECV sem ## _recv // receive data
+#define TERM sem ## _term // delete resource
 
 // test methods
 

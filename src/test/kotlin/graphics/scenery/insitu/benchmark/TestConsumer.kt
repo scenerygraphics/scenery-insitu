@@ -32,7 +32,7 @@ class TestConsumer {
         // load dynamic library
         System.loadLibrary("testConsumer")
 
-        comm = PosixMemory()
+        comm = Sem() // SysVMemory() // PosixMemory()
 
         // wait for producer, signal that you are ready
         semWait()
@@ -77,6 +77,12 @@ class TestConsumer {
         abstract fun init()
         abstract fun recv()
         abstract fun term()
+    }
+
+    inner class Sem : IPCComm() {
+        override fun init() {}
+        override fun recv() { semWait() }
+        override fun term() {}
     }
 
     abstract inner class SharedMemory : IPCComm() {
