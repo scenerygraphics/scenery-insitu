@@ -60,7 +60,8 @@ void *ShmBuffer::attach()
 	}
 
 	// increment consumer semaphore
-	sems.incr(current_key, CONSEM);
+	if (sems.get(current_key, CONSEM) == 0) // using semaphore as mutex
+	    sems.incr(current_key, CONSEM); //TODO: Move this before shmget or even earlier
 
 	return ptrs[current_key];
 }
@@ -84,9 +85,11 @@ void ShmBuffer::update_key(bool wait) // should keep some sort of mutex for ptr,
 {
 	if (current_key == KEYINIT) { // called initially
 		std::cout << "looking for available memory" << std::endl; // test
-		find_active();
-		if (current_key == KEYINIT)
-			return; // possibly wait here
+
+		do {
+			find_active();
+		} while (current_key == KEYINIT); // loop until an active memory segment is found
+
 		if (verbose) std::cout << "found memory " << current_key << std::endl; // test
 	} else {
 		if (wait) {
@@ -94,8 +97,7 @@ void ShmBuffer::update_key(bool wait) // should keep some sort of mutex for ptr,
 			sems.waitgeq(NEXTKEY, PROSEM, 1);
 		} else {
 			if (verbose) std::cout << "checking for memory " << NEXTKEY << std::endl; // test
-			if (sems.get(NEXTKEY, PROSEM) == 0)
-				return;
+			while (sems.get(NEXTKEY, PROSEM) == 0);
 		}
 		if (verbose) std::cout << "memory " << NEXTKEY << " available" << std::endl; // test
 

@@ -8,22 +8,40 @@
 extern "C" {
 #endif
 
-// sysv
+// sem
 
 /*
  * Class:     TestConsumer
- * Method:    sysvReceive
- * Signature: ()Ljava/nio/ByteBuffer;
+ * Method:    semWait
+ * Signature: ()V
  */
-JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_benchmark_TestConsumer_sysvReceive
+JNIEXPORT void JNICALL Java_graphics_scenery_insitu_benchmark_TestConsumer_semWait
   (JNIEnv *, jobject);
 
 /*
  * Class:     TestConsumer
- * Method:    sysvDelete
+ * Method:    semSignal
  * Signature: ()V
  */
-JNIEXPORT void JNICALL Java_graphics_scenery_insitu_benchmark_TestConsumer_sysvDelete
+JNIEXPORT void JNICALL Java_graphics_scenery_insitu_benchmark_TestConsumer_semSignal
+  (JNIEnv *, jobject);
+
+// sysv
+
+/*
+ * Class:     TestConsumer
+ * Method:    sysvInit
+ * Signature: ()Ljava/nio/ByteBuffer;
+ */
+JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_benchmark_TestConsumer_sysvInit
+  (JNIEnv *, jobject, jlong);
+
+/*
+ * Class:     TestConsumer
+ * Method:    sysvTerm
+ * Signature: ()V
+ */
+JNIEXPORT void JNICALL Java_graphics_scenery_insitu_benchmark_TestConsumer_sysvTerm
   (JNIEnv *, jobject);
   
 // mmap

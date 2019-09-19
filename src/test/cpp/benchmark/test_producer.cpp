@@ -18,9 +18,9 @@
 // wait for opposite semaphore to be decremented
 #define WAIT() do { 		\
 	sem.incr(0, OPPSEM);	\
-	if (VERBOSE) std::cout << "waiting for " << OPPSEM << std::endl; \
+	if (VERBOSE) std::cout << "waiting for " << OPPSEM << " now " << sem.get(0, OPPSEM) << std::endl; \
 	sem.wait(0, OPPSEM);	\
-	if (VERBOSE) std::cout << "waited for " << OPPSEM << std::endl; \
+	if (VERBOSE) std::cout << "waited for " << OPPSEM << " now " << sem.get(0, OPPSEM) << std::endl; \
 } while (0)
 
 // decrement own semaphore
@@ -35,10 +35,11 @@
 // global variables
 
 int i, j, k;
-size_t x;
+size_t x = MAXSIZE; // so that initializing before loop would allocate at once
 float *arr, *ptr;
 int id, fd;
 const char *fifoname = "/tmp/test.fifo";
+bool looping = false; // to initialize shared memory each iteration but sockets etc. in the beginning
 
 SemManager sem("/tmp", RANK, VERBOSE, ISPROD); // use only 0th key, first semaphore for producer to wait, second for consumer to wait
 
@@ -79,8 +80,16 @@ int main()
 
 	// possibly fork, have one process for producer and another for consumer, make them synchronized
 
+	looping = true;
 	for (i = 0, x = SIZE(i); i < SIZELEN; i++, x = SIZE(i)) {
 		std::cout << "testing with size " << x << " bytes" << std::endl;
+
+		#if !INITONCE
+		// initialize within loop
+		INIT();
+		SIGNAL();
+		WAIT();
+		#endif
 
 		// record start time
 		START();
@@ -91,16 +100,26 @@ int main()
 			// if (VERBOSE) printf("sent\n");
 			WAIT();   // wait till consumer processes message
 
+			#if COMPUTE
 			if (j % COMPINT == 0)
 				compute(); // perform compute-intensive operation after each iteration
+			#endif
 		}
 
 		// record end time
 		STOP();
 
+		#if !INITONCE
+		// terminate within loop
+		SIGNAL();
+		WAIT();
+		TERM();
+		#endif
+
 		// store (end time - start time) / ITERS
 		std::cout << "size: " << x << "\ttime: " << AVGTIME() << " us" << std::endl;
 	}
+	looping = false;
 
 	// delete channel
 	START();
@@ -128,13 +147,16 @@ void sem_init()
 
 void sem_send()
 {
+#if BUSYWAIT
+	SIGNAL(); // to subtract from heap_send
+#else
 	// SIGNAL(); // signal consumer waiting to decrement 1st semaphore
 	// transfer memory etc.
 	// WAIT(); // wait for consumer to increment 0th semaphore
 	// sem.wait(0, 0); // for protection, to move in tandem with consumer
 
 	size_t offset = 0, remaining = x, res;
-	size_t limit = PARTITION ? PIPESIZE : x;
+	size_t limit = PARTITION ? SOCKSIZE : x;
 	while (remaining) {
 		res = MIN(limit, remaining);
 		// memcpy(ptr+offset/sizeof(float), arr+offset/sizeof(float), res);
@@ -146,6 +168,7 @@ void sem_send()
 			WAIT(); // wait for consumer to clean up (like write waits for space in buffer)
 		}
 	}
+#endif
 }
 
 void sem_term()
@@ -159,43 +182,75 @@ void sem_term()
 
 void heap_init()
 {
-	ptr = (float *) malloc(MAXSIZE); // acquire pointer
+	if (looping ^ INITONCE) // if INITONCE, initialize outside loop, otherwise initialize within loop
+		ptr = (float *) malloc(x); // acquire pointer
 }
 
 void heap_send()
 {
-	memcpy(ptr, arr, x); // send data
+#if BUSYWAIT
+	// update pointer
+	for (int i = 0; i < x/sizeof(float); ++i)
+    	ptr[i]++;
+	SIGNAL(); // subtract the cost of this by also testing heap_send
+#else
+	// memcpy(ptr, arr, x); // send data
+	size_t offset = 0, remaining = x, res;
+	size_t limit = PARTITION ? SOCKSIZE : x;
+	while (remaining) {
+		memcpy(ptr+offset/sizeof(float), arr+offset/sizeof(float), res = MIN(limit, remaining));
+		offset += res;
+		remaining -= res;
+
+		SIGNAL(); // alert consumer for new data (like write wakes up read call)
+		if (remaining) {
+			WAIT(); // wait for consumer to clean up (like write waits for space in buffer)
+		}
+	}
+#endif
 }
 
 void heap_term()
 {
-	free(ptr); // release pointer
+	if (looping ^ INITONCE)
+		free(ptr); // release pointer
 }
 
 // system v shm
 
 void sysv_init()
 {
-	// acquire id
-	key_t key = ftok("/tmp", RANK);
-	id = shmget(key, MAXSIZE, 0666|IPC_CREAT);
-	if (id < 0) { perror("shmget"); exit(1); }
+	if (looping ^ INITONCE) {
+		if (VERBOSE) printf("creating shared memory with size %lu\n", x);
 
-	// acquire pointer
-	ptr = (float *) shmat(id, NULL, 0);
-	if (ptr == MAP_FAILED) { perror("shmat"); exit(1); }
+		// acquire id
+		key_t key = ftok("/tmp", RANK);
+		id = shmget(key, x, 0666|IPC_CREAT);
+		if (id < 0) { perror("shmget"); exit(1); }
 
-	// possibly alert consumer
+		// acquire pointer
+		ptr = (float *) shmat(id, NULL, 0);
+		if (ptr == MAP_FAILED) { perror("shmat"); exit(1); }
+
+		if (VERBOSE) printf("created shared memory with size %lu\n", x);
+
+		// possibly alert consumer
+	}
 }
 
 void sysv_send()
 {
+#if BUSYWAIT
+	// update data directly
+	for (int i = 0; i < x/sizeof(float); ++i)
+		ptr[i]++;
+#else
 	// send data
 	// memcpy(ptr, arr, x);
 
 	// for a fair comparison, loop here as well as in fifo_send
 	size_t offset = 0, remaining = x, res;
-	size_t limit = PARTITION ? PIPESIZE : x;
+	size_t limit = PARTITION ? SOCKSIZE : x;
 	while (remaining) {
 		memcpy(ptr+offset/sizeof(float), arr+offset/sizeof(float), res = MIN(limit, remaining));
 		offset += res;
@@ -206,42 +261,52 @@ void sysv_send()
 			WAIT(); // wait for consumer to clean up (like write waits for space in buffer)
 		}
 	}
+#endif
 }
 
 void sysv_term()
 {
-	// possibly wait for consumer to terminate
+	if (looping ^ INITONCE) {
+		// possibly wait for consumer to terminate
 
-	// release pointer
-	shmdt(ptr);
+		// release pointer
+		shmdt(ptr);
 
-	// release id
-	shmctl(id, IPC_RMID, NULL);
+		// release id
+		shmctl(id, IPC_RMID, NULL);
+	}
 }
 
 // posix shm
 
 void mmap_init()
 {
-	// acquire id
-	fd = shm_open(NAME, O_CREAT | O_RDWR, 0666);
-	if (fd < 0) { perror("shm_open"); exit(1); }
-	ftruncate(fd, MAXSIZE);
+	if (looping ^ INITONCE) {
+		// acquire id
+		fd = shm_open(NAME, O_CREAT | O_RDWR, 0666);
+		if (fd < 0) { perror("shm_open"); exit(1); }
+		ftruncate(fd, MAXSIZE);
 
-	// acquire pointer
-	ptr = (float *) mmap(NULL, MAXSIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-	if (ptr == MAP_FAILED) { perror("mmap"); exit(1); }
-	close(fd);
+		// acquire pointer
+		ptr = (float *) mmap(NULL, x, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0); // also try MAP_ANONYMOUS
+		if (ptr == MAP_FAILED) { perror("mmap"); exit(1); }
+		close(fd);
+	}
 }
 
 void mmap_send()
 {
+#if BUSYWAIT
+	// update data directly
+	for (int i = 0; i < x/sizeof(float); ++i)
+		ptr[i]++;
+#else
 	// send data
 	// memcpy(ptr, arr, x);
 
 	// for a fair comparison, loop here as well as in fifo_send
 	size_t offset = 0, remaining = x, res;
-	size_t limit = PARTITION ? PIPESIZE : x;
+	size_t limit = PARTITION ? SOCKSIZE : x;
 	while (remaining) {
 		memcpy(ptr+offset/sizeof(float), arr+offset/sizeof(float), res = MIN(limit, remaining));
 		offset += res;
@@ -252,18 +317,21 @@ void mmap_send()
 			WAIT(); // wait for consumer to clean up (like write waits for space in buffer)
 		}
 	}
+#endif
 }
 
 void mmap_term()
 {
-	// wait for consumer
+	if (looping ^ INITONCE) {
+		// wait for consumer
 
-	// release pointer
-	munmap(ptr, x);
+		// release pointer
+		munmap(ptr, x);
 
-	// release id
-	if (shm_unlink(NAME) < 0) {
-		perror("unlink"); exit(1);
+		// release id
+		if (shm_unlink(NAME) < 0) {
+			perror("unlink"); exit(1);
+		}
 	}
 }
 
@@ -271,6 +339,9 @@ void mmap_term()
 
 void fifo_init()
 {
+	if (looping) return;
+
+
 	// create fifo
 
 	remove(fifoname);
@@ -296,6 +367,11 @@ void fifo_init()
 
 void fifo_send()
 {
+#if BUSYWAIT
+	// update data before sending
+	for (int i = 0; i < x/sizeof(float); ++i)
+		arr[i]++;
+#endif
 	// for large data, write either blocks or reads only 8192 at a time
 	// loop until x bytes read
 	size_t offset = 0, remaining = x, res;
@@ -311,6 +387,8 @@ void fifo_send()
 
 void fifo_term()
 {
+	if (looping) return;
+
 	close(fd);
 	remove(fifoname);
 }
@@ -319,6 +397,8 @@ void fifo_term()
 
 void tcp_init()
 {
+	if (looping) return;
+
 	// create socket
 	id = socket(AF_INET, SOCK_STREAM, 0);
 	if (id < 0) { perror("socket"); exit(1);	}
@@ -340,6 +420,10 @@ void tcp_init()
     	close(id); exit(1);
 	}
 
+	// signal consumer to open, wait until it opens
+	SIGNAL();
+	WAIT();
+
 	// accept client
 	struct sockaddr_in client;
 	socklen_t len = sizeof client;
@@ -352,21 +436,37 @@ void tcp_init()
 
 void tcp_send()
 {
+#if BUSYWAIT
+	// update data before sending
+	for (int i = 0; i < x/sizeof(float); ++i)
+		arr[i]++;
+#endif
+	/*
 	// send data directly
 	if (write(fd, arr, x) == -1) {
 		perror("write");
 		close(id); exit(1);
 	}
+	*/
+	size_t offset = 0, remaining = x, res;
+	while (remaining) {
+		res = write(fd, arr+offset/sizeof(float), MIN(SOCKSIZE, remaining));
+		if (res == -1) {
+			perror("write"); exit(1);
+		}
+		offset += res;
+		remaining -= res;
+	}
 }
 
 void tcp_term()
 {
+	if (looping) return;
+
 	close(id);
 }
 
 // compute
-
-#define MATSIZ 100
 
 // compute-intensive matrix multiplication
 void compute()
@@ -406,7 +506,7 @@ void compute()
 		}
 	}
 
-	// TODO here, try something that uses the same array (e.g. iterate x -> 3x + 1 to ptr[0] until you reach the same value) to avoid cache misses
+	// TODO here try something that uses the same array (e.g. iterate x -> 3x + 1 to ptr[0] until you reach the same value) to avoid cache misses
 #endif
 
 	/*
