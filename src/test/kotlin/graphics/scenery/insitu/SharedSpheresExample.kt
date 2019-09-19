@@ -165,6 +165,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
                         fsb.material.transferTextures[depthName] = GenericTexture("whatever", GLVector(windowSize.toFloat(), windowSize.toFloat(), 1.0f), 1, type = GLTypeEnum.Float, contents = depth)
                         fsb.material.needsTextureReload = true
                     }
+
                 }
             }
         }

@@ -88,7 +88,7 @@ void SemManager::wait(int keyNo, int semNo, int value)
 	} else {
 		// decrement by value, wait for zero (necessary if semaphore was initially higher than value, which in our case doesn't happen), then increment by value
 		semops[0].sem_num = semNo;
-		semops[0].sem_op  = -value;
+		semops[0].sem_op  = -value; //value = 1
 		semops[0].sem_flg = 0;
 		semops[1].sem_num = semNo;
 		semops[1].sem_op  = 0;

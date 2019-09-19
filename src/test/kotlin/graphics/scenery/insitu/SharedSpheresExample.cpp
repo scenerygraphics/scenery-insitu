@@ -45,7 +45,7 @@ JNIEXPORT jobject JNICALL Java_graphics_scenery_insitu_SharedSpheresExample_getS
 		buf[i] = new ShmBuffer(PNAME(i), myRank, SIZE(i), VERBOSE); // TODO make size changeable later
 	}
 
-	buf[i]->update_key(false);
+	buf[i]->update_key(true);
 	str[i] = (DTYPE *) buf[i]->attach();
 
 	if (VERBOSE)

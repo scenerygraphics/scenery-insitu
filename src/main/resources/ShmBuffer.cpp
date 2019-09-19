@@ -61,7 +61,7 @@ void *ShmBuffer::attach()
 
 	// increment consumer semaphore
 	if (sems.get(current_key, CONSEM) == 0) // using semaphore as mutex
-	    sems.incr(current_key, CONSEM);
+	    sems.incr(current_key, CONSEM); //TODO: Move this before shmget or even earlier
 
 	return ptrs[current_key];
 }
