@@ -12,6 +12,8 @@ import java.nio.*;
 import java.nio.charset.StandardCharsets;
 import graphics.scenery.*
 import graphics.scenery.backends.Renderer
+import graphics.scenery.net.NodePublisher
+import graphics.scenery.net.NodeSubscriber
 import graphics.scenery.numerics.Random
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.*
@@ -40,6 +42,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
     var cont = true // whether to continue updating memory
 
     lateinit var color: GLVector
+    var publishedNodes = ArrayList<Node>()
 
     override fun init() {
         settings.set("Input.SlowMovementSpeed", 0.5f)
@@ -68,7 +71,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             }
 
             val box = Box(GLVector(10.0f, 10.0f, 10.0f), insideNormals = true)
-            box.material.diffuse = GLVector(0.3f, 0.3f, 0.3f)
+            box.material.diffuse = GLVector(0.9f, 0.9f, 0.9f)
             box.material.cullingMode = Material.CullingMode.Front
             scene.addChild(box)
 
@@ -86,6 +89,18 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
                 cam.rotation = Quaternion(-0.10018345f, 0.009550877f, -9.6172147E-4f, 0.9949227f)
                 scene.addChild(this)
             }
+
+            publishedNodes.add(cam)
+
+            val publisher = hub.get<NodePublisher>(SceneryElement.NodePublisher)
+            val subscriber = hub.get<NodeSubscriber>(SceneryElement.NodeSubscriber)
+
+            publishedNodes.forEachIndexed { index, node ->
+                publisher?.nodes?.put(13337 + index, node)
+
+                subscriber?.nodes?.put(13337 + index, node)
+            }
+
 
             fixedRateTimer(initialDelay = 5, period = 5) {
                 lock.lock()
@@ -131,6 +146,17 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
                 active = true
 
                 scene.addChild(this)
+            }
+
+            publishedNodes.add(cam)
+
+            val publisher = hub.get<NodePublisher>(SceneryElement.NodePublisher)
+            val subscriber = hub.get<NodeSubscriber>(SceneryElement.NodeSubscriber)
+
+            publishedNodes.forEachIndexed { index, node ->
+                publisher?.nodes?.put(13337 + index, node)
+
+                subscriber?.nodes?.put(13337 + index, node)
             }
 
             thread {
@@ -278,14 +304,19 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         rank = MPI.COMM_WORLD.rank
         size = MPI.COMM_WORLD.size
         val pName = MPI.COMM_WORLD.name
-        if (rank == 0)
+        if (rank == 0) {
             println("Hi, I am Aryaman's MPI example")
+            System.setProperty("scenery.master", "true")
+        }
         else
             println("Hello world from $pName rank $rank of $size")
 
         val log = LoggerFactory.getLogger("JavaMPI")
 
+        System.setProperty("scenery.MasterNode", "tcp://127.0.0.1:6666")
         if(MPI.COMM_WORLD.rank != 0) {
+            System.setProperty("scenery.master", "false")
+            System.setProperty("scenery.Headless", "true")
             System.loadLibrary("shmSpheresTrial")
             log.info("Hi, I am Aryaman's shared memory example")
 
