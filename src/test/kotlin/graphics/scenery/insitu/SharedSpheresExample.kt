@@ -307,9 +307,13 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         if (rank == 0) {
             println("Hi, I am Aryaman's MPI example")
             System.setProperty("scenery.master", "true")
+            settings.set("VideoEncoder.StreamVideo", true)
+            settings.set("Distributed.Rank", rank)
         }
-        else
+        else {
             println("Hello world from $pName rank $rank of $size")
+            settings.set("Distributed.Rank", rank)
+        }
 
         val log = LoggerFactory.getLogger("JavaMPI")
 
@@ -317,6 +321,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
         if(MPI.COMM_WORLD.rank != 0) {
             System.setProperty("scenery.master", "false")
             System.setProperty("scenery.Headless", "true")
+
             System.loadLibrary("shmSpheresTrial")
             log.info("Hi, I am Aryaman's shared memory example")
 
