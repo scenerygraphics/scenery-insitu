@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "SemManager.hpp"
+#include "../../../src/main/resources/SemManager.hpp"
 
 #define RANK 3
 
