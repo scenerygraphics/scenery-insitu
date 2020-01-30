@@ -1,28 +1,38 @@
 package graphics.scenery.insitu
 
+import cleargl.GLMatrix
 import cleargl.GLTypeEnum
 import cleargl.GLVector
+import com.fasterxml.jackson.annotation.JsonAutoDetect
+import com.fasterxml.jackson.core.type.TypeReference
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.SerializationFeature
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.jogamp.opengl.math.Quaternion
-import mpi.MPIException
-import mpi.MPI
-import org.junit.Test
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import java.nio.*;
-import java.nio.charset.StandardCharsets;
 import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.net.NodePublisher
 import graphics.scenery.net.NodeSubscriber
 import graphics.scenery.numerics.Random
+import mpi.MPI
+import mpi.MPIException
+import org.junit.Test
+import org.msgpack.jackson.dataformat.MessagePackFactory
+import org.slf4j.LoggerFactory
+import org.zeromq.ZContext
+import org.zeromq.ZMQ
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.DoubleBuffer
 import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.*
+import kotlin.concurrent.fixedRateTimer
+import kotlin.concurrent.thread
+import kotlin.concurrent.timer
 import kotlin.math.sqrt
-import kotlin.system.exitProcess
 
 class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
-    val windowSize = 700
+    val windowSize = 1000
 
     // lateinit var buffer: IntBuffer
     lateinit var data: DoubleBuffer
@@ -43,6 +53,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
     lateinit var color: GLVector
     var publishedNodes = ArrayList<Node>()
+    val log = LoggerFactory.getLogger("JavaMPI")
 
     override fun init() {
         settings.set("Input.SlowMovementSpeed", 0.5f)
@@ -139,7 +150,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             light.emissionColor = GLVector(1.0f, 1.0f, 1.0f)
             scene.addChild(light)
 
-            val cam: Camera = DetachedHeadCamera()
+            var cam: Camera = DetachedHeadCamera()
             with(cam) {
                 position = GLVector(0.0f, 0.0f, 5.0f)
                 perspectiveCamera(50.0f, 512.0f, 512.0f)
@@ -160,7 +171,7 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             }
 
             thread {
-                while(true) {
+                while (true) {
                     val image = ByteArray(windowSize * windowSize * 3 + windowSize * windowSize * 4)
 
 //                    val result = BufferedImage(512, 512, BufferedImage.TYPE_3BYTE_BGR)
@@ -175,15 +186,14 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 //                fsb.material.textures["color1"] = "fromBuffer:color1"
 //                fsb.material.transferTextures["color1"] = GenericTexture("whatever", contents = whatComesOverTheNetwork)
 
-                    val dimensions = GLVector()
 
-                    for(rank in 1 until MPI.COMM_WORLD.size) {
+                    for (rank in 1 until MPI.COMM_WORLD.size) {
                         MPI.COMM_WORLD.recv(image, windowSize * windowSize * 3 + windowSize * windowSize * 4, MPI.BYTE, rank, 0)
-                        logger.debug("received from process $rank")
+                        logger.info("received from process $rank")
                         val colorName = "ColorBuffer$rank"
                         val depthName = "DepthBuffer$rank"
-                        val color = ByteBuffer.wrap(image.sliceArray(0..windowSize*windowSize*3))
-                        val depth = ByteBuffer.wrap(image.sliceArray(windowSize*windowSize*3 until image.size))
+                        val color = ByteBuffer.wrap(image.sliceArray(0..windowSize * windowSize * 3))
+                        val depth = ByteBuffer.wrap(image.sliceArray(windowSize * windowSize * 3 until image.size))
                         fsb.material.textures[colorName] = "fromBuffer:$colorName"
                         fsb.material.transferTextures[colorName] = GenericTexture("whatever", GLVector(windowSize.toFloat(), windowSize.toFloat(), 1.0f), 3, contents = color)
 
@@ -191,11 +201,59 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
                         fsb.material.transferTextures[depthName] = GenericTexture("whatever", GLVector(windowSize.toFloat(), windowSize.toFloat(), 1.0f), 1, type = GLTypeEnum.Float, contents = depth)
                         fsb.material.needsTextureReload = true
                     }
-
                 }
             }
+
+            thread {
+                val context = ZContext(4)
+                var subscriber: ZMQ.Socket = context.createSocket(ZMQ.SUB)
+                val address = "tcp://localhost:6655"
+                subscriber.connect(address)
+                subscriber.subscribe(ZMQ.SUBSCRIPTION_ALL)
+
+                val objectMapper = ObjectMapper(MessagePackFactory())
+//                objectMapper.registerKotlinModule()
+//                objectMapper.configure(SerializationFeature.FAIL_ON_SELF_REFERENCES, false)
+//                objectMapper.setVisibility(objectMapper.serializationConfig.defaultVisibilityChecker.withFieldVisibility(JsonAutoDetect.Visibility.ANY)
+//                        .withGetterVisibility(JsonAutoDetect.Visibility.NONE)
+//                        .withSetterVisibility(JsonAutoDetect.Visibility.NONE)
+//                        .withCreatorVisibility(JsonAutoDetect.Visibility.NONE))
+
+                while(true) {
+                    val payload = subscriber.recv()
+                    if (payload != null) {
+
+                        val deserialized: List<Any> = objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
+
+                        println(deserialized[0])
+                        println(deserialized[1])
+
+                        cam.rotation = stringToQuaternion(deserialized[0].toString())
+                        cam.position = stringTo3DGLVector(deserialized[1].toString())
+
+                        println("The rotation is: ${cam.rotation}")
+                        println("The position is: ${cam.position}")
+//                            val receivedCamera: Camera = objectMapper.readValue(payload, Camera::class.java)
+
+                    } else {
+                        log.info("received payload but it is null")
+                    }
+                }
+            }
+
+
         }
 
+    }
+
+    private fun stringToQuaternion(inputString: String): Quaternion {
+        val elements = inputString.removeSurrounding("[", "]").split(",").map { it.toFloat() }
+        return Quaternion(elements[0], elements[1], elements[2], elements[3])
+    }
+
+    private fun stringTo3DGLVector(inputString: String): GLVector {
+        val mElements = inputString.removeSurrounding("[", "]").split(",").map { it.toFloat() }
+        return GLVector(mElements[0], mElements[1], mElements[2])
     }
 
     private fun update() {
@@ -315,13 +373,12 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             settings.set("Distributed.Rank", rank)
         }
 
-        val log = LoggerFactory.getLogger("JavaMPI")
 
         System.setProperty("scenery.MasterNode", "tcp://127.0.0.1:6666")
         if(MPI.COMM_WORLD.rank != 0) {
             System.setProperty("scenery.master", "false")
             System.setProperty("scenery.Headless", "true")
-
+            System.setProperty("scenery.LogLevel", "Debug")
             System.loadLibrary("shmSpheresTrial")
             log.info("Hi, I am Aryaman's shared memory example")
 
