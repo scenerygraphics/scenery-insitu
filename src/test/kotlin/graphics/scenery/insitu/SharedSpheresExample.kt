@@ -1,13 +1,9 @@
 package graphics.scenery.insitu
 
-import cleargl.GLMatrix
 import cleargl.GLTypeEnum
 import cleargl.GLVector
-import com.fasterxml.jackson.annotation.JsonAutoDetect
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.SerializationFeature
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.jogamp.opengl.math.Quaternion
 import graphics.scenery.*
 import graphics.scenery.backends.Renderer
@@ -16,7 +12,9 @@ import graphics.scenery.net.NodeSubscriber
 import graphics.scenery.numerics.Random
 import mpi.MPI
 import mpi.MPIException
+import mpi.Request
 import org.junit.Test
+import org.lwjgl.system.MemoryUtil
 import org.msgpack.jackson.dataformat.MessagePackFactory
 import org.slf4j.LoggerFactory
 import org.zeromq.ZContext
@@ -24,22 +22,24 @@ import org.zeromq.ZMQ
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.DoubleBuffer
+import java.util.*
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.fixedRateTimer
 import kotlin.concurrent.thread
 import kotlin.concurrent.timer
 import kotlin.math.sqrt
 
+
 class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
-    val windowSize = 1000
+    val windowSize = 700
 
     // lateinit var buffer: IntBuffer
     lateinit var data: DoubleBuffer
     lateinit var props: DoubleBuffer
     lateinit var spheres: ArrayList<Sphere>
     var rank = -1
-    var size = -1
+    var commSize = -1
     var shmRank = -1 // should be calculated from rank
 
     // stats
@@ -171,29 +171,30 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             }
 
             thread {
+                val requests: Array<Request?> = arrayOfNulls(commSize - 1)
+                val image: Array<ByteBuffer?> = arrayOfNulls(commSize - 1)
+
+                for (rank in 1 until commSize) {
+                    image[rank-1] = MemoryUtil.memAlloc(windowSize * windowSize * 7)
+                }
+
                 while (true) {
-                    val image = ByteArray(windowSize * windowSize * 3 + windowSize * windowSize * 4)
 
-//                    val result = BufferedImage(512, 512, BufferedImage.TYPE_3BYTE_BGR)
-//                    result.data = Raster.createRaster(result.getSampleModel(), DataBufferByte(image.sliceArray(0..512*512*3), 512 * 512 * 3), Point() )
+                    for (rank in 1 until commSize) {
+                        requests[rank-1] = MPI.COMM_WORLD.iRecv(image[rank - 1], windowSize * windowSize * 7, MPI.BYTE, rank, 0)
+                    }
 
-//                    ImageIO.write(result, "png", File("/Users/argupta/result1.png"))
-//                    FileOutputStream(File("/Users/argupta/depth1.raw")).write(image, 512 * 512 * 3, 512 * 512 * 4)
-//                    result.data = Raster.createRaster(result.getSampleModel(), DataBufferByte(image.sliceArray(0..512*512*3), 512 * 512 * 3), Point() )
+                    Request.waitAll(requests)
 
-//                    ImageIO.write(result, "png", File("/Users/argupta/result2.png"))
-//                    FileOutputStream(File("/Users/argupta/depth2.raw")).write(image, 512 * 512 * 3, 512 * 512 * 4)
-//                fsb.material.textures["color1"] = "fromBuffer:color1"
-//                fsb.material.transferTextures["color1"] = GenericTexture("whatever", contents = whatComesOverTheNetwork)
-
-
-                    for (rank in 1 until MPI.COMM_WORLD.size) {
-                        MPI.COMM_WORLD.recv(image, windowSize * windowSize * 3 + windowSize * windowSize * 4, MPI.BYTE, rank, 0)
-                        logger.info("received from process $rank")
+                    for (rank in 1 until commSize) {
                         val colorName = "ColorBuffer$rank"
                         val depthName = "DepthBuffer$rank"
-                        val color = ByteBuffer.wrap(image.sliceArray(0..windowSize * windowSize * 3))
-                        val depth = ByteBuffer.wrap(image.sliceArray(windowSize * windowSize * 3 until image.size))
+                        image[rank-1]?.position(0)
+                        val color = image[rank-1]?.duplicate()
+                        color?.limit(windowSize * windowSize * 3)
+                        image[rank-1]?.position(windowSize * windowSize * 3)
+                        val depth = image[rank-1]?.slice()
+                        image[rank-1]?.position(0)
                         fsb.material.textures[colorName] = "fromBuffer:$colorName"
                         fsb.material.transferTextures[colorName] = GenericTexture("whatever", GLVector(windowSize.toFloat(), windowSize.toFloat(), 1.0f), 3, contents = color)
 
@@ -212,12 +213,6 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
                 subscriber.subscribe(ZMQ.SUBSCRIPTION_ALL)
 
                 val objectMapper = ObjectMapper(MessagePackFactory())
-//                objectMapper.registerKotlinModule()
-//                objectMapper.configure(SerializationFeature.FAIL_ON_SELF_REFERENCES, false)
-//                objectMapper.setVisibility(objectMapper.serializationConfig.defaultVisibilityChecker.withFieldVisibility(JsonAutoDetect.Visibility.ANY)
-//                        .withGetterVisibility(JsonAutoDetect.Visibility.NONE)
-//                        .withSetterVisibility(JsonAutoDetect.Visibility.NONE)
-//                        .withCreatorVisibility(JsonAutoDetect.Visibility.NONE))
 
                 while(true) {
                     val payload = subscriber.recv()
@@ -225,15 +220,11 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
 
                         val deserialized: List<Any> = objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
 
-                        println(deserialized[0])
-                        println(deserialized[1])
-
                         cam.rotation = stringToQuaternion(deserialized[0].toString())
                         cam.position = stringTo3DGLVector(deserialized[1].toString())
 
                         println("The rotation is: ${cam.rotation}")
                         println("The position is: ${cam.position}")
-//                            val receivedCamera: Camera = objectMapper.readValue(payload, Camera::class.java)
 
                     } else {
                         log.info("received payload but it is null")
@@ -357,10 +348,12 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
     override fun main() {
 
         val nullArg = arrayOfNulls<String>(0)
-        MPI.Init(nullArg)
+        val ret = MPI.InitThread(nullArg, MPI.THREAD_MULTIPLE)
+
+        logger.info("MPI serial is: ${MPI.THREAD_MULTIPLE} and returned value is: $ret")
 
         rank = MPI.COMM_WORLD.rank
-        size = MPI.COMM_WORLD.size
+        commSize = MPI.COMM_WORLD.size
         val pName = MPI.COMM_WORLD.name
         if (rank == 0) {
             println("Hi, I am Aryaman's MPI example")
@@ -369,16 +362,16 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
             settings.set("Distributed.Rank", rank)
         }
         else {
-            println("Hello world from $pName rank $rank of $size")
+            println("Hello world from $pName rank $rank of $commSize")
             settings.set("Distributed.Rank", rank)
         }
 
 
         System.setProperty("scenery.MasterNode", "tcp://127.0.0.1:6666")
+
         if(MPI.COMM_WORLD.rank != 0) {
             System.setProperty("scenery.master", "false")
             System.setProperty("scenery.Headless", "true")
-            System.setProperty("scenery.LogLevel", "Debug")
             System.loadLibrary("shmSpheresTrial")
             log.info("Hi, I am Aryaman's shared memory example")
 
