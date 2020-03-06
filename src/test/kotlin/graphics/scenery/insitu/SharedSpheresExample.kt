@@ -231,8 +231,6 @@ class SharedSpheresExample : SceneryBase("SharedSpheresExample"){
                     }
                 }
             }
-
-
         }
 
     }
