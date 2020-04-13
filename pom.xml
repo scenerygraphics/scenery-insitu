@@ -94,6 +94,8 @@
         <dokka.version>0.9.17</dokka.version>
         <dokka.skip>true</dokka.skip>
 
+        <cleargl.version>2.2.10</cleargl.version>
+
         <license.licenseName>lgpl_v3</license.licenseName>
         <license.copyrightOwners>the scenery development team</license.copyrightOwners>
     </properties>
