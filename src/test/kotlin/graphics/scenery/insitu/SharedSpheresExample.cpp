@@ -10,7 +10,7 @@ using namespace std;
 
 #include "ShmBuffer.hpp"
 
-#define PNAME(isProp) ((isProp) ? "/home" : "/tmp")
+#define PNAME(isProp) ((isProp) ? "/home" : "/")
 
 #define DTYPE double
 #define GRIDLEN 11
