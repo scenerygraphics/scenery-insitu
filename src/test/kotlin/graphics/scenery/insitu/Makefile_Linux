@@ -1,0 +1,15 @@
+CPP_DIR := ../../../../../main/resources
+JAVA_DIR := /home/aryaman/jdk8u242-b08
+
+all: cpp jni
+
+cpp:
+	g++ -c -fPIC -I$(CPP_DIR) $(CPP_DIR)/SemManager.cpp -o SemManager.o
+	g++ -c -fPIC -I$(CPP_DIR) $(CPP_DIR)/ShmBuffer.cpp -o ShmBuffer.o
+
+jni: SemManager.o ShmBuffer.o
+	g++ -c -fPIC -I${JAVA_DIR}/include -I${JAVA_DIR}/include/linux -I${CPP_DIR} SharedSpheresExample.cpp -o shmSpheresTrial.o
+	g++ -shared -fPIC -o libshmSpheresTrial.so shmSpheresTrial.o ShmBuffer.o SemManager.o -lc
+
+clean:
+	rm SemManager.o ShmBuffer.o shmSpheresTrial.o libshmSpheresTrial.so
