@@ -1,7 +1,6 @@
 package graphics.scenery.insitu
 
 import graphics.scenery.backends.*
-import mpi.MPI
 import java.nio.charset.Charset
 import java.util.*
 
@@ -21,7 +20,7 @@ class CompositorShaderFactory: Shaders.ShaderFactory() {
                 val original = code.split("\n")
                 var converted = original.toMutableList()
 
-                val commSize = MPI.COMM_WORLD.size
+                val commSize = 4
 
                 var startIndex = converted.indexOf("#pragma insitu declareUniforms")
                 converted.add(startIndex + 1, "#define numNodes $commSize")
