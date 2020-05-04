@@ -81,15 +81,14 @@ class Head : SceneryBase("InVis Head") {
         for (rank in 1 until commSize) {
             val colorName = "ColorBuffer$rank"
             val depthName = "DepthBuffer$rank"
-            image[rank - 1]?.position(0)
-            val color = image[rank - 1]?.duplicate()
+            image[rank-1]?.position(0)
+            val color = image[rank-1]?.duplicate()
             color?.limit(windowSize * windowSize * 3)
-            image[rank - 1]?.position(windowSize * windowSize * 3)
-            val depth = image[rank - 1]?.slice()
-            image[rank - 1]?.position(0)
+            image[rank-1]?.position(windowSize * windowSize * 3)
+            val depth = image[rank-1]?.slice()
+            image[rank-1]?.position(0)
             fsb.material.textures[colorName] = "fromBuffer:$colorName"
             fsb.material.transferTextures[colorName] = GenericTexture("whatever", GLVector(windowSize.toFloat(), windowSize.toFloat(), 1.0f), 3, contents = color)
-
             fsb.material.textures[depthName] = "fromBuffer:$depthName"
             fsb.material.transferTextures[depthName] = GenericTexture("whatever", GLVector(windowSize.toFloat(), windowSize.toFloat(), 1.0f), 1, type = GLTypeEnum.Float, contents = depth)
             fsb.material.needsTextureReload = true
@@ -137,7 +136,9 @@ class Head : SceneryBase("InVis Head") {
     override fun main() {
         System.setProperty("scenery.master", "true")
         settings.set("VideoEncoder.StreamVideo", true)
+        settings.set("H264Encoder.StreamingAddress", "udp://192.168.0.200:3337")
         System.setProperty("scenery.MasterNode", "tcp://127.0.0.1:6666")
+        println("Head: Calling super.main!")
         super.main()
     }
 
