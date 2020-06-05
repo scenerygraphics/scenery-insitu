@@ -14,11 +14,19 @@ int main(int argc, char *argv[])
 			rank = atoi(argv[1]);
 	}
 
-	SemManager sems("/tmp", rank, true, true);
+	SemManager sems("/", rank, true, true);
 
 	printf("key\tsem 0\tsem 1\n");
 	for (int i = 0; i < NKEYS; ++i) {
 		sems.set(i, 0, 0);
 		sems.set(i, 1, 0);
 	}
+
+	SemManager sems2("/home", rank, true, true);
+
+	printf("key\tsem 0\tsem 1\n");
+        for (int i = 0; i < NKEYS; ++i) {
+	        sems2.set(i, 0, 0);
+	        sems2.set(i, 1, 0);
+         }
 }

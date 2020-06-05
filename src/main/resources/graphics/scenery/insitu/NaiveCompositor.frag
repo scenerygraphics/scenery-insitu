@@ -25,5 +25,5 @@ void main()
 
 #pragma insitu computeMin
 
-    FragColor = vec4(colorMin, 1.0);
+    FragColor = vec4(texture(ColorBuffer1, Vertex.textureCoord).rgb, 1.0);
 }

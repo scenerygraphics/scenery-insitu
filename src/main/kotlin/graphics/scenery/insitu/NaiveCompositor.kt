@@ -38,7 +38,9 @@ class NaiveCompositor : Mesh("FullscreenObject") {
         this.vertexSize = 3
         this.texcoordSize = 2
 
-        material = ShaderMaterial(CompositorShaderFactory())
+        val naiveCompositorShader = CompositorShaderFactory()
+        naiveCompositorShader.commSize = 2
+        material = ShaderMaterial(naiveCompositorShader)
 
         material.cullingMode = Material.CullingMode.None
         material.blending.transparent = true

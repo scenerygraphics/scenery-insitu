@@ -1,12 +1,13 @@
 package graphics.scenery.insitu
 
-import cleargl.GLVector
 import com.jogamp.opengl.math.Quaternion
 import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.net.NodePublisher
 import graphics.scenery.net.NodeSubscriber
+import org.joml.Vector3f
 import org.junit.Test
+import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -18,13 +19,11 @@ import kotlin.math.sqrt
 
 class InVisRenderer : SceneryBase("InVisRenderer"){
 
-    val windowSize = 700
-//    ByteBuffer[] bufferList = new ByteBuffer[7]
-    val computePartners = 2
+    val windowSize = 500
+    val computePartners = 1
 
-    var data: Array<DoubleBuffer?>? = arrayOfNulls(2)
-    var props: Array<DoubleBuffer?>? = arrayOfNulls(2)
-//    var spheres: Array<<ArrayList<Sphere>?>? = arrayOfNulls(2)
+    lateinit var data: Array<DoubleBuffer?>
+    lateinit var props: Array<DoubleBuffer?>
 
     lateinit var spheres: Array<ArrayList<Sphere>?>
 
@@ -37,7 +36,7 @@ class InVisRenderer : SceneryBase("InVisRenderer"){
     val lock = ReentrantLock()
     var cont = true // whether to continue updating memory
 
-    lateinit var color: GLVector
+//    lateinit var color: GLVector
     var publishedNodes = ArrayList<Node>()
     val log = LoggerFactory.getLogger("JavaMPI")
 
@@ -45,38 +44,29 @@ class InVisRenderer : SceneryBase("InVisRenderer"){
         settings.set("Input.SlowMovementSpeed", 0.5f)
         settings.set("Input.FastMovementSpeed", 1.0f)
 
-//        spheres = ArrayList(computePartners)
-//        data = ArrayList(computePartners)
-//        props = ArrayList(computePartners)
-//        data = Array(computePartners) { null }
-//        props = Array(computePartners) {ByteBuffer.allocateDirect(0).asDoubleBuffer()}
-        spheres = arrayOfNulls(2)
-        spheres[0] = ArrayList(0)
-        spheres[1] = ArrayList(0)
-
         renderer = hub.add(SceneryElement.Renderer,
                 Renderer.createRenderer(hub, applicationName, scene, windowSize, windowSize))
 
         val r = renderer as Renderer
         r.activateParallelRendering()
 
-        val box = Box(GLVector(10.0f, 10.0f, 10.0f), insideNormals = true)
-        box.material.diffuse = GLVector(0.9f, 0.9f, 0.9f)
+        val box = Box(Vector3f(10.0f, 10.0f, 10.0f), insideNormals = true)
+        box.material.diffuse = Vector3f(0.9f, 0.9f, 0.9f)
         box.material.cullingMode = Material.CullingMode.Front
         scene.addChild(box)
 
         val light = PointLight(radius = 15.0f)
-        light.position = GLVector(0.0f, 0.0f, 2.0f)
+        light.position = Vector3f(0.0f, 0.0f, 2.0f)
         light.intensity = 4.0f
-        light.emissionColor = GLVector(1.0f, 1.0f, 1.0f)
+        light.emissionColor = Vector3f(1.0f, 1.0f, 1.0f)
         scene.addChild(light)
 
         val cam: Camera = DetachedHeadCamera()
         with(cam) {
-            position = GLVector(0.3513025f, 0.11647624f, 2.3089614f)
-            perspectiveCamera(50.0f, 512.0f, 512.0f)
-            active = true
-            cam.rotation = Quaternion(-0.10018345f, 0.009550877f, -9.6172147E-4f, 0.9949227f)
+            position = Vector3f(0.3513025f, 0.11647624f, 2.3089614f)
+            perspectiveCamera(50.0f, 512, 512)
+//            active = true
+//            cam.rotation = Quaternion(-0.10018345f, 0.009550877f, -9.6172147E-4f, 0.9949227f)
             scene.addChild(this)
         }
 
@@ -91,7 +81,6 @@ class InVisRenderer : SceneryBase("InVisRenderer"){
             subscriber?.nodes?.put(13337 + index, node)
         }
 
-
         fixedRateTimer(initialDelay = 5, period = 5) {
             lock.lock()
             if (cont) {
@@ -101,7 +90,17 @@ class InVisRenderer : SceneryBase("InVisRenderer"){
             }
             lock.unlock()
         }
+    }
 
+    @Suppress("unused")
+    fun initializeArrays() {
+        data = arrayOfNulls(computePartners)
+        props = arrayOfNulls(computePartners)
+        spheres = arrayOfNulls(computePartners)
+
+        for(i in 0 until computePartners) {
+            spheres[i] = ArrayList(0)
+        }
     }
 
     private fun update() {
@@ -109,36 +108,35 @@ class InVisRenderer : SceneryBase("InVisRenderer"){
         // this.getResult()
 
         for(c in 0 until computePartners) {
-            data?.get(c)?.rewind()
-            props?.get(c)?.rewind()
+            val dat = data[c]?.rewind()
+            val prop = props[c]?.rewind()
 
             var counter = 0
 
-            if (data?.get(c) == null || props?.get(c) == null) {
-                println("Buffers are null. Returning!")
+            if (dat == null || prop == null) {
                 return
             }
 
-            while ( (data?.get(c)?.remaining()!! >= 3) && (props?.get(c)?.remaining()!! >= 6) ) {
+            while ( (dat.remaining() >= 3) && (prop.remaining() >= 6) ) {
 //                println("Fetching data from the bytebuffers $c")
 //                println("Data has ${data?.get(c)?.remaining()} remaining")
 
-                val x = data!![c]?.get()?.toFloat()
-                val y = data!![c]?.get()?.toFloat()
-                val z = data!![c]?.get()?.toFloat()
+                val x = dat.get().toFloat()
+                val y = dat.get().toFloat()
+                val z = dat.get().toFloat()
                 //println("x is $x y is $y z is $z")
 
-                val vx = props!![c]?.get()?.toFloat()
-                val vy = props!![c]?.get()?.toFloat()
-                val vz = props!![c]?.get()?.toFloat()
-                val fx = props!![c]?.get()
-                val fy = props!![c]?.get()
-                val fz = props!![c]?.get()
+                val vx = prop.get().toFloat()
+                val vy = prop.get().toFloat()
+                val vz = prop.get().toFloat()
+                val fx = prop.get()
+                val fy = prop.get()
+                val fz = prop.get()
 
-                println("$vx $vy $vz $fx $fy $fz")
+//                println("$vx $vy $vz $fx $fy $fz")
 
-                val speed = GLVector(vx!!, vy!!, vz!!).magnitude()
-                val direction = GLVector(vx, vy, vz).normalized
+                val speed = Vector3f(vx, vy, vz).length()
+                val direction = Vector3f(vx, vy, vz).normalize()
 
                 // update statistics
                 count++
@@ -160,13 +158,13 @@ class InVisRenderer : SceneryBase("InVisRenderer"){
 
                 if (counter < spheres[c]!!.size) {
                     // if sphere exists, update its position and color
-                    spheres[c]!![counter].position = GLVector(x!!, y!!, z!!) // isn't this also a copy? can we just set s.position.mElements to a buffer?
-                    spheres[c]!![counter].material.diffuse = GLVector(255 * scale, 0f, 255 * (1 - scale)) // blue for low speed, red for high
+                    spheres[c]!![counter].position = Vector3f(x, y, z) // isn't this also a copy? can we just set s.position.mElements to a buffer?
+                    spheres[c]!![counter].material.diffuse = Vector3f(255 * scale, 0f, 255 * (1 - scale)) // blue for low speed, red for high
                 } else {
                     // if sphere does not exist, create it and add it to the list
                     val s = Sphere(0.03f, 10)
-                    s.position = GLVector(x!!, y!!, z!!) // isn't this also a copy? can we just set s.position.mElements to a buffer?
-                    s.material.diffuse = GLVector(255 * scale, 0f, 255 * (1 - scale)) // blue for low speed, red for high
+                    s.position = Vector3f(x, y, z) // isn't this also a copy? can we just set s.position.mElements to a buffer?
+                    s.material.diffuse = Vector3f(255 * scale, 0f, 255 * (1 - scale)) // blue for low speed, red for high
                     scene.addChild(s)
                     spheres[c]!!.add(s)
                 }
@@ -190,12 +188,14 @@ class InVisRenderer : SceneryBase("InVisRenderer"){
         // Consumer then posts on old rank, producer sees and deletes it
         // Perhaps only two or even one semaphore may suffice, toggling rank at each update
 
+        logger.info("In updatePos Kotlin function")
+
         bb.order(ByteOrder.nativeOrder())
         println("Capacity of original bytebuffer is ${bb.capacity()}")
         lock.lock()
         println("Trying to update data buffer $compRank. I have the lock!")
-        data?.set(compRank, bb.asDoubleBuffer()) // possibly set to data1, then at next update
-        println("Capacity of double bytebuffer is ${data?.get(compRank)?.capacity()}")
+        data[compRank] = bb.asDoubleBuffer() // possibly set to data1, then at next update
+        println("Capacity of double bytebuffer is ${data[compRank]?.capacity()}")
         lock.unlock()
     }
 
@@ -207,10 +207,12 @@ class InVisRenderer : SceneryBase("InVisRenderer"){
         // Consumer then posts on old rank, producer sees and deletes it
         // Perhaps only two or even one semaphore may suffice, toggling rank at each update
 
+        logger.info("In updateProps Kotlin function")
+
         bb.order(ByteOrder.nativeOrder())
         lock.lock()
         println("Trying to update props buffer $compRank. I have the lock!")
-        props?.set(compRank, bb.asDoubleBuffer()) // possibly set to data1, then at next update
+        props[compRank] = bb.asDoubleBuffer() // possibly set to data1, then at next update
         lock.unlock()
     }
 
@@ -230,7 +232,7 @@ class InVisRenderer : SceneryBase("InVisRenderer"){
     override fun main() {
         System.setProperty("scenery.MasterNode", "tcp://127.0.0.1:6666")
         System.setProperty("scenery.master", "false")
-        System.setProperty("scenery.Headless", "true")
+//        System.setProperty("scenery.Headless", "true")
         super.main()
     }
 }

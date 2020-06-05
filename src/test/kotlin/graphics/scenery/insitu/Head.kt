@@ -10,9 +10,13 @@ import graphics.scenery.backends.Renderer
 import graphics.scenery.net.NodePublisher
 import graphics.scenery.net.NodeSubscriber
 import graphics.scenery.numerics.Random
+import graphics.scenery.textures.Texture
 import mpi.MPI
 import mpi.MPIException
 import mpi.Request
+import net.imglib2.type.numeric.real.FloatType
+import org.joml.Vector3f
+import org.joml.Vector3i
 import org.junit.Ignore
 import org.junit.Test
 import org.lwjgl.system.MemoryUtil
@@ -23,6 +27,7 @@ import org.zeromq.ZMQ
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.DoubleBuffer
+import java.nio.IntBuffer
 import java.util.*
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.fixedRateTimer
@@ -34,6 +39,7 @@ import kotlin.math.sqrt
 class Head : SceneryBase("InVis Head") {
 
     val windowSize = 700
+    val computePartners = 1
 
     var publishedNodes = ArrayList<Node>()
     val log = LoggerFactory.getLogger("JavaMPI")
@@ -51,15 +57,16 @@ class Head : SceneryBase("InVis Head") {
         scene.addChild(fsb)
 
         val light = PointLight(radius = 15.0f)
-        light.position = GLVector(0.0f, 0.0f, 2.0f)
+        light.position = Vector3f(0.0f, 0.0f, 2.0f)
         light.intensity = 10.0f
-        light.emissionColor = GLVector(1.0f, 1.0f, 1.0f)
+        light.emissionColor = Vector3f(1.0f, 1.0f, 1.0f)
         scene.addChild(light)
 
         with(cam) {
-            position = GLVector(0.0f, 0.0f, 5.0f)
-            perspectiveCamera(50.0f, 512.0f, 512.0f)
-            active = true
+            position = Vector3f(0.0f, 0.0f, 5.0f)
+            perspectiveCamera(50.0f, 512, 512)
+            disableCulling = true
+//            active = true
 
             scene.addChild(this)
         }
@@ -78,20 +85,40 @@ class Head : SceneryBase("InVis Head") {
 
     @Suppress("unused")
     fun composite(image: Array<ByteBuffer?>, commSize: Int) {
+        logger.info("In function composite")
         for (rank in 1 until commSize) {
             val colorName = "ColorBuffer$rank"
             val depthName = "DepthBuffer$rank"
             image[rank-1]?.position(0)
             val color = image[rank-1]?.duplicate()
             color?.limit(windowSize * windowSize * 3)
+
+            for (i in 1..windowSize*windowSize*3) {
+                color?.put(i,1)
+            }
+
             image[rank-1]?.position(windowSize * windowSize * 3)
             val depth = image[rank-1]?.slice()
             image[rank-1]?.position(0)
-            fsb.material.textures[colorName] = "fromBuffer:$colorName"
-            fsb.material.transferTextures[colorName] = GenericTexture("whatever", GLVector(windowSize.toFloat(), windowSize.toFloat(), 1.0f), 3, contents = color)
-            fsb.material.textures[depthName] = "fromBuffer:$depthName"
-            fsb.material.transferTextures[depthName] = GenericTexture("whatever", GLVector(windowSize.toFloat(), windowSize.toFloat(), 1.0f), 1, type = GLTypeEnum.Float, contents = depth)
-            fsb.material.needsTextureReload = true
+            logger.info("Setting texture $colorName")
+            fsb.material.textures[colorName] = Texture(Vector3i(windowSize, windowSize, 1), 3, contents = color)
+//            if (color != null) {
+//                logger.info("Printing the color buffer. The capacity is ${color.capacity()}")
+//            }
+            with(color) {
+                logger.info("The capacity is ${this?.capacity()}")
+                for(i in 0..5) {
+                    logger.info("Printing element $i")
+                    logger.info("${this?.get(i)}")
+                }
+            }
+//            fsb.material.transferTextures[colorName] = GenericTexture("whatever", GLVector(windowSize.toFloat(), windowSize.toFloat(), 1.0f), 3, contents = color)
+            logger.info("Setting texture $depthName")
+            fsb.material.textures[depthName] = Texture(Vector3i(windowSize, windowSize, 1), 1, type = FloatType(), contents = depth)
+
+//            fsb.material.textures[depthName] = "fromBuffer:$depthName"
+//            fsb.material.transferTextures[depthName] = GenericTexture("whatever", GLVector(windowSize.toFloat(), windowSize.toFloat(), 1.0f), 1, type = GLTypeEnum.Float, contents = depth)
+//            fsb.material.needsTextureReload = true
         }
     }
 
@@ -110,8 +137,8 @@ class Head : SceneryBase("InVis Head") {
             if (payload != null) {
                 val deserialized: List<Any> = objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
 
-                cam.rotation = stringToQuaternion(deserialized[0].toString())
-                cam.position = stringTo3DGLVector(deserialized[1].toString())
+//                cam.rotation = stringToQuaternion(deserialized[0].toString())
+//                cam.position = stringTo3DGLVector(deserialized[1].toString())
 
                 println("The rotation is: ${cam.rotation}")
                 println("The position is: ${cam.position}")
@@ -127,10 +154,10 @@ class Head : SceneryBase("InVis Head") {
         return Quaternion(elements[0], elements[1], elements[2], elements[3])
     }
 
-    private fun stringTo3DGLVector(inputString: String): GLVector {
-        val mElements = inputString.removeSurrounding("[", "]").split(",").map { it.toFloat() }
-        return GLVector(mElements[0], mElements[1], mElements[2])
-    }
+//    private fun stringTo3DGLVector(inputString: String): GLVector {
+//        val mElements = inputString.removeSurrounding("[", "]").split(",").map { it.toFloat() }
+//        return GLVector(mElements[0], mElements[1], mElements[2])
+//    }
 
     @Test
     override fun main() {

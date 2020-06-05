@@ -19,6 +19,9 @@ sem_get:
 sem_reset:
 	g++    -I$(CPP_DIR) sem_reset.cpp $(CPP_DIR)/SemManager.cpp -std=c++11 -pthread -o sem_reset
 
+remove_shmem:
+	g++    -I$(CPP_DIR) remove_shmem.cpp $(CPP_DIR)/SemManager.cpp -std=c++11 -pthread -o remove_shmem
+
 # producer:
 # 	g++    shm_producer.cpp    ShmAllocator.cpp SemManager.cpp -std=c++11 -pthread -o producer
 

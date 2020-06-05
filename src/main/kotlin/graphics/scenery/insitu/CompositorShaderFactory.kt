@@ -6,6 +6,9 @@ import java.util.*
 
 
 class CompositorShaderFactory: Shaders.ShaderFactory() {
+
+    var commSize: Int = 0
+
     override fun construct(target: ShaderTarget, type: ShaderType): ShaderPackage {
 
         var code = ""
@@ -19,8 +22,6 @@ class CompositorShaderFactory: Shaders.ShaderFactory() {
                 code = String(this.javaClass.getResourceAsStream("NaiveCompositor.frag").readBytes(), charset = Charset.forName("UTF-8"))
                 val original = code.split("\n")
                 var converted = original.toMutableList()
-
-                val commSize = 4
 
                 var startIndex = converted.indexOf("#pragma insitu declareUniforms")
                 converted.add(startIndex + 1, "#define numNodes $commSize")
@@ -49,6 +50,7 @@ class CompositorShaderFactory: Shaders.ShaderFactory() {
                 }
 
                 code = converted.joinToString("\n")
+                logger.info("Printing the shader code now")
                 println(code)
             }
 
