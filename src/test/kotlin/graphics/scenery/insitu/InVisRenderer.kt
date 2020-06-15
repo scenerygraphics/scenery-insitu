@@ -14,13 +14,15 @@ import java.nio.ByteOrder
 import java.nio.DoubleBuffer
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.fixedRateTimer
+import kotlin.concurrent.thread
 import kotlin.math.sqrt
 
 
 class InVisRenderer : SceneryBase("InVisRenderer"){
 
-    val windowSize = 500
-    val computePartners = 1
+    var windowSize = 500
+    var computePartners = 1
+    var rank = 0
 
     lateinit var data: Array<DoubleBuffer?>
     lateinit var props: Array<DoubleBuffer?>
@@ -49,6 +51,16 @@ class InVisRenderer : SceneryBase("InVisRenderer"){
 
         val r = renderer as Renderer
         r.activateParallelRendering()
+
+        thread {
+            while(renderer?.firstImageReady == false) {
+                Thread.sleep(50)
+            }
+
+            renderer?.recordMovie("./RendererMovie$rank.mp4")
+            Thread.sleep(100000)
+            renderer?.recordMovie()
+        }
 
         val box = Box(Vector3f(10.0f, 10.0f, 10.0f), insideNormals = true)
         box.material.diffuse = Vector3f(0.9f, 0.9f, 0.9f)
@@ -117,22 +129,37 @@ class InVisRenderer : SceneryBase("InVisRenderer"){
                 return
             }
 
-            while ( (dat.remaining() >= 3) && (prop.remaining() >= 6) ) {
+//            while ( (dat.remaining() >= 3) && (prop.remaining() >= 6) ) {
+////                println("Fetching data from the bytebuffers $c")
+////                println("Data has ${data?.get(c)?.remaining()} remaining")
+//
+//                val x = dat.get().toFloat()
+//                val y = dat.get().toFloat()
+//                val z = dat.get().toFloat()
+//                //println("x is $x y is $y z is $z")
+//
+//                val vx = prop.get().toFloat()
+//                val vy = prop.get().toFloat()
+//                val vz = prop.get().toFloat()
+//                val fx = prop.get()
+//                val fy = prop.get()
+//                val fz = prop.get()
+
+            while ( (data[c]!!.remaining() >= 3) && (props[c]!!.remaining() >= 6) ) {
 //                println("Fetching data from the bytebuffers $c")
 //                println("Data has ${data?.get(c)?.remaining()} remaining")
 
-                val x = dat.get().toFloat()
-                val y = dat.get().toFloat()
-                val z = dat.get().toFloat()
+                val x = data[c]!!.get().toFloat()
+                val y = data[c]!!.get().toFloat()
+                val z = data[c]!!.get().toFloat()
                 //println("x is $x y is $y z is $z")
 
-                val vx = prop.get().toFloat()
-                val vy = prop.get().toFloat()
-                val vz = prop.get().toFloat()
-                val fx = prop.get()
-                val fy = prop.get()
-                val fz = prop.get()
-
+                val vx = props[c]!!.get().toFloat()
+                val vy = props[c]!!.get().toFloat()
+                val vz = props[c]!!.get().toFloat()
+                val fx = props[c]!!.get()
+                val fy = props[c]!!.get()
+                val fz = props[c]!!.get()
 //                println("$vx $vy $vz $fx $fy $fz")
 
                 val speed = Vector3f(vx, vy, vz).length()

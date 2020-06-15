@@ -24,6 +24,7 @@ import org.msgpack.jackson.dataformat.MessagePackFactory
 import org.slf4j.LoggerFactory
 import org.zeromq.ZContext
 import org.zeromq.ZMQ
+import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.DoubleBuffer
@@ -53,6 +54,16 @@ class Head : SceneryBase("InVis Head") {
 
         renderer = hub.add(SceneryElement.Renderer,
                 Renderer.createRenderer(hub, applicationName, scene, windowSize, windowSize))
+
+        thread {
+            while(renderer?.firstImageReady == false) {
+                Thread.sleep(50)
+            }
+
+            renderer?.recordMovie("./HeadMovie.mp4")
+            Thread.sleep(50000)
+            renderer?.recordMovie()
+        }
 
         scene.addChild(fsb)
 
@@ -93,27 +104,27 @@ class Head : SceneryBase("InVis Head") {
             val color = image[rank-1]?.duplicate()
             color?.limit(windowSize * windowSize * 3)
 
-            for (i in 1..windowSize*windowSize*3) {
-                color?.put(i,1)
-            }
+//            for (i in 1..windowSize*windowSize*3) {
+//                color?.put(i,1)
+//            }
 
             image[rank-1]?.position(windowSize * windowSize * 3)
             val depth = image[rank-1]?.slice()
             image[rank-1]?.position(0)
-            logger.info("Setting texture $colorName")
+//            logger.info("Setting texture $colorName")
             fsb.material.textures[colorName] = Texture(Vector3i(windowSize, windowSize, 1), 3, contents = color)
 //            if (color != null) {
 //                logger.info("Printing the color buffer. The capacity is ${color.capacity()}")
 //            }
-            with(color) {
-                logger.info("The capacity is ${this?.capacity()}")
-                for(i in 0..5) {
-                    logger.info("Printing element $i")
-                    logger.info("${this?.get(i)}")
-                }
-            }
+//            with(color) {
+//                logger.info("The capacity is ${this?.capacity()}")
+//                for(i in 0..5) {
+//                    logger.info("Printing element $i")
+//                    logger.info("${this?.get(i)}")
+//                }
+//            }
 //            fsb.material.transferTextures[colorName] = GenericTexture("whatever", GLVector(windowSize.toFloat(), windowSize.toFloat(), 1.0f), 3, contents = color)
-            logger.info("Setting texture $depthName")
+//            logger.info("Setting texture $depthName")
             fsb.material.textures[depthName] = Texture(Vector3i(windowSize, windowSize, 1), 1, type = FloatType(), contents = depth)
 
 //            fsb.material.textures[depthName] = "fromBuffer:$depthName"
@@ -162,8 +173,8 @@ class Head : SceneryBase("InVis Head") {
     @Test
     override fun main() {
         System.setProperty("scenery.master", "true")
-        settings.set("VideoEncoder.StreamVideo", true)
-        settings.set("H264Encoder.StreamingAddress", "udp://192.168.0.200:3337")
+//        settings.set("VideoEncoder.StreamVideo", true)
+//        settings.set("H264Encoder.StreamingAddress", "udp://${InetAddress.getLocalHost().hostAddress}:3337")
         System.setProperty("scenery.MasterNode", "tcp://127.0.0.1:6666")
         println("Head: Calling super.main!")
         super.main()
