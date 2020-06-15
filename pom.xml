@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.scijava</groupId>
         <artifactId>pom-scijava</artifactId>
-        <version>24.0.0</version>
+        <version>29.0.0-beta-2</version>
     </parent>
 
     <groupId>graphics.scenery</groupId>
@@ -88,13 +88,37 @@
     <properties>
         <scijava.jvm.version>1.8</scijava.jvm.version>
         <javac.target>1.8</javac.target>
-        <kotlin.version>1.3.21</kotlin.version>
+        <kotlin.version>1.4-M2</kotlin.version>
         <kotlin.compiler.jvmTarget>1.8</kotlin.compiler.jvmTarget>
         <kotlin.compiler.incremental>true</kotlin.compiler.incremental>
+        <kotlinx-coroutines-core.version>1.3.7-1.4-M2</kotlinx-coroutines-core.version>
+
         <dokka.version>0.9.17</dokka.version>
         <dokka.skip>true</dokka.skip>
 
+<!--        <bigdataviewer-core.version>9.0.2</bigdataviewer-core.version>-->
+<!--        <bigvolumeviewer.version>0.1.8</bigvolumeviewer.version>-->
         <cleargl.version>2.2.10</cleargl.version>
+
+<!--        <jna-platform.version>4.5.2</jna-platform.version>-->
+<!--        <jna.version>4.5.2</jna.version>-->
+
+<!--        <lwjgl.version>3.2.3</lwjgl.version>-->
+<!--        <lwjgl3-awt.version>0.1.7</lwjgl3-awt.version>-->
+
+<!--        <kryo.version>4.0.2</kryo.version>-->
+
+<!--        <lwjgl.natives>natives-${scijava.platform.family.long}</lwjgl.natives>-->
+
+<!--        <jeromq.version>0.4.3</jeromq.version>-->
+<!--        <spirvcrossj.version>0.7.0-1.1.106.0</spirvcrossj.version>-->
+
+<!--        <jackson-databind.version>2.9.10.1</jackson-databind.version>-->
+<!--        <jackson-dataformat-msgpack.version>0.8.16</jackson-dataformat-msgpack.version>-->
+<!--        <jackson-dataformat-yaml.version>2.9.9</jackson-dataformat-yaml.version>-->
+<!--        <jackson-module-kotlin.version>2.9.9</jackson-module-kotlin.version>-->
+
+<!--        <reflections.version>0.9.11</reflections.version>-->
 
         <license.licenseName>lgpl_v3</license.licenseName>
         <license.copyrightOwners>the scenery development team</license.copyrightOwners>
@@ -116,7 +140,7 @@
         <dependency>
             <groupId>org.jetbrains.kotlinx</groupId>
             <artifactId>kotlinx-coroutines-core</artifactId>
-            <version>1.1.1</version>
+            <version>${kotlinx-coroutines-core.version}</version>
         </dependency>
 
         <dependency>
@@ -145,11 +169,99 @@
             <scope>test</scope>
         </dependency>
 
+<!--        <dependency>-->
+<!--            <groupId>sc.fiji</groupId>-->
+<!--            <artifactId>bigvolumeviewer</artifactId>-->
+<!--            <version>${bigvolumeviewer.version}</version>-->
+<!--        </dependency>-->
+
+<!--        <dependency>-->
+<!--            <groupId>io.scif</groupId>-->
+<!--            <artifactId>scifio</artifactId>-->
+<!--        </dependency>-->
+
+<!--        <dependency>-->
+<!--            <groupId>com.esotericsoftware</groupId>-->
+<!--            <artifactId>kryo</artifactId>-->
+<!--            <version>${kryo.version}</version>-->
+<!--        </dependency>-->
+
+<!--        <dependency>-->
+<!--            <groupId>org.scijava</groupId>-->
+<!--            <artifactId>scijava-common</artifactId>-->
+<!--        </dependency>-->
+
+<!--        &lt;!&ndash; jackson dependencies &ndash;&gt;-->
+<!--        <dependency>-->
+<!--            <groupId>com.fasterxml.jackson.core</groupId>-->
+<!--            <artifactId>jackson-databind</artifactId>-->
+<!--            <version>${jackson-databind.version}</version>-->
+<!--        </dependency>-->
+
+<!--        <dependency>-->
+<!--            <groupId>com.fasterxml.jackson.module</groupId>-->
+<!--            <artifactId>jackson-module-kotlin</artifactId>-->
+<!--            <version>${jackson-module-kotlin.version}</version>-->
+<!--        </dependency>-->
+
+<!--        <dependency>-->
+<!--            <groupId>com.fasterxml.jackson.dataformat</groupId>-->
+<!--            <artifactId>jackson-dataformat-yaml</artifactId>-->
+<!--            <version>${jackson-dataformat-yaml.version}</version>-->
+<!--        </dependency>-->
+
+<!--        &lt;!&ndash; jackson dependencies end &ndash;&gt;-->
+
+<!--&lt;!&ndash;        <dependency>&ndash;&gt;-->
+<!--&lt;!&ndash;            <groupId>org.scijava</groupId>&ndash;&gt;-->
+<!--&lt;!&ndash;            <artifactId>script-editor</artifactId>&ndash;&gt;-->
+<!--&lt;!&ndash;        </dependency>&ndash;&gt;-->
+
+<!--        <dependency>-->
+<!--            <groupId>org.scijava</groupId>-->
+<!--            <artifactId>ui-behaviour</artifactId>-->
+<!--        </dependency>-->
+
+<!--        <dependency>-->
+<!--            <groupId>org.scijava</groupId>-->
+<!--            <artifactId>scripting-javascript</artifactId>-->
+<!--        </dependency>-->
+
+<!--        <dependency>-->
+<!--            <groupId>org.scijava</groupId>-->
+<!--            <artifactId>scripting-jython</artifactId>-->
+<!--        </dependency>-->
+
         <dependency>
             <groupId>graphics.scenery</groupId>
             <artifactId>scenery</artifactId>
             <version>0.7.0-beta-8-SNAPSHOT</version>
         </dependency>
+
+<!--        <dependency>-->
+<!--            <groupId>graphics.scenery</groupId>-->
+<!--            <artifactId>spirvcrossj</artifactId>-->
+<!--            <version>${spirvcrossj.version}</version>-->
+<!--        </dependency>-->
+
+<!--        <dependency>-->
+<!--            <groupId>graphics.scenery</groupId>-->
+<!--            <artifactId>spirvcrossj</artifactId>-->
+<!--            <version>${spirvcrossj.version}</version>-->
+<!--            <classifier>${lwjgl.natives}</classifier>-->
+<!--            <scope>runtime</scope>-->
+<!--        </dependency>-->
+
+<!--        <dependency>-->
+<!--            <groupId>net.java.dev.jna</groupId>-->
+<!--            <artifactId>jna</artifactId>-->
+<!--        </dependency>-->
+
+<!--        <dependency>-->
+<!--            <groupId>net.java.dev.jna</groupId>-->
+<!--            <artifactId>jna-platform</artifactId>-->
+<!--            <version>${jna-platform.version}</version>-->
+<!--        </dependency>-->
 
         <dependency>
             <groupId>org.openmpi</groupId>
@@ -159,17 +271,25 @@
             <systemPath>${basedir}/mpi.jar</systemPath>
         </dependency>
 
-        <dependency>
-            <groupId>org.msgpack</groupId>
-            <artifactId>msgpack-core</artifactId>
-            <version>0.8.20</version>
-        </dependency>
+<!--        &lt;!&ndash; ZeroMQ dependencies start &ndash;&gt;-->
+<!--        <dependency>-->
+<!--            <groupId>org.zeromq</groupId>-->
+<!--            <artifactId>jeromq</artifactId>-->
+<!--            <version>${jeromq.version}</version>-->
+<!--        </dependency>-->
+<!--        &lt;!&ndash; ZeroMQ dependencies end &ndash;&gt;-->
 
-        <dependency>
-            <groupId>org.msgpack</groupId>
-            <artifactId>jackson-dataformat-msgpack</artifactId>
-            <version>0.8.20</version>
-        </dependency>
+<!--        <dependency>-->
+<!--            <groupId>org.msgpack</groupId>-->
+<!--            <artifactId>msgpack-core</artifactId>-->
+<!--            <version>0.8.20</version>-->
+<!--        </dependency>-->
+
+<!--        <dependency>-->
+<!--            <groupId>org.msgpack</groupId>-->
+<!--            <artifactId>jackson-dataformat-msgpack</artifactId>-->
+<!--            <version>0.8.20</version>-->
+<!--        </dependency>-->
 <!--        <dependency>-->
 <!--            <groupId>com.fasterxml.jackson.core</groupId>-->
 <!--            <artifactId>jackson-databind</artifactId>-->
@@ -182,14 +302,181 @@
 <!--            <version>2.10.1</version>-->
 <!--        </dependency>-->
 
+<!--        <dependency>-->
+<!--            <groupId>org.reflections</groupId>-->
+<!--            <artifactId>reflections</artifactId>-->
+<!--            <version>${reflections.version}</version>-->
+<!--        </dependency>-->
+
+<!--        <dependency>-->
+<!--            <groupId>org.lwjglx</groupId>-->
+<!--            <artifactId>lwjgl3-awt</artifactId>-->
+<!--            <version>${lwjgl3-awt.version}</version>-->
+<!--        </dependency>-->
+
+<!--        &lt;!&ndash; LWJGL dependencies START &ndash;&gt;-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--        </dependency>-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl-glfw</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--        </dependency>-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl-jemalloc</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--        </dependency>-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl-vulkan</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--        </dependency>-->
+<!--        &lt;!&ndash; Removed for the moment because of non-existent binaries for Linux and Windows-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl-vulkan</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--            <classifier>${lwjgl.natives}</classifier>-->
+<!--            <scope>runtime</scope>-->
+<!--        </dependency>-->
+<!--        &ndash;&gt;-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl-opengl</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--        </dependency>-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl-openvr</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--        </dependency>-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl-xxhash</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--        </dependency>-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--            <classifier>${lwjgl.natives}</classifier>-->
+<!--            <scope>runtime</scope>-->
+<!--        </dependency>-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl-opengl</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--            <classifier>${lwjgl.natives}</classifier>-->
+<!--            <scope>runtime</scope>-->
+<!--        </dependency>-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl-glfw</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--            <classifier>${lwjgl.natives}</classifier>-->
+<!--            <scope>runtime</scope>-->
+<!--        </dependency>-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl-jemalloc</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--            <classifier>${lwjgl.natives}</classifier>-->
+<!--            <scope>runtime</scope>-->
+<!--        </dependency>-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl-openvr</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--            <classifier>${lwjgl.natives}</classifier>-->
+<!--            <scope>runtime</scope>-->
+<!--        </dependency>-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl-xxhash</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--            <classifier>${lwjgl.natives}</classifier>-->
+<!--        </dependency>-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl-remotery</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--        </dependency>-->
+<!--        <dependency>-->
+<!--            <groupId>org.lwjgl</groupId>-->
+<!--            <artifactId>lwjgl-remotery</artifactId>-->
+<!--            <version>${lwjgl.version}</version>-->
+<!--            <classifier>${lwjgl.natives}</classifier>-->
+<!--        </dependency>-->
+<!--        &lt;!&ndash; LWJGL dependencies END &ndash;&gt;-->
+
+<!--        <dependency>-->
+<!--            <groupId>net.clearvolume</groupId>-->
+<!--            <artifactId>cleargl</artifactId>-->
+<!--        </dependency>-->
+
+<!--        <dependency>-->
+<!--            <groupId>org.joml</groupId>-->
+<!--            <artifactId>joml</artifactId>-->
+<!--            <version>1.9.22</version>-->
+<!--        </dependency>-->
+
+<!--        <dependency>-->
+<!--            <groupId>net.imglib2</groupId>-->
+<!--            <artifactId>imglib2-ij</artifactId>-->
+<!--            <scope>test</scope>-->
+<!--        </dependency>-->
+<!--        <dependency>-->
+<!--            <groupId>org.janelia.saalfeldlab</groupId>-->
+<!--            <artifactId>n5</artifactId>-->
+<!--            <version>2.1.3</version>-->
+<!--        </dependency>-->
+<!--        <dependency>-->
+<!--            <groupId>org.janelia.saalfeldlab</groupId>-->
+<!--            <artifactId>n5-imglib2</artifactId>-->
+<!--            <version>3.4.1</version>-->
+<!--        </dependency>-->
+
     </dependencies>
 
     <repositories>
         <repository>
-            <id>imagej.public</id>
-            <url>http://maven.imagej.net/content/groups/public</url>
+            <id>scijava.public</id>
+            <url>https://maven.scijava.org/content/groups/public</url>
+        </repository>
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
+        <repository>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+            <id>bintray.kotlin.eap</id>
+            <name>Bintray Kotlin EAP Repository</name>
+            <url>https://dl.bintray.com/kotlin/kotlin-eap</url>
         </repository>
     </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+            <id>bintray.kotlin.eap</id>
+            <name>Bintray Kotlin EAP Repository</name>
+            <url>https://dl.bintray.com/kotlin/kotlin-eap</url>
+        </pluginRepository>
+    </pluginRepositories>
 
     <build>
         <sourceDirectory>src/main/kotlin</sourceDirectory>
@@ -202,15 +489,19 @@
                 <executions>
                     <execution>
                         <id>compile</id>
+                        <phase>compile</phase>
                         <goals> <goal>compile</goal> </goals>
                         <configuration>
                             <sourceDirs>
-                                <sourceDir>${project.basedir}/src/main/kotlin</sourceDir>
+                                <source>src/main/kotlin</source>
+                                <source>target/generated-sources/kapt</source>
+                                <source>target/generated-sources/kaptKotlin</source>
                             </sourceDirs>
                         </configuration>
                     </execution>
                     <execution>
                         <id>test-compile</id>
+                        <phase>test-compile</phase>
                         <goals> <goal>test-compile</goal> </goals>
                         <configuration>
                             <sourceDirs>
@@ -304,6 +595,28 @@
                     </excludes>
                 </configuration>
             </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.1.2</version>
+                <executions>
+                    <execution>
+                        <id>copy-dependencies</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/dependency</outputDirectory>
+                            <overWriteReleases>false</overWriteReleases>
+                            <overWriteSnapshots>false</overWriteSnapshots>
+                            <overWriteIfNewer>true</overWriteIfNewer>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
 
         </plugins>
     </build>
