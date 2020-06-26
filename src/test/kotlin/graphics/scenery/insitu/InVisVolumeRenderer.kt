@@ -4,18 +4,13 @@ import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.net.NodePublisher
 import graphics.scenery.net.NodeSubscriber
-import graphics.scenery.numerics.Random
-import graphics.scenery.utils.RingBuffer
-import graphics.scenery.utils.extensions.plus
 import graphics.scenery.volumes.BufferedVolume
 import graphics.scenery.volumes.Colormap
 import graphics.scenery.volumes.Volume
 import net.imglib2.type.numeric.integer.UnsignedShortType
 import org.joml.Vector3f
 import org.junit.Test
-import org.lwjgl.system.MemoryUtil
 import java.nio.ByteBuffer
-import java.nio.ShortBuffer
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.fixedRateTimer
 import kotlin.concurrent.thread
@@ -28,7 +23,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
     var computePartners = 1
     var rank = 0
 
-    lateinit var data: Array<ArrayList<ShortBuffer?>?> // An array of the size computePartners, each element of which is a list of ShortBuffers, the individual grids of the compute partner
+    lateinit var data: Array<ArrayList<ByteBuffer?>?> // An array of the size computePartners, each element of which is a list of ShortBuffers, the individual grids of the compute partner
     lateinit var allOrigins: Array<ArrayList<Vector3f>?> // An array of size computePartners, each element of which is a list of 3D vectors, the origins of the individual grids of the compute partner
     lateinit var allGridDims: Array<ArrayList<Array<Int>>?>
     lateinit var allGridDomains: Array<ArrayList<Array<Int>>?>
@@ -39,6 +34,8 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
     var numUpdated : Int = 0 // The number of partners that have updated data with pointers to their grids. Works only assuming no resizing on OpenFPM side
     val lock = ReentrantLock()
     var publishedNodes = ArrayList<Node>()
+
+    var count = 0
 
     @Suppress("unused")
     fun initializeArrays() {
@@ -61,17 +58,25 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
     }
 
     @Suppress("unused")
-    fun updateData(grids: Array<ByteBuffer?>, origins: Array<Int>, gridDims: Array<Array<Int>>, numGrids: Int, partnerNo: Int) {
+    fun updateData(partnerNo: Int, numGrids: Int, grids: Array<ByteBuffer?>, origins: IntArray, gridDims: IntArray, domainDims: IntArray) {
         numGridsPerPartner[partnerNo] = numGrids
         for(i in 0 until numGrids) {
-            data[partnerNo]!!.add(grids[i] as ShortBuffer)
+            logger.info("Updating data for grid $i of compute partner $partnerNo")
+            data[partnerNo]!!.add(grids[i])
+            logger.info("Updated bytebuffer")
+            logger.info("0: ${origins[0]}")
+            logger.info("1: ${origins[1]}")
+            logger.info("2: ${origins[2]}")
             allOrigins[partnerNo]?.add(Vector3f(origins[i*3].toFloat(), origins[i*3+1].toFloat(), origins[i*3+2].toFloat()))
+            logger.info("Updated origin")
             allGridDims[partnerNo]?.add(arrayOf(
-                    gridDims[i][0], gridDims[i][1], gridDims[i][2], // starting position of grid
-                    gridDims[i][3], gridDims[i][4], gridDims[i][5])) // end coordinate of grid
+                    gridDims[i*6+0], gridDims[i*6+1], gridDims[i*6+2], // starting position of grid
+                    gridDims[i*6+3], gridDims[i*6+4], gridDims[i*6+5])) // end coordinate of grid
+            logger.info("Updated grid dims")
             allGridDomains[partnerNo]?.add(arrayOf(
-                    gridDims[i][6], gridDims[i][7], gridDims[i][8], // starting position of domain
-                    gridDims[i][9], gridDims[i][10], gridDims[i][11])) // end coordinate of domain
+                    domainDims[i*6+0], domainDims[i*6+1], domainDims[i*6+2], // starting position of domain
+                    domainDims[i*6+3], domainDims[i*6+4], domainDims[i*6+5])) // end coordinate of domain
+            logger.info("Updated domaindims")
 
         }
         lock.lock()
@@ -110,11 +115,13 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
         }
 
         // Create VolumeBuffer objects for each grid, configure them, and put them in the scene
-        val volumesInitialized = false
+        var volumesInitialized = false
         thread {
             while(numUpdated != computePartners) {
                 Thread.sleep(50)
             }
+
+            logger.info("All compute partners have passed their grid data")
 
             for (partnerNo in 0 until computePartners) {
                 val numGrids = numGridsPerPartner[partnerNo]!!
@@ -128,12 +135,15 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
                     val height = gridDims[grid][4] - gridDims[grid][1]
                     val depth = gridDims[grid][5] - gridDims[grid][2]
                     val currentHasMap = volumeHashMaps[partnerNo]?.get(grid)!!
-                    volumes[partnerNo]?.add( Volume.fromBuffer(currentHasMap, width.absoluteValue, height.absoluteValue, depth.absoluteValue, UnsignedShortType(), hub))
+                    volumes[partnerNo]?.add( Volume.fromBuffer(currentHasMap, width.absoluteValue, depth.absoluteValue, height.absoluteValue,  UnsignedShortType(), hub))
+                    logger.info("width height and depth are $width $height $depth")
                     volumes[partnerNo]?.get(grid)?.name  = "Grid${grid}OfPartner${partnerNo}"
                     volumes[partnerNo]?.get(grid)?.position = origins[grid]
+                    logger.info("Position of grid $grid of computePartner $partnerNo is ${volumes[partnerNo]?.get(grid)?.position}")
                     volumes[partnerNo]?.get(grid)?.origin = Origin.FrontBottomLeft
+                    volumes[partnerNo]?.get(grid)?.needsUpdate = true
                     volumes[partnerNo]?.get(grid)?.colormap = Colormap.get("hot")
-                    volumes[partnerNo]?.get(grid)?.pixelToWorldRatio = 0.03f
+                    volumes[partnerNo]?.get(grid)?.pixelToWorldRatio = 1.0f
 
                     with(volumes[partnerNo]?.get(grid)?.transferFunction) {
                         this?.addControlPoint(0.0f, 0.0f)
@@ -147,24 +157,23 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
                     volumes[partnerNo]?.get(grid)?.let { scene.addChild(it)}
 
                     //TODO:Add the domain information to the volume
-
                 }
             }
-
+            volumesInitialized = true
         }
 
-        publishedNodes.add(cam)
+//        publishedNodes.add(cam)
+//
+//        val publisher = hub.get<NodePublisher>(SceneryElement.NodePublisher)
+//        val subscriber = hub.get<NodeSubscriber>(SceneryElement.NodeSubscriber)
+//
+//        publishedNodes.forEachIndexed { index, node ->
+//            publisher?.nodes?.put(13337 + index, node)
+//
+//            subscriber?.nodes?.put(13337 + index, node)
+//        }
 
-        val publisher = hub.get<NodePublisher>(SceneryElement.NodePublisher)
-        val subscriber = hub.get<NodeSubscriber>(SceneryElement.NodeSubscriber)
-
-        publishedNodes.forEachIndexed { index, node ->
-            publisher?.nodes?.put(13337 + index, node)
-
-            subscriber?.nodes?.put(13337 + index, node)
-        }
-
-        fixedRateTimer(initialDelay = 5, period = 50) {
+        fixedRateTimer(initialDelay = 5, period = 5000) {
             if (volumesInitialized && running && !shouldClose) {
                 updateVolumes()
             }
@@ -172,26 +181,39 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
 
     }
 
-    fun updateVolumes() {
+    private fun updateVolumes() {
+        logger.info("Updating volumes")
         for(partnerNo in 0 until computePartners) {
             val numGrids = numGridsPerPartner[partnerNo]!!
             val volumesFromThisPartner = volumes[partnerNo]!!
             val dataFromThisPartner = data[partnerNo]!!
             for(grid in 0 until numGrids) {
+                val buf = (dataFromThisPartner[grid] as ByteBuffer).asShortBuffer()
+                logger.info("${buf.get(0).toUShort()}")
+                logger.info("${buf.get(1).toUShort()}")
+                logger.info("${buf.get(2).toUShort()}")
+                logger.info("${buf.get(3).toUShort()}")
+                logger.info("${buf.get(4).toUShort()}")
+
+                logger.info("Updating grid $grid of compute partner $partnerNo")
                 if(volumesFromThisPartner[grid]?.metadata?.get("animating") == true) {
-                    volumesFromThisPartner[grid]?.addTimepoint("time", dataFromThisPartner[grid] as ByteBuffer)
-                    val currentHasMap = volumeHashMaps[partnerNo]?.get(grid)!!
-                    volumesFromThisPartner[grid]?.goToTimePoint(currentHasMap.size-1)
-                    volumesFromThisPartner[grid]?.purgeFirst(1, 1)
+                    logger.info("Grid data represented by bytebuffer with position ${dataFromThisPartner[grid]?.position()} and " +
+                            "limit ${dataFromThisPartner[grid]?.limit()} and capacity ${dataFromThisPartner[grid]?.capacity()}")
+                    volumesFromThisPartner[grid]?.addTimepoint("t-${count}", dataFromThisPartner[grid] as ByteBuffer)
+                    val currentHashMap = volumeHashMaps[partnerNo]?.get(grid)!!
+                    logger.info("Going to timepoint ${currentHashMap.size-1}")
+                    volumesFromThisPartner[grid]?.goToTimePoint(currentHashMap.size-1)
+//                    volumesFromThisPartner[grid]?.purgeFirst(0, 1)
                 }
+                count++
             }
         }
     }
 
     @Test
     override fun main() {
-        System.setProperty("scenery.MasterNode", "tcp://127.0.0.1:6666")
-        System.setProperty("scenery.master", "false")
+//        System.setProperty("scenery.MasterNode", "tcp://127.0.0.1:6666")
+//        System.setProperty("scenery.master", "false")
 //        System.setProperty("scenery.Headless", "true")
         super.main()
     }
