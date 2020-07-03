@@ -1,0 +1,71 @@
+#version 450
+
+layout (local_size_x = 16) in;
+layout (set = 0, binding = 0, rgba8) uniform readonly image3D InputVDIsColor;
+layout (set = 1, binding = 0, rgba8) uniform readonly image3D InputVDIsDepth;
+layout (set = 2, binding = 0, rgba8) uniform image2D CompositedVDIColor;
+layout (set = 3, binding = 0, rgba8) uniform image2D CompositedVDIDepth;
+
+vec2 decode(vec4 c){
+    vec2 v = vec2(0.);
+
+    int ir = int(c.r*255.);
+    int ig = int(c.g*255.);
+    int irg = ir*256 + ig;
+    v.x = float(irg) / 256.;
+
+    int ib = int(c.b*255.);
+    int ia = int(c.a*255.);
+    int iba = ib*256 + ia;
+    v.y = float(iba) / 256.;
+
+    v -= 128.;
+    return v;
+}
+
+
+void main() {
+    ivec3 imageCoords  = imageSize(InputVDIsColor);
+    int numInputSupersegments = imageCoords.r;
+    int numProcesses = imageCoords.b;
+    int frontSupersegment[numProcesses]; // which supersegment of this pixel are we currently looking at, for each process
+    for (int i = 0; i<numProcesses; i++) {
+        frontSupersegment[i] = 0;
+    }
+
+    ivec3 opImageCoords  = imageSize(CompositedVDIColor);
+    int numOutputSupersegments = opImageCoords.x;
+
+    vec4 depth;
+    vec4 colour;
+
+    float lowDepth;
+    int lowIndex;
+
+    for(int i = 0; i<numOutputSupersegments; i++) {
+        //Selecting which supersegment to place ith in the list
+
+        lowDepth = 2.0;
+
+        for (int j = 0; j < numProcesses; j++) {
+            if(frontSupersegment[j] > numInputSupersegments) {
+                continue;
+            }
+            vec4 curSupersegmentDepths = imageLoad(InputVDIsDepth, ivec3(frontSupersegment[j], gl_GlobalInvocationID.x, j)).rgba;
+            float curStartDepth = decode(curSupersegmentDepths).x;
+
+            if(curStartDepth < lowDepth) {
+                lowDepth = curStartDepth;
+                lowIndex = j;
+                depth = curSupersegmentDepths;
+                colour = imageLoad(InputVDIsColor, ivec3(frontSupersegment[j], gl_GlobalInvocationID.x, j)).rgba;
+            }
+        }
+
+        imageStore(CompositedVDIDepth, ivec2(i, gl_GlobalInvocationID.x), depth);
+        imageStore(CompositedVDIColor, ivec2(i, gl_GlobalInvocationID.x), colour);
+        frontSupersegment[lowIndex]++;
+
+    }
+
+}
