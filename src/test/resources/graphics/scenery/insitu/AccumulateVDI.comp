@@ -13,21 +13,25 @@ if (vis)
         vec4 supersegmentAdjusted;
         supersegmentAdjusted.rgb = curV.rgb / curV.a;
         supersegmentAdjusted.a = adjustOpacity(curV.a, 1.0/segLen);
-
+//        supersegmentAdjusted = x;
         float diff = diffPremultiplied(supersegmentAdjusted, x);
 
         bool newSupSeg = false;
-        if(diff > newSupSegThresh) {
+        if(diff >= newSupSegThresh) {
             newSupSeg = true;
         }
 
         if(lastSample || ((newSupSeg || transparentSample) && !lastSupersegment)) {
             supersegmentIsOpen = false;
             supSegEndPoint = step;
-            vec4 encodedDepths;
-            encodedDepths = encode(supSegStartPoint, supSegEndPoint);
-            imageStore(OutputSubVDIDepth, ivec3(supersegmentNum, gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), encodedDepths);
-            imageStore(OutputSubVDIColor, ivec3(supersegmentNum, gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), supersegmentAdjusted);
+            vec4 encodedDepthStart;
+            vec4 encodedDepthEnd;
+            encodedDepthStart = EncodeFloatRGBA(supSegStartPoint);
+            encodedDepthEnd = EncodeFloatRGBA(supSegStartPoint);
+//            encodedDepths = encode(supSegStartPoint, supSegEndPoint);
+            imageStore(OutputSubVDIDepth, ivec3(2 * supersegmentNum, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), encodedDepthStart);
+            imageStore(OutputSubVDIDepth, ivec3(2 * supersegmentNum + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), encodedDepthEnd);
+            imageStore(OutputSubVDIColor, ivec3(supersegmentNum, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), supersegmentAdjusted);
             supersegmentNum++;
         }
     }
@@ -45,7 +49,7 @@ if (vis)
     v.rgb = v.rgb + (1.0f - v.a) * newColor * newAlpha;
     v.a = v.a + (1.0f - v.a) * newAlpha;
 
-    if(v.a >= 1.0f) {
-        break;
-    }
+//    if(v.a >= 1.0f) {
+//        break;
+//    }
 }

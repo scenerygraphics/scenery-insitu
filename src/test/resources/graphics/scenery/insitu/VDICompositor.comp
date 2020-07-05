@@ -3,7 +3,7 @@
 layout (local_size_x = 16) in;
 layout (set = 0, binding = 0, rgba8) uniform readonly image3D InputVDIsColor;
 layout (set = 1, binding = 0, rgba8) uniform readonly image3D InputVDIsDepth;
-layout (set = 2, binding = 0, rgba8) uniform image2D CompositedVDIColor;
+layout (set = 2, binding = 0, rgba8) uniform image2D CompositedVDIColor; //TODO: put loadstore
 layout (set = 3, binding = 0, rgba8) uniform image2D CompositedVDIDepth;
 
 vec2 decode(vec4 c){
@@ -28,12 +28,12 @@ void main() {
     ivec3 imageCoords  = imageSize(InputVDIsColor);
     int numInputSupersegments = imageCoords.r;
     int numProcesses = imageCoords.b;
-    int frontSupersegment[numProcesses]; // which supersegment of this pixel are we currently looking at, for each process
+    int frontSupersegment[50]; // which supersegment of this pixel are we currently looking at, for each process
     for (int i = 0; i<numProcesses; i++) {
         frontSupersegment[i] = 0;
     }
 
-    ivec3 opImageCoords  = imageSize(CompositedVDIColor);
+    ivec2 opImageCoords  = imageSize(CompositedVDIColor);
     int numOutputSupersegments = opImageCoords.x;
 
     vec4 depth;
