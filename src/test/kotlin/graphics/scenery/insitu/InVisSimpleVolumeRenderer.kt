@@ -244,6 +244,7 @@ class InVisSimpleVolumeRenderer: SceneryBase("InVisSimpleVolumeRenderer") {
                     logger.debug("Grid data represented by bytebuffer with position ${dataFromThisPartner[grid]?.position()} and " +
                             "limit ${dataFromThisPartner[grid]?.limit()} and capacity ${dataFromThisPartner[grid]?.capacity()}")
                     volumesFromThisPartner[grid]?.addTimepoint("t-${count}", dataFromThisPartner[grid] as ByteBuffer) //TODO try with constant name
+                    logger.info("The origin of grid $grid of process $partnerNo is ${volumesFromThisPartner[grid]?.position}")
                     val currentHashMap = volumeHashMaps[partnerNo]?.get(grid)!!
                     logger.debug("Going to timepoint ${currentHashMap.size-1}")
                     volumesFromThisPartner[grid]?.goToTimePoint(currentHashMap.size-1)
