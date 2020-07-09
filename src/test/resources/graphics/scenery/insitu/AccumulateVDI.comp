@@ -27,7 +27,7 @@ if (vis)
             vec4 encodedDepthStart;
             vec4 encodedDepthEnd;
             encodedDepthStart = EncodeFloatRGBA(supSegStartPoint);
-            encodedDepthEnd = EncodeFloatRGBA(supSegStartPoint);
+            encodedDepthEnd = EncodeFloatRGBA(supSegEndPoint);
 //            encodedDepths = encode(supSegStartPoint, supSegEndPoint);
             imageStore(OutputSubVDIDepth, ivec3(2 * supersegmentNum, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), encodedDepthStart);
             imageStore(OutputSubVDIDepth, ivec3(2 * supersegmentNum + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), encodedDepthEnd);
