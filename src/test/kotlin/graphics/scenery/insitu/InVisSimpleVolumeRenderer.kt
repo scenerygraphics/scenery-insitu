@@ -176,7 +176,7 @@ class InVisSimpleVolumeRenderer: SceneryBase("InVisSimpleVolumeRenderer") {
                     val height = gridDims[grid][4] - gridDims[grid][1] + 1
                     val depth = gridDims[grid][5] - gridDims[grid][2] + 1
                     val currentHasMap = volumeHashMaps[partnerNo]?.get(grid)!!
-                    volumes[partnerNo]?.add( Volume.fromBuffer(currentHasMap, height.absoluteValue, width.absoluteValue, depth.absoluteValue, UnsignedShortType(), hub))
+                    volumes[partnerNo]?.add( Volume.fromBuffer(currentHasMap, width.absoluteValue, height.absoluteValue, depth.absoluteValue, UnsignedShortType(), hub))
                     logger.info("width height and depth are $width $height $depth")
                     volumes[partnerNo]?.get(grid)?.name  = "Grid${grid}OfPartner${partnerNo}"
 
