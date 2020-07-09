@@ -191,7 +191,7 @@ class InVisSimpleVolumeRenderer: SceneryBase("InVisSimpleVolumeRenderer") {
                     logger.info("Position of grid $grid of computePartner $partnerNo is ${volumes[partnerNo]?.get(grid)?.position}")
                     volumes[partnerNo]?.get(grid)?.origin = Origin.FrontBottomLeft
                     volumes[partnerNo]?.get(grid)?.needsUpdate = true
-                    volumes[partnerNo]?.get(grid)?.colormap = Colormap.get("plasma")
+                    volumes[partnerNo]?.get(grid)?.colormap = Colormap.get("viridis")
                     volumes[partnerNo]?.get(grid)?.pixelToWorldRatio = pixelToWorld
 
                     val bg = BoundingGrid()
@@ -199,10 +199,10 @@ class InVisSimpleVolumeRenderer: SceneryBase("InVisSimpleVolumeRenderer") {
 
                     with(volumes[partnerNo]?.get(grid)?.transferFunction) {
                         this?.addControlPoint(0.0f, 0.0f)
-                        this?.addControlPoint(0.2f, 0.2f)
-                        this?.addControlPoint(0.4f, 0.5f)
-                        this?.addControlPoint(0.8f, 0.7f)
-                        this?.addControlPoint(1.0f, 0.9f)
+                        this?.addControlPoint(0.2f, 0.0f)
+                        this?.addControlPoint(0.4f, 0.3f)
+                        this?.addControlPoint(0.8f, 0.5f)
+                        this?.addControlPoint(1.0f, 0.6f)
                     }
 
                     volumes[partnerNo]?.get(grid)?.metadata?.set("animating", true)
