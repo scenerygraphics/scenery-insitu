@@ -281,9 +281,9 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
                     val pixelToWorld = 0.02f
                     origins[grid] = origins[grid].mul(pixelToWorld)
 
-                    cam.position = origins[grid] + Vector3f(0.0f, 0.0f, 2.0f)
+                    cam.position = Vector3f(3.213f, 8.264E-1f, -9.844E-1f)
 
-                    cam.rotation = Quaternionf(-2.323E-1 , 3.956E-1, -1.042E-1,  8.824E-1)
+                    cam.rotation = Quaternionf(3.049E-2,  9.596E-1, -1.144E-1, -2.553E-1)
 
                     volumes[partnerNo]?.get(grid)?.position = origins[grid]
                     logger.info("Position of grid $grid of computePartner $partnerNo is ${volumes[partnerNo]?.get(grid)?.position}")
