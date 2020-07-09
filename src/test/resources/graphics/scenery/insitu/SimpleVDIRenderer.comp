@@ -1,9 +1,9 @@
 #version 450
 
 layout (local_size_x = 16, local_size_y = 16) in;
-layout (set = 0, binding = 0, rgba8) uniform readonly image3D InputColorVDI;
+layout (set = 0, binding = 0, rgba8) uniform readonly image3D ColorVDI;
 layout (set = 1, binding = 0, rgba8) uniform image2D OutputViewport;
-layout (set = 2, binding = 0, rgba8) uniform readonly image3D InputDepthVDI;
+layout (set = 2, binding = 0, rgba8) uniform readonly image3D DepthVDI;
 
 vec2 decode(vec4 c){
     vec2 v = vec2(0.);
@@ -29,20 +29,22 @@ float DecodeFloatRGBA (vec4 v) {
 }
 
 void main() {
-    ivec3 imageCoords  = imageSize(InputColorVDI);
+    ivec3 imageCoords  = imageSize(ColorVDI);
 
     int numSupersegments = imageCoords.r;
     vec4 v = vec4(0);
 
+    vec4 maxV = vec4(0);
+
     for(int i = 0; i < numSupersegments; i++) {
-        vec4 x = imageLoad(InputColorVDI, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x));
+        vec4 x = imageLoad(ColorVDI, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x));
         vec3 newColor = x.rgb;
         float newAlpha = x.a;
 
         if(i<(numSupersegments-1)) {
 
-            vec4 d = imageLoad(InputDepthVDI, ivec3(i*2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x)); //Start point of this supersegment
-            vec4 dNext = imageLoad(InputDepthVDI, ivec3(i*2+2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x)); //Start point of next supersegment
+            vec4 d = imageLoad(DepthVDI, ivec3(i*2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x)); //Start point of this supersegment
+            vec4 dNext = imageLoad(DepthVDI, ivec3(i*2+2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x)); //Start point of next supersegment
             float depthHere = DecodeFloatRGBA(d);
 
             if(i!=0 && depthHere == 0.0) {
@@ -51,11 +53,15 @@ void main() {
 
             float depthNext = DecodeFloatRGBA(dNext);
             if((depthHere < depthNext) || (depthHere > 0. && depthNext == 0.)) {
-                //            if(true) {
+//            if(true) {
+                maxV.r = max(maxV.r, newColor.r);
+                maxV.g = max(maxV.g, newColor.g);
+                maxV.b = max(maxV.b, newColor.b);
+
                 v.rgb = v.rgb + (1.0f - v.a) * newColor * newAlpha;
                 v.a = v.a + (1.0f - v.a) * newAlpha;
             } else {
-                v = vec4(0);
+                v = vec4(1);
             }
         } else {
             v.rgb = v.rgb + (1.0f - v.a) * newColor * newAlpha;

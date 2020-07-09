@@ -117,7 +117,7 @@ void main()
     //	vec2 viewportSizeActual = (vrParameters.stereoEnabled ^ 1) * viewportSize + vrParameters.stereoEnabled * vec2(viewportSize.x/2.0, viewportSize.y);
     //	vec2 uv = 2 * ( gl_FragCoord.xy + dsp ) / viewportSizeActual - 1;
     ivec3 imageCoords  = imageSize(OutputSubVDIColor);
-    float newSupSegThresh = 0.000001;
+    float newSupSegThresh = 0.00000001;
 
     vec2 texcoord = gl_GlobalInvocationID.xy/vec2(imageCoords.b, imageCoords.g);
     vec2 uv = texcoord * 2.0 - vec2(1.0);
@@ -204,7 +204,8 @@ void main()
         FragColor = v;
         if(supersegmentNum < maxSupersegments - 1) {
             for(int i = supersegmentNum; i < maxSupersegments; i++) {
-                imageStore(OutputSubVDIDepth, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIDepth, ivec3(2 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIDepth, ivec3(2 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
                 imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
             }
         }
@@ -212,7 +213,8 @@ void main()
         FragColor = vec4(0, 0, 0, 0);
         if(supersegmentNum < maxSupersegments - 1) {
             for(int i = supersegmentNum; i < maxSupersegments; i++) {
-                imageStore(OutputSubVDIDepth, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIDepth, ivec3(2 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIDepth, ivec3(2 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
                 imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
             }
         }
@@ -225,5 +227,5 @@ void main()
 //        }
 //    }
 
-    imageStore(OutputRender, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(1));
+    imageStore(OutputRender, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), FragColor);
 }
