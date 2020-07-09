@@ -393,7 +393,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
                 logger.info("File dumped")
             }
 
-            distributeVDIs(subVDIColorBuffer!!, subVDIDepthBuffer!!, windowHeight * windowWidth * maxSupersegments * 4, commSize)
+            distributeVDIs(subVDIColorBuffer!!, subVDIDepthBuffer!!, windowHeight * windowWidth * maxSupersegments * 4 / commSize, commSize)
 
             logger.info("Back in the management function")
 
@@ -428,7 +428,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
                 saveFiles = false
             }
 
-            gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, 0, windowHeight * windowWidth * maxOutputSupersegments * 4, rank, commSize);
+            gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, 0, windowHeight * windowWidth * maxOutputSupersegments * 4 / commSize, rank, commSize);
 
         }
     }
