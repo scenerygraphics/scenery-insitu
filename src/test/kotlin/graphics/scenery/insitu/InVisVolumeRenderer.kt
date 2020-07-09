@@ -63,7 +63,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
     var saveFiles = false
 
     private external fun distributeVDIs(subVDIColor: ByteBuffer, subVDIDepth: ByteBuffer, sizePerProcess: Int, commSize: Int)
-    private external fun gatherCompositedVDIs(compositedVDIColor: ByteBuffer, compositedVDIDepth: ByteBuffer, root: Int, subVDILen: Int, myRank: Int, commSize: Int)
+    private external fun gatherCompositedVDIs(compositedVDIColor: ByteBuffer, compositedVDIDepth: ByteBuffer, root: Int, subVDILen: Int, myRank: Int, commSize: Int, saveFiles: Boolean)
 
     @Suppress("unused")
     fun initializeArrays() {
@@ -425,10 +425,10 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
                 SystemHelpers.dumpToFile(compositedVDIColorBuffer!!, "$rank:textureCompCol-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
                 SystemHelpers.dumpToFile(compositedVDIDepthBuffer!!, "$rank:textureCompDepth-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
                 logger.info("File dumped")
-                saveFiles = false
             }
 
-            gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, 0, windowHeight * windowWidth * maxOutputSupersegments * 4 / commSize, rank, commSize);
+            gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, 0, windowHeight * windowWidth * maxOutputSupersegments * 4 / commSize, rank, commSize, saveFiles);
+            saveFiles = false
 
         }
     }
