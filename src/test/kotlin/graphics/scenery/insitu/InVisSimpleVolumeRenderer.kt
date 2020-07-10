@@ -111,8 +111,8 @@ class InVisSimpleVolumeRenderer: SceneryBase("InVisSimpleVolumeRenderer") {
     }
 
     override fun init() {
-        windowHeight = 512
-        windowWidth = 512
+        windowHeight = 600
+        windowWidth = 600
 
         renderer = hub.add(Renderer.createRenderer(hub, applicationName, scene, windowWidth, windowHeight))
 
@@ -191,7 +191,7 @@ class InVisSimpleVolumeRenderer: SceneryBase("InVisSimpleVolumeRenderer") {
                     logger.info("Position of grid $grid of computePartner $partnerNo is ${volumes[partnerNo]?.get(grid)?.position}")
                     volumes[partnerNo]?.get(grid)?.origin = Origin.FrontBottomLeft
                     volumes[partnerNo]?.get(grid)?.needsUpdate = true
-                    volumes[partnerNo]?.get(grid)?.colormap = Colormap.get("viridis")
+                    volumes[partnerNo]?.get(grid)?.colormap = Colormap.get("jet")
                     volumes[partnerNo]?.get(grid)?.pixelToWorldRatio = pixelToWorld
 
                     val bg = BoundingGrid()

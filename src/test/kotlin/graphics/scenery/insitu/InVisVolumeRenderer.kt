@@ -4,7 +4,6 @@ import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.backends.Shaders
 import graphics.scenery.compute.ComputeMetadata
-import graphics.scenery.compute.InvocationType
 import graphics.scenery.textures.Texture
 import graphics.scenery.utils.Image
 import graphics.scenery.utils.SystemHelpers
@@ -113,8 +112,8 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
     }
 
     override fun init() {
-        windowHeight = 512
-        windowWidth = 512
+        windowHeight = 600
+        windowWidth = 600
 
         renderer = hub.add(Renderer.createRenderer(hub, applicationName, scene, windowWidth, windowHeight))
 
@@ -126,6 +125,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
                                 "VDIGenerator.comp",
                                 "intersectBoundingBox", "vis", "SampleVolume", "Convert", "Accumulate"),
                         SegmentType.Accumulator to SegmentTemplate(
+//                                this.javaClass,
                                 "AccumulateVDI.comp",
                                 "vis", "sampleVolume", "convert")
                 ))
@@ -248,7 +248,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
             scene.addChild(light)
         }
 
-        fixedRateTimer("saving_files", initialDelay = 15000, period = 10000) {
+        fixedRateTimer("saving_files", initialDelay = 15000, period = 60000) {
             logger.info("should write files now")
             saveFiles = true
         }
@@ -285,11 +285,15 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
 
                     cam.rotation = Quaternionf(3.049E-2,  9.596E-1, -1.144E-1, -2.553E-1)
 
+//                    cam.position = origins[grid] + Vector3f(0.0f, 0.0f, 2.0f)
+//
+//                    cam.rotation = Quaternionf(-2.323E-1 , 3.956E-1, -1.042E-1,  8.824E-1)
+
                     volumes[partnerNo]?.get(grid)?.position = origins[grid]
                     logger.info("Position of grid $grid of computePartner $partnerNo is ${volumes[partnerNo]?.get(grid)?.position}")
                     volumes[partnerNo]?.get(grid)?.origin = Origin.FrontBottomLeft
                     volumes[partnerNo]?.get(grid)?.needsUpdate = true
-                    volumes[partnerNo]?.get(grid)?.colormap = Colormap.get("viridis")
+                    volumes[partnerNo]?.get(grid)?.colormap = Colormap.get("jet")
                     volumes[partnerNo]?.get(grid)?.pixelToWorldRatio = pixelToWorld
 
                     val bg = BoundingGrid()
