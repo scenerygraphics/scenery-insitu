@@ -74,7 +74,7 @@ void main() {
             vec4 curStartDepthRGBA = imageLoad(VDIsDepth, ivec3(frontSupersegment[j] * 2, gl_GlobalInvocationID.x, j * opImageCoords.b + gl_GlobalInvocationID.y)).rgba;
             float curStartDepth = DecodeFloatRGBA(curStartDepthRGBA);
 
-            if(curStartDepth < lowDepth) {
+            if(curStartDepth < lowDepth && curStartDepth != 0) {
                 lowDepth = curStartDepth;
                 lowIndex = j;
                 startDepth = curStartDepthRGBA;
