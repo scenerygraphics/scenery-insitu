@@ -3,8 +3,6 @@ uniform vec2 dsp;
 uniform float fwnw;
 uniform float nw;
 
-uniform sampler3D volumeCache;
-
 // -- comes from CacheSpec -----
 uniform vec3 blockSize;
 uniform vec3 paddedBlockSize;
@@ -37,10 +35,12 @@ layout(push_constant) uniform currentEye_t {
     int eye;
 } currentEye;
 
+
 layout(local_size_x = 16, local_size_y = 16) in;
-layout(set = 2, binding = 0, rgba8) uniform image3D OutputSubVDIColor;
-layout(set = 3, binding = 0, rgba8) uniform image3D OutputSubVDIDepth;
-layout(set = 4, binding = 0, rgba8) uniform image2D OutputRender;
+layout(set = 2, binding = 0) uniform sampler3D volumeCache;
+layout(set = 3, binding = 0, rgba8) uniform image3D OutputSubVDIColor;
+layout(set = 4, binding = 0, rgba8) uniform image3D OutputSubVDIDepth;
+layout(set = 5, binding = 0, rgba8) uniform image2D OutputRender;
 #pragma scenery endverbatim
 
 // intersect ray with a box
@@ -70,6 +70,14 @@ float diffPremultiplied(vec4 a, vec4 b) {
     b.rgb = b.rgb * b.a;
 
     return length(a.rgb-b.rgb);
+}
+
+const vec4 bitEnc = vec4(1.,255.,65025.,16581375.);
+vec4 EncodeFloatRGBA (float v) {
+    vec4 enc = bitEnc * v;
+    enc = fract(enc);
+    enc -= enc.yzww * vec2(1./255., 0.).xxxy;
+    return enc;
 }
 
 vec4 encode(float x, float y){
@@ -109,9 +117,9 @@ void main()
     //	vec2 viewportSizeActual = (vrParameters.stereoEnabled ^ 1) * viewportSize + vrParameters.stereoEnabled * vec2(viewportSize.x/2.0, viewportSize.y);
     //	vec2 uv = 2 * ( gl_FragCoord.xy + dsp ) / viewportSizeActual - 1;
     ivec3 imageCoords  = imageSize(OutputSubVDIColor);
-    float newSupSegThresh = 0.2;
+    float newSupSegThresh = 0.00000001;
 
-    vec2 texcoord = gl_GlobalInvocationID.xy/vec2(imageCoords.g, imageCoords.b);
+    vec2 texcoord = gl_GlobalInvocationID.xy/vec2(imageCoords.b, imageCoords.g);
     vec2 uv = texcoord * 2.0 - vec2(1.0);
     vec2 depthUV = (vrParameters.stereoEnabled ^ 1) * texcoord + vrParameters.stereoEnabled * vec2((texcoord.x/2.0 + currentEye.eye * 0.5), texcoord.y);
     depthUV = depthUV * 2.0 - vec2(1.0);
@@ -147,7 +155,7 @@ void main()
     // -------------------------------------------------------
 
     int maxSupersegments = imageCoords.r;
-    float minOpacity = 0.0002; //If alpha is less than this, the sample is considered transparent and not included in generated supersegments
+    float minOpacity = 0.000000000000000001; //If alpha is less than this, the sample is considered transparent and not included in generated supersegments
     int supersegmentNum = 0;
 
     if ( tnear < tfar )
@@ -171,6 +179,7 @@ void main()
         vec4 curV = vec4( 0 );
         for ( int i = 0; i < numSteps; ++i, step += nw + step * fwnw )
         {
+            transparentSample = false;
             if(i==(numSteps-1)) {
                 lastSample = true;
             }
@@ -193,9 +202,30 @@ void main()
             */
         }
         FragColor = v;
+        if(supersegmentNum < maxSupersegments - 1) {
+            for(int i = supersegmentNum; i < maxSupersegments; i++) {
+                imageStore(OutputSubVDIDepth, ivec3(2 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIDepth, ivec3(2 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+            }
+        }
     } else {
         FragColor = vec4(0, 0, 0, 0);
+        if(supersegmentNum < maxSupersegments - 1) {
+            for(int i = supersegmentNum; i < maxSupersegments; i++) {
+                imageStore(OutputSubVDIDepth, ivec3(2 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIDepth, ivec3(2 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+            }
+        }
     }
+
+    //    if(supersegmentNum < maxSupersegments - 1) {
+    //        for(int i = supersegmentNum; i < maxSupersegments; i++) {
+    //            imageStore(OutputSubVDIDepth, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+    //            imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+    //        }
+    //    }
 
     imageStore(OutputRender, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), FragColor);
 }
