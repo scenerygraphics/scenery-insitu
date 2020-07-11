@@ -130,10 +130,10 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
                                 "vis", "sampleVolume", "convert")
                 ))
 
-        val outputBuffer = MemoryUtil.memCalloc(windowWidth*windowHeight*4)
-        val outputTexture = Texture.fromImage(Image(outputBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-        outputTexture.mipmap = false
-        volumeManager.material.textures["OutputRender"] = outputTexture
+//        val outputBuffer = MemoryUtil.memCalloc(windowWidth*windowHeight*4)
+//        val outputTexture = Texture.fromImage(Image(outputBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+//        outputTexture.mipmap = false
+//        volumeManager.material.textures["OutputRender"] = outputTexture
         val outputSubColorBuffer = MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments)
         val outputSubDepthBuffer = MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*2)
         val outputSubVDIColor = Texture.fromImage(Image(outputSubColorBuffer, maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
@@ -173,13 +173,13 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
 //            renderer?.recordMovie()
 //        }
 //
-        val box = Box(Vector3f(0.0f, 2.0f, 1.0f))
-        box.name = "le box du win"
-        box.material.textures["diffuse"] = volumeManager.material.textures["OutputRender"]!!
-        box.material.metallic = 0.0f
-        box.material.roughness = 1.0f
-
-        scene.addChild(box)
+//        val box = Box(Vector3f(0.0f, 2.0f, 1.0f))
+//        box.name = "le box du win"
+//        box.material.textures["diffuse"] = volumeManager.material.textures["OutputRender"]!!
+//        box.material.metallic = 0.0f
+//        box.material.roughness = 1.0f
+//
+//        scene.addChild(box)
 
 //        val compute2 = Node()
 //        compute2.name = "compute node 2"
@@ -248,10 +248,10 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
             scene.addChild(light)
         }
 
-        fixedRateTimer("saving_files", initialDelay = 15000, period = 60000) {
-            logger.info("should write files now")
-            saveFiles = true
-        }
+//        fixedRateTimer("saving_files", initialDelay = 15000, period = 10000) {
+//            logger.info("should write files now")
+//            saveFiles = true
+//        }
 
         // Create VolumeBuffer objects for each grid, configure them, and put them in the scene
         var volumesInitialized = false
@@ -397,6 +397,8 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
                 logger.info("File dumped")
             }
 
+            volumeManager.visible = false
+
             distributeVDIs(subVDIColorBuffer!!, subVDIDepthBuffer!!, windowHeight * windowWidth * maxSupersegments * 4 / commSize, commSize)
 
             logger.info("Back in the management function")
@@ -420,6 +422,9 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
                 }
             }
 
+            compute.visible = false
+            volumeManager.visible = true
+
             while(compositedVDIColorBuffer == null || compositedVDIDepthBuffer == null) {
                 Thread.sleep(5)
             }
@@ -432,7 +437,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
             }
 
             gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, 0, windowHeight * windowWidth * maxOutputSupersegments * 4 / commSize, rank, commSize, saveFiles);
-            saveFiles = false
+//            saveFiles = false
 
         }
     }

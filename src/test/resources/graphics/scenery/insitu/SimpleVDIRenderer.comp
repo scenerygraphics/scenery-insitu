@@ -1,6 +1,6 @@
 #version 450
 
-layout (local_size_x = 16, local_size_y = 16) in;
+layout (local_size_x = 15, local_size_y = 15) in;
 layout (set = 0, binding = 0, rgba8) uniform readonly image3D ColorVDI;
 layout (set = 1, binding = 0, rgba8) uniform image2D OutputViewport;
 layout (set = 2, binding = 0, rgba8) uniform readonly image3D DepthVDI;
@@ -26,6 +26,10 @@ const vec4 bitEnc = vec4(1.,255.,65025.,16581375.);
 const vec4 bitDec = 1./bitEnc;
 float DecodeFloatRGBA (vec4 v) {
     return dot(v, bitDec);
+}
+
+float adjustOpacity(float a, float modifiedStepLength) {
+    return 1.0 - pow((1.0 - a), modifiedStepLength);
 }
 
 void main() {
