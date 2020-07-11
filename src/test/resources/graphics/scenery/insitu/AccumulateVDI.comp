@@ -29,9 +29,9 @@ if (vis)
             encodedDepthStart = EncodeFloatRGBA(supSegStartPoint);
             encodedDepthEnd = EncodeFloatRGBA(supSegEndPoint);
 //            encodedDepths = encode(supSegStartPoint, supSegEndPoint);
-            imageStore(OutputSubVDIDepth, ivec3(2 * supersegmentNum, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), encodedDepthStart);
-            imageStore(OutputSubVDIDepth, ivec3(2 * supersegmentNum + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), encodedDepthEnd);
-            imageStore(OutputSubVDIColor, ivec3(supersegmentNum, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), supersegmentAdjusted);
+            imageStore(OutputSubVDIColor, ivec3(3 * supersegmentNum + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), encodedDepthStart);
+            imageStore(OutputSubVDIColor, ivec3(3 * supersegmentNum + 2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), encodedDepthEnd);
+            imageStore(OutputSubVDIColor, ivec3(3 * supersegmentNum, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), supersegmentAdjusted);
             supersegmentNum++;
         }
     }
@@ -46,7 +46,7 @@ if (vis)
     curV.rgb = curV.rgb + (1 - curV.a) * newColor * w;
     curV.a = curV.a + (1 - curV.a) * w;
 
-    v.rgb = v.rgb + (1.0f - v.a) * newColor * newAlpha;
+    v.rgb = v.rgb + (1.0f - v.a) * newColor * newAlpha; //TODO Remove
     v.a = v.a + (1.0f - v.a) * newAlpha;
 
 //    if(v.a >= 1.0f) {

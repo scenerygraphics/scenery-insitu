@@ -39,7 +39,6 @@ layout(push_constant) uniform currentEye_t {
 layout(local_size_x = 15, local_size_y = 15) in;
 layout(set = 2, binding = 0) uniform sampler3D volumeCache;
 layout(set = 3, binding = 0, rgba8) uniform image3D OutputSubVDIColor;
-layout(set = 4, binding = 0, rgba8) uniform image3D OutputSubVDIDepth;
 #pragma scenery endverbatim
 
 // intersect ray with a box
@@ -203,18 +202,18 @@ void main()
         FragColor = v;
         if(supersegmentNum < maxSupersegments - 1) {
             for(int i = supersegmentNum; i < maxSupersegments; i++) {
-                imageStore(OutputSubVDIDepth, ivec3(2 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-                imageStore(OutputSubVDIDepth, ivec3(2 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-                imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIColor, ivec3(3 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIColor, ivec3(3 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIColor, ivec3(3 * i + 2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
             }
         }
     } else {
         FragColor = vec4(0, 0, 0, 0);
         if(supersegmentNum < maxSupersegments - 1) {
             for(int i = supersegmentNum; i < maxSupersegments; i++) {
-                imageStore(OutputSubVDIDepth, ivec3(2 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-                imageStore(OutputSubVDIDepth, ivec3(2 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-                imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIColor, ivec3(3 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIColor, ivec3(3 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIColor, ivec3(3 * i + 2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
             }
         }
     }
