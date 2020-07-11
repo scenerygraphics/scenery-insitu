@@ -47,7 +47,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
     var numUpdated : Int = 0 // The number of partners that have updated data with pointers to their grids. Works only assuming no resizing on OpenFPM side
     val lock = ReentrantLock()
     var publishedNodes = ArrayList<Node>()
-    val numSupersegments = 32;
+    val numSupersegments = 20
 
     lateinit var CompositedVDIColour: Texture
 //    lateinit var CompositedVDIDepth: Texture
@@ -56,8 +56,8 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
 
     var count = 0
     val compute = Box()
-    val maxSupersegments = 32
-    val maxOutputSupersegments = 50
+    val maxSupersegments = 20
+    val maxOutputSupersegments = 40
 
     var saveFiles = false
 
@@ -248,7 +248,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
             scene.addChild(light)
         }
 
-        fixedRateTimer("saving_files", initialDelay = 15000, period = 10000) {
+        fixedRateTimer("saving_files", initialDelay = 15000, period = 60000) {
             logger.info("should write files now")
             saveFiles = true
         }
@@ -400,7 +400,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
                 logger.info("File dumped")
             }
 
-            volumeManager.visible = false
+//            volumeManager.visible = false
 
             distributeVDIs(subVDIColorBuffer!!, windowHeight * windowWidth * maxSupersegments * 4 / commSize, commSize)
 
@@ -426,7 +426,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
 //            }
 
 //            compute.visible = false
-            volumeManager.visible = true
+//            volumeManager.visible = true
 
 //            while(compositedVDIColorBuffer == null || compositedVDIDepthBuffer == null) {
 //                Thread.sleep(5)
