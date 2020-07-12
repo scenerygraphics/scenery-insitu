@@ -378,7 +378,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                 logger.info("File dumped")
             }
 
-            gatherCompositedVDIs(compositedVDIColorBuffer!!,0, windowHeight * windowWidth * maxOutputSupersegments * 4 / commSize, rank, commSize, saveFiles);
+            gatherCompositedVDIs(compositedVDIColorBuffer!!,0, windowHeight * windowWidth * maxOutputSupersegments * 4 / (3 * commSize), rank, commSize, saveFiles) //3 * commSize because the supersegments here contain only 1 element
 //            saveFiles = false
 
         }
