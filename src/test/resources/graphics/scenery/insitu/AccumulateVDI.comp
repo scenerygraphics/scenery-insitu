@@ -12,7 +12,8 @@ if (vis)
         float segLen = step - supSegStartPoint;
         vec4 supersegmentAdjusted;
         supersegmentAdjusted.rgb = curV.rgb / curV.a;
-        supersegmentAdjusted.a = adjustOpacity(curV.a, 1.0/segLen);
+//        supersegmentAdjusted.a = adjustOpacity(curV.a, 1.0/segLen);
+        supersegmentAdjusted.a = curV.a;
 //        supersegmentAdjusted = x;
         float diff = diffPremultiplied(supersegmentAdjusted, x);
 
@@ -42,7 +43,8 @@ if (vis)
         curV = vec4( 0 );
     }
 
-    float w = adjustOpacity(newAlpha, nw + step * fwnw);
+//    float w = adjustOpacity(newAlpha, nw + step * fwnw);
+    float w = newAlpha;
     curV.rgb = curV.rgb + (1 - curV.a) * newColor * w;
     curV.a = curV.a + (1 - curV.a) * w;
 

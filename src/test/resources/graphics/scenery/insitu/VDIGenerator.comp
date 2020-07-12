@@ -152,7 +152,7 @@ void main()
 
     // -------------------------------------------------------
 
-    int maxSupersegments = imageCoords.r;
+    int maxSupersegments = imageCoords.r/3;
     float minOpacity = 0.000000000000000001; //If alpha is less than this, the sample is considered transparent and not included in generated supersegments
     int supersegmentNum = 0;
 
