@@ -1,10 +1,14 @@
 package graphics.scenery.insitu
 
+import com.fasterxml.jackson.core.type.TypeReference
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.jogamp.opengl.math.Quaternion
 import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.backends.Shaders
 import graphics.scenery.compute.ComputeMetadata
 import graphics.scenery.textures.Texture
+import graphics.scenery.utils.H264Encoder
 import graphics.scenery.utils.Image
 import graphics.scenery.utils.SystemHelpers
 import graphics.scenery.utils.extensions.plus
@@ -18,9 +22,13 @@ import org.joml.Vector3f
 import org.joml.Vector3i
 import org.junit.Test
 import org.lwjgl.system.MemoryUtil
+import org.msgpack.jackson.dataformat.MessagePackFactory
 import org.scijava.ui.behaviour.ClickBehaviour
+import org.zeromq.ZContext
+import org.zeromq.ZMQ
 import tpietzsch.shadergen.generate.SegmentTemplate
 import tpietzsch.shadergen.generate.SegmentType
+import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.locks.ReentrantLock
@@ -35,6 +43,9 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     var computePartners = 1
     var rank = 0
     var commSize = 0
+
+    var encoder: H264Encoder? = null
+    val cam: Camera = DetachedHeadCamera()
 
     lateinit var data: Array<ArrayList<ByteBuffer?>?> // An array of the size computePartners, each element of which is a list of ShortBuffers, the individual grids of the compute partner
     lateinit var allOrigins: Array<ArrayList<Vector3f>?> // An array of size computePartners, each element of which is a list of 3D vectors, the origins of the individual grids of the compute partner
@@ -156,7 +167,6 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
         compute.visible = false
         scene.addChild(compute)
 
-        val cam: Camera = DetachedHeadCamera()
         with(cam) {
             position = Vector3f(-4.365f, 0.38f, 0.62f)
             perspectiveCamera(50.0f, windowWidth, windowHeight)
@@ -184,6 +194,17 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             scene.addChild(light)
         }
 
+        settings.set("VideoEncoder.StreamVideo", true)
+        settings.set("H264Encoder.StreamingAddress", "udp://${InetAddress.getLocalHost().hostAddress}:3337")
+
+        encoder = H264Encoder(
+                (windowWidth * settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
+                (windowHeight* settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
+                "udp://${InetAddress.getLocalHost().hostAddress}:3337",
+//                "/home/aryaman/Desktop/RenderMov.mp4",
+                hub = hub)
+
+
 //        fixedRateTimer("saving_files", initialDelay = 15000, period = 60000) {
 //            logger.info("should write files now")
 //            saveFiles = true
@@ -197,6 +218,8 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             }
 
             logger.info("All compute partners have passed their grid data")
+
+            val colMap = Colormap.get("hot")
 
             for (partnerNo in 0 until computePartners) {
                 val numGrids = numGridsPerPartner[partnerNo]!!
@@ -229,7 +252,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                     logger.info("Position of grid $grid of computePartner $partnerNo is ${volumes[partnerNo]?.get(grid)?.position}")
                     volumes[partnerNo]?.get(grid)?.origin = Origin.FrontBottomLeft
                     volumes[partnerNo]?.get(grid)?.needsUpdate = true
-                    volumes[partnerNo]?.get(grid)?.colormap = Colormap.get("jet")
+                    volumes[partnerNo]?.get(grid)?.colormap = colMap
                     volumes[partnerNo]?.get(grid)?.pixelToWorldRatio = pixelToWorld
 
                     val bg = BoundingGrid()
@@ -294,7 +317,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
         while(true) {
             updateVolumes()
-            Thread.sleep(2000)
+//            Thread.sleep(2000)
             //Start here
 
 //            // Get the rendered VDIs
@@ -439,6 +462,37 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 //            //VDI[i] is now one of the VDI fragments we need to composite
 //            logger.info("Output of process $rank" + VDIs[i]?.asCharBuffer().toString())
 //        }
+    }
+    
+    @Suppress("unused")
+    fun streamImage(image: ByteBuffer) {
+        encoder?.encodeFrame(image)
+    }
+
+    @Suppress("unused")
+    fun adjustCamera(payloadBuffer: ByteBuffer) {
+        val objectMapper = ObjectMapper(MessagePackFactory())
+
+        val payload = ByteArray(payloadBuffer.capacity())
+        payloadBuffer.get(payload)
+        val deserialized: List<Any> = objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
+
+        cam.rotation = stringToQuaternion(deserialized[0].toString())
+        cam.position = stringToVector3f(deserialized[1].toString())
+
+        println("The rotation is: ${cam.rotation}")
+        println("The position is: ${cam.position}")
+
+    }
+
+    private fun stringToQuaternion(inputString: String): Quaternionf {
+        val elements = inputString.removeSurrounding("[", "]").split(",").map { it.toFloat() }
+        return Quaternionf(elements[0], elements[1], elements[2], elements[3])
+    }
+
+    private fun stringToVector3f(inputString: String): Vector3f {
+        val mElements = inputString.removeSurrounding("[", "]").split(",").map { it.toFloat() }
+        return Vector3f(mElements[0], mElements[1], mElements[2])
     }
 
     @Test
