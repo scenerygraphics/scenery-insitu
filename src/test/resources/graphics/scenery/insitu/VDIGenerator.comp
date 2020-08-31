@@ -200,7 +200,7 @@ void main()
             */
         }
         FragColor = v;
-        if(supersegmentNum < maxSupersegments - 1) {
+        if(supersegmentNum < maxSupersegments) {
             for(int i = supersegmentNum; i < maxSupersegments; i++) {
                 imageStore(OutputSubVDIColor, ivec3(3 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
                 imageStore(OutputSubVDIColor, ivec3(3 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
@@ -209,7 +209,7 @@ void main()
         }
     } else {
         FragColor = vec4(0, 0, 0, 0);
-        if(supersegmentNum < maxSupersegments - 1) {
+        if(supersegmentNum < maxSupersegments) {
             for(int i = supersegmentNum; i < maxSupersegments; i++) {
                 imageStore(OutputSubVDIColor, ivec3(3 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
                 imageStore(OutputSubVDIColor, ivec3(3 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
