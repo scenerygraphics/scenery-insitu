@@ -31,6 +31,7 @@ import tpietzsch.shadergen.generate.SegmentType
 import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.ByteOrder.BIG_ENDIAN
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.fixedRateTimer
 import kotlin.concurrent.thread
@@ -40,7 +41,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
     // The below will be updated by the C++ code
     var windowSize = 500
-    var computePartners = 1
+    var computePartners = 0
     var rank = 0
     var commSize = 0
 
@@ -205,7 +206,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                 hub = hub)
 
 
-//        fixedRateTimer("saving_files", initialDelay = 15000, period = 60000) {
+//        fixedRateTimer("saving_files", initialDelay = 15000, period = 5000) {
 //            logger.info("should write files now")
 //            saveFiles = true
 //        }
@@ -470,19 +471,21 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     }
 
     @Suppress("unused")
-    fun adjustCamera(payloadBuffer: ByteBuffer) {
+    fun updateVis(payloadBuffer: ByteBuffer) {
+        logger.info("In updateVis function")
         val objectMapper = ObjectMapper(MessagePackFactory())
 
+//        payloadBuffer.order(BIG_ENDIAN)
         val payload = ByteArray(payloadBuffer.capacity())
         payloadBuffer.get(payload)
         val deserialized: List<Any> = objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
 
+        logger.info("Done deserializing and now will apply it to the camera")
         cam.rotation = stringToQuaternion(deserialized[0].toString())
         cam.position = stringToVector3f(deserialized[1].toString())
 
-        println("The rotation is: ${cam.rotation}")
-        println("The position is: ${cam.position}")
-
+        logger.info("The rotation is: ${cam.rotation}")
+        logger.info("The position is: ${cam.position}")
     }
 
     private fun stringToQuaternion(inputString: String): Quaternionf {

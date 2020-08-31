@@ -10,14 +10,14 @@ class InSituMaster : SceneryBase("In situ master") {
 
     var insituRunning = true
 
-    private external fun transmitVisMsg(pose: ByteBuffer)
-    private external fun transmitSteerMsg(pose: ByteBuffer)
+    private external fun transmitVisMsg(pose: ByteBuffer, size: Int)
+    private external fun transmitSteerMsg(pose: ByteBuffer, size: Int)
 
     @Suppress("unused")
     fun listenForMessages() {
         val context = ZContext(4)
         var subscriber: ZMQ.Socket = context.createSocket(ZMQ.SUB)
-        val address = "tcp://localhost:6655"
+        val address = "tcp://192.168.0.200:6655"
         subscriber.connect(address)
         subscriber.subscribe(ZMQ.SUBSCRIPTION_ALL)
 
@@ -26,8 +26,9 @@ class InSituMaster : SceneryBase("In situ master") {
             if (payload != null) {
                 val buffer = BufferUtils.allocateByteAndPut(payload)
 
-                //if the payload contains camera pose
-                transmitVisMsg(buffer)
+                //if the payload contains vis message
+                transmitVisMsg(buffer, buffer.capacity())
+
 
             } else {
                 logger.info("Payload received but is null")
