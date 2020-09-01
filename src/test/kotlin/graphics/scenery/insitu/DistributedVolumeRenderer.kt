@@ -316,9 +316,14 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 //        var compositedVDIDepthBuffer: ByteBuffer? = null
         var compositedVDIColorBuffer: ByteBuffer? = null
 
+        var cnt = 0
+
         while(true) {
-            updateVolumes()
-//            Thread.sleep(2000)
+            if(cnt % 10 == 0) {
+                updateVolumes()
+            }
+            cnt++
+            Thread.sleep(100)
             //Start here
 
 //            // Get the rendered VDIs
