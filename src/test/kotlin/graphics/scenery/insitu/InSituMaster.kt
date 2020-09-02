@@ -26,10 +26,10 @@ class InSituMaster : SceneryBase("In situ master") {
         while(insituRunning) {
             val payload = subscriber.recv()
             if (payload != null) {
-                if(buffer.capacity() == 0) {
+                if(buffer.capacity() != payload.size) {
                     buffer = BufferUtils.allocateByteAndPut(payload)
                 } else {
-                    buffer.put(payload)
+                    buffer.put(payload).flip()
                 }
 
                 //if the payload contains vis message
