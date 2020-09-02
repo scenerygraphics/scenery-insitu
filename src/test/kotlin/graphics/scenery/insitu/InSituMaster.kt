@@ -17,18 +17,23 @@ class InSituMaster : SceneryBase("In situ master") {
     fun listenForMessages() {
         val context = ZContext(4)
         var subscriber: ZMQ.Socket = context.createSocket(ZMQ.SUB)
-        val address = "tcp://192.168.0.200:6655"
+        val address = "tcp://localhost:6655"
         subscriber.connect(address)
         subscriber.subscribe(ZMQ.SUBSCRIPTION_ALL)
+
+        var buffer = ByteBuffer.allocateDirect(0)
 
         while(insituRunning) {
             val payload = subscriber.recv()
             if (payload != null) {
-                val buffer = BufferUtils.allocateByteAndPut(payload)
+                if(buffer.capacity() == 0) {
+                    buffer = BufferUtils.allocateByteAndPut(payload)
+                } else {
+                    buffer.put(payload)
+                }
 
                 //if the payload contains vis message
                 transmitVisMsg(buffer, buffer.capacity())
-
 
             } else {
                 logger.info("Payload received but is null")
