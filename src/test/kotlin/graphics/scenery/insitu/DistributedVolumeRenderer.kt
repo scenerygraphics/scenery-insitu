@@ -46,6 +46,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     var commSize = 0
 
     var encoder: H264Encoder? = null
+    var movieWriter: H264Encoder? = null
     var stopRecording = false
     var recordingFinished = false
     val cam: Camera = DetachedHeadCamera()
@@ -197,15 +198,24 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             scene.addChild(light)
         }
 
-        settings.set("VideoEncoder.StreamVideo", false)
+//        settings.set("VideoEncoder.StreamVideo", false)
 //        settings.set("VideoEncoder.StreamingAddress", "udp://${InetAddress.getLocalHost().hostAddress}:3337")
 
         encoder = H264Encoder(
                 (windowWidth * settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
                 (windowHeight* settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
-//                "udp://${InetAddress.getLocalHost().hostAddress}:3337",
-                "RenderMov.mp4",
+                "udp://${InetAddress.getLocalHost().hostAddress}:3337",
+                networked = true,
+                streamingAddress = "udp://${InetAddress.getLocalHost().hostAddress}:3337",
                 hub = hub)
+
+        movieWriter = H264Encoder(
+                (windowWidth * settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
+                (windowHeight* settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
+                "RenderMov.mp4",
+                hub = hub,
+                networked = false,
+        )
 
         thread {
             Thread.sleep(100000)
@@ -484,10 +494,12 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             if(!recordingFinished) {
                 logger.info("Finishing the recording now!")
                 encoder?.finish()
+                movieWriter?.finish()
                 recordingFinished = true
             }
         } else {
             encoder?.encodeFrame(image)
+            movieWriter?.encodeFrame(image)
         }
     }
 
