@@ -47,6 +47,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
     var encoder: H264Encoder? = null
     var movieWriter: H264Encoder? = null
+    var startRecording = false
     var stopRecording = false
     var recordingFinished = false
     val cam: Camera = DetachedHeadCamera()
@@ -510,7 +511,9 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             }
         } else {
             encoder?.encodeFrame(image)
-            movieWriter?.encodeFrame(image)
+            if(startRecording) {
+                movieWriter?.encodeFrame(image)
+            }
         }
     }
 
@@ -531,6 +534,9 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             logger.info("Ok, I will stop the video recording")
             stopRecording = true
             logger.info("Trying to stop the recording")
+        } else if(payload.size == 17) {
+            logger.info("Ok, I will start the video recording")
+            startRecording = true
         } else {
             logger.info("Done deserializing and now will apply it to the camera")
             cam.rotation = stringToQuaternion(deserialized[0].toString())
