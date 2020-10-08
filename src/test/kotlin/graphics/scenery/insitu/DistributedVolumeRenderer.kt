@@ -46,6 +46,8 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     var commSize = 0
 
     var encoder: H264Encoder? = null
+    var stopRecording = false
+    var recordingFinished = false
     val cam: Camera = DetachedHeadCamera()
 
     lateinit var data: Array<ArrayList<ByteBuffer?>?> // An array of the size computePartners, each element of which is a list of ShortBuffers, the individual grids of the compute partner
@@ -195,15 +197,21 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             scene.addChild(light)
         }
 
-        settings.set("VideoEncoder.StreamVideo", true)
-        settings.set("H264Encoder.StreamingAddress", "udp://${InetAddress.getLocalHost().hostAddress}:3337")
+        settings.set("VideoEncoder.StreamVideo", false)
+//        settings.set("VideoEncoder.StreamingAddress", "udp://${InetAddress.getLocalHost().hostAddress}:3337")
 
         encoder = H264Encoder(
                 (windowWidth * settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
                 (windowHeight* settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
-                "udp://${InetAddress.getLocalHost().hostAddress}:3337",
-//                "/home/aryaman/Desktop/RenderMov.mp4",
+//                "udp://${InetAddress.getLocalHost().hostAddress}:3337",
+                "RenderMov.mp4",
                 hub = hub)
+
+        thread {
+            Thread.sleep(100000)
+            stopRecording = true
+            logger.info("Trying to stop the recording")
+        }
 
 
 //        fixedRateTimer("saving_files", initialDelay = 15000, period = 5000) {
@@ -472,7 +480,15 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     
     @Suppress("unused")
     fun streamImage(image: ByteBuffer) {
-        encoder?.encodeFrame(image)
+        if(stopRecording) {
+            if(!recordingFinished) {
+                logger.info("Finishing the recording now!")
+                encoder?.finish()
+                recordingFinished = true
+            }
+        } else {
+            encoder?.encodeFrame(image)
+        }
     }
 
     @Suppress("unused")
