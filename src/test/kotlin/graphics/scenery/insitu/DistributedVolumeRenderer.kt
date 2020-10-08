@@ -217,13 +217,6 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                 networked = false,
         )
 
-        thread {
-            Thread.sleep(100000)
-            stopRecording = true
-            logger.info("Trying to stop the recording")
-        }
-
-
 //        fixedRateTimer("saving_files", initialDelay = 15000, period = 5000) {
 //            logger.info("should write files now")
 //            saveFiles = true
@@ -314,6 +307,24 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
         while(!volumesInitialized) {
             Thread.sleep(50)
+        }
+    }
+
+    private fun changeTransferFunction() {
+        val colMap = Colormap.get("viridis")
+        for (partnerNo in 0 until computePartners) {
+            val numGrids = numGridsPerPartner[partnerNo]!!
+            for(grid in 0 until numGrids) {
+                volumes[partnerNo]?.get(grid)?.colormap = colMap
+
+                with(volumes[partnerNo]?.get(grid)?.transferFunction) {
+                    this?.addControlPoint(0.0f, 0.0f)
+                    this?.addControlPoint(0.2f, 0.0f)
+                    this?.addControlPoint(0.4f, 0.05f)
+                    this?.addControlPoint(0.8f, 0.4f)
+                    this?.addControlPoint(1.0f, 0.1f)
+                }
+            }
         }
     }
 
@@ -513,12 +524,21 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
         payloadBuffer.get(payload)
         val deserialized: List<Any> = objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
 
-        logger.info("Done deserializing and now will apply it to the camera")
-        cam.rotation = stringToQuaternion(deserialized[0].toString())
-        cam.position = stringToVector3f(deserialized[1].toString())
+        if(payload.size == 13) {
+            logger.info("Ok, I will apply the change in transfer function")
+            changeTransferFunction()
+        } else if(payload.size == 16) {
+            logger.info("Ok, I will stop the video recording")
+            stopRecording = true
+            logger.info("Trying to stop the recording")
+        } else {
+            logger.info("Done deserializing and now will apply it to the camera")
+            cam.rotation = stringToQuaternion(deserialized[0].toString())
+            cam.position = stringToVector3f(deserialized[1].toString())
 
-        logger.info("The rotation is: ${cam.rotation}")
-        logger.info("The position is: ${cam.position}")
+            logger.info("The rotation is: ${cam.rotation}")
+            logger.info("The position is: ${cam.position}")
+        }
     }
 
     private fun stringToQuaternion(inputString: String): Quaternionf {
