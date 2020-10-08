@@ -274,8 +274,8 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                     with(volumes[partnerNo]?.get(grid)?.transferFunction) {
                         this?.addControlPoint(0.0f, 0.0f)
                         this?.addControlPoint(0.2f, 0.1f)
-                        this?.addControlPoint(0.4f, 0.2f)
-                        this?.addControlPoint(0.8f, 0.5f)
+                        this?.addControlPoint(0.4f, 0.4f)
+                        this?.addControlPoint(0.8f, 0.6f)
                         this?.addControlPoint(1.0f, 0.75f)
                     }
 
@@ -323,7 +323,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                     this?.addControlPoint(0.2f, 0.0f)
                     this?.addControlPoint(0.4f, 0.05f)
                     this?.addControlPoint(0.8f, 0.4f)
-                    this?.addControlPoint(1.0f, 0.1f)
+                    this?.addControlPoint(1.0f, 1.0f)
                 }
             }
         }
