@@ -88,11 +88,13 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     val tComposite = Timer(0,0)
     val tComm = Timer(0,0)
     val tTotal = Timer(0,0)
+    val tGPU = Timer(0,0)
 
     var imgFetchTime: Long = 0
     var compositeTime: Long = 0
     var commTime: Long = 0
     var totalTime: Long = 0
+    var gpuSendTime: Long = 0
 
     private external fun distributeVDIs(subVDIColor: ByteBuffer, sizePerProcess: Int, commSize: Int)
     private external fun gatherCompositedVDIs(compositedVDIColor: ByteBuffer, root: Int, subVDILen: Int, myRank: Int, commSize: Int, saveFiles: Boolean)
@@ -396,7 +398,11 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             tRend.start = currentTimeMillis()
 
             if(cnt % 10 == 0) {
+                tGPU.start = currentTimeMillis()
                 updateVolumes()
+                tGPU.end = currentTimeMillis()
+
+                gpuSendTime += tGPU.end - tGPU.start
             }
             cnt++
             Thread.sleep(100)
@@ -508,6 +514,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                 logger.warn("Total communication time: $commTime. Average is: ${commTime.toFloat()/cnt.toFloat()}")
                 logger.warn("Total rendering (image fetch) time: $imgFetchTime. Average is: ${imgFetchTime.toFloat()/cnt.toFloat()}")
                 logger.warn("Total compositing time: $compositeTime. Average is: ${compositeTime.toFloat()/cnt.toFloat()}")
+                logger.warn("Total GPU-send time: $gpuSendTime.")
             }
 
 //            saveFiles = false
