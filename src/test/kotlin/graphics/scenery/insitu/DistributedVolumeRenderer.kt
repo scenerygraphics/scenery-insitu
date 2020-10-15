@@ -46,10 +46,14 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     var commSize = 0
 
     var encoder: H264Encoder? = null
-    var movieWriter: H264Encoder? = null
-    var startRecording = false
-    var stopRecording = false
-    var recordingFinished = false
+//    var movieWriter: H264Encoder? = null
+//    var movieWriter1: H264Encoder? = null
+//    var movieWriter2: H264Encoder? = null
+//    var movieWriter3: H264Encoder? = null
+//
+//    var startRecording = false
+//    var stopRecording = false
+//    var recordingFinished = false
     val cam: Camera = DetachedHeadCamera()
 
     lateinit var data: Array<ArrayList<ByteBuffer?>?> // An array of the size computePartners, each element of which is a list of ShortBuffers, the individual grids of the compute partner
@@ -57,7 +61,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     lateinit var allGridDims: Array<ArrayList<Array<Int>>?>
     lateinit var allGridDomains: Array<ArrayList<Array<Int>>?>
     lateinit var numGridsPerPartner: Array<Int?>
-    lateinit var volumeHashMaps: Array<ArrayList<LinkedHashMap<String, ByteBuffer>?>?>
+//    lateinit var volumeHashMaps: Array<ArrayList<BufferedVolume.Timepoint?>?>
     lateinit var volumes: Array<ArrayList<BufferedVolume?>?>
 
     var numUpdated : Int = 0 // The number of partners that have updated data with pointers to their grids. Works only assuming no resizing on OpenFPM side
@@ -84,7 +88,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     fun initializeArrays() {
         data = arrayOfNulls(computePartners)
         numGridsPerPartner = arrayOfNulls(computePartners)
-        volumeHashMaps = arrayOfNulls(computePartners)
+//        volumeHashMaps = arrayOfNulls(computePartners)
         volumes = arrayOfNulls(computePartners)
         allOrigins = arrayOfNulls(computePartners)
         allGridDims = arrayOfNulls(computePartners)
@@ -92,7 +96,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
         for(i in 0 until computePartners) {
             data[i] = ArrayList(0)
-            volumeHashMaps[i] = ArrayList(0)
+//            volumeHashMaps[i] = ArrayList(0)
             volumes[i] = ArrayList(0)
             allOrigins[i] = ArrayList(0)
             allGridDims[i] = ArrayList(0)
@@ -210,13 +214,37 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                 streamingAddress = "udp://${InetAddress.getLocalHost().hostAddress}:3337",
                 hub = hub)
 
-        movieWriter = H264Encoder(
-                (windowWidth * settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
-                (windowHeight* settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
-                "RenderMov.mp4",
-                hub = hub,
-                networked = false,
-        )
+//        movieWriter = H264Encoder(
+//                (windowWidth * settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
+//                (windowHeight* settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
+//                "RenderMov.mp4",
+//                hub = hub,
+//                networked = false,
+//        )
+//
+//        movieWriter1 = H264Encoder(
+//                (windowWidth * settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
+//                (windowHeight* settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
+//                "RenderMov_5Hours.mp4",
+//                hub = hub,
+//                networked = false,
+//        )
+//
+//        movieWriter2 = H264Encoder(
+//                (windowWidth * settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
+//                (windowHeight* settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
+//                "RenderMov_10Hours.mp4",
+//                hub = hub,
+//                networked = false,
+//        )
+//
+//        movieWriter3 = H264Encoder(
+//                (windowWidth * settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
+//                (windowHeight* settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
+//                "RenderMov_15Hours.mp4",
+//                hub = hub,
+//                networked = false,
+//        )
 
 //        fixedRateTimer("saving_files", initialDelay = 15000, period = 5000) {
 //            logger.info("should write files now")
@@ -241,12 +269,12 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                 val origins = allOrigins[partnerNo]!!
 
                 for(grid in 0 until numGrids) {
-                    volumeHashMaps[partnerNo]?.add(LinkedHashMap())
+//                    volumeHashMaps[partnerNo]?.add(emptyList())
                     val width = gridDims[grid][3] - gridDims[grid][0] + 1
                     val height = gridDims[grid][4] - gridDims[grid][1] + 1
                     val depth = gridDims[grid][5] - gridDims[grid][2] + 1
-                    val currentHasMap = volumeHashMaps[partnerNo]?.get(grid)!!
-                    volumes[partnerNo]?.add( Volume.fromBuffer(currentHasMap, width.absoluteValue, height.absoluteValue, depth.absoluteValue, UnsignedShortType(), hub))
+//                    val currentHasMap = volumeHashMaps[partnerNo]?.get(grid)!!
+                    volumes[partnerNo]?.add( Volume.fromBuffer(emptyList(), width.absoluteValue, height.absoluteValue, depth.absoluteValue, UnsignedShortType(), hub))
                     logger.info("width height and depth are $width $height $depth")
                     volumes[partnerNo]?.get(grid)?.name  = "Grid${grid}OfPartner${partnerNo}"
 
@@ -458,9 +486,9 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                     logger.debug("Grid data represented by bytebuffer with position ${dataFromThisPartner[grid]?.position()} and " +
                             "limit ${dataFromThisPartner[grid]?.limit()} and capacity ${dataFromThisPartner[grid]?.capacity()}")
                     volumesFromThisPartner[grid]?.addTimepoint("t-${count}", dataFromThisPartner[grid] as ByteBuffer) //TODO try with constant name
-                    val currentHashMap = volumeHashMaps[partnerNo]?.get(grid)!!
-                    logger.debug("Going to timepoint ${currentHashMap.size-1}")
-                    volumesFromThisPartner[grid]?.goToTimePoint(currentHashMap.size-1)
+//                    val currentHashMap = volumeHashMaps[partnerNo]?.get(grid)!!
+//                    logger.debug("Going to timepoint ${currentHashMap.size-1}")
+//                    volumesFromThisPartner[grid]?.goToTimePoint(currentHashMap.size-1)
 //                    volumesFromThisPartner[grid]?.purgeFirst(0, 1)
                 }
                 count++
@@ -502,19 +530,19 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     
     @Suppress("unused")
     fun streamImage(image: ByteBuffer) {
-        if(stopRecording) {
-            if(!recordingFinished) {
-                logger.info("Finishing the recording now!")
-                encoder?.finish()
-                movieWriter?.finish()
-                recordingFinished = true
-            }
-        } else {
+//        if(stopRecording) {
+//            if(!recordingFinished) {
+//                logger.info("Finishing the recording now!")
+//                encoder?.finish()
+//                movieWriter?.finish()
+//                recordingFinished = true
+//            }
+//        } else {
             encoder?.encodeFrame(image)
-            if(startRecording) {
-                movieWriter?.encodeFrame(image)
-            }
-        }
+//            if(startRecording) {
+//                movieWriter?.encodeFrame(image)
+//            }
+//        }
     }
 
     @Suppress("unused")
@@ -527,24 +555,24 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
         payloadBuffer.get(payload)
         val deserialized: List<Any> = objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
 
-        if(payload.size == 13) {
-            logger.info("Ok, I will apply the change in transfer function")
-            changeTransferFunction()
-        } else if(payload.size == 16) {
-            logger.info("Ok, I will stop the video recording")
-            stopRecording = true
-            logger.info("Trying to stop the recording")
-        } else if(payload.size == 17) {
-            logger.info("Ok, I will start the video recording")
-            startRecording = true
-        } else {
+//        if(payload.size == 13) {
+//            logger.info("Ok, I will apply the change in transfer function")
+//            changeTransferFunction()
+//        } else if(payload.size == 16) {
+//            logger.info("Ok, I will stop the video recording")
+//            stopRecording = true
+//            logger.info("Trying to stop the recording")
+//        } else if(payload.size == 17) {
+//            logger.info("Ok, I will start the video recording")
+//            startRecording = true
+//        } else {
             logger.info("Done deserializing and now will apply it to the camera")
             cam.rotation = stringToQuaternion(deserialized[0].toString())
             cam.position = stringToVector3f(deserialized[1].toString())
 
             logger.info("The rotation is: ${cam.rotation}")
             logger.info("The position is: ${cam.position}")
-        }
+//        }
     }
 
     private fun stringToQuaternion(inputString: String): Quaternionf {
