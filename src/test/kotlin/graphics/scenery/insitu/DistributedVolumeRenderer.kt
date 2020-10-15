@@ -28,6 +28,7 @@ import org.zeromq.ZContext
 import org.zeromq.ZMQ
 import tpietzsch.shadergen.generate.SegmentTemplate
 import tpietzsch.shadergen.generate.SegmentType
+import java.lang.System.currentTimeMillis
 import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -80,6 +81,18 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     val maxOutputSupersegments = 1
 
     var saveFiles = false
+
+    data class Timer(var start:Long, var end: Long)
+
+    val tRend = Timer(0,0)
+    val tComposite = Timer(0,0)
+    val tComm = Timer(0,0)
+    val tTotal = Timer(0,0)
+
+    var imgFetchTime: Long = 0
+    var compositeTime: Long = 0
+    var commTime: Long = 0
+    var totalTime: Long = 0
 
     private external fun distributeVDIs(subVDIColor: ByteBuffer, sizePerProcess: Int, commSize: Int)
     private external fun gatherCompositedVDIs(compositedVDIColor: ByteBuffer, root: Int, subVDILen: Int, myRank: Int, commSize: Int, saveFiles: Boolean)
@@ -374,9 +387,14 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 //        var compositedVDIDepthBuffer: ByteBuffer? = null
         var compositedVDIColorBuffer: ByteBuffer? = null
 
+//        var imgFetchTime: Long = 0
+
         var cnt = 0
 
         while(true) {
+            tTotal.start = currentTimeMillis()
+            tRend.start = currentTimeMillis()
+
             if(cnt % 10 == 0) {
                 updateVolumes()
             }
@@ -425,6 +443,11 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
 //            volumeManager.visible = false
 
+            tRend.end = currentTimeMillis()
+            imgFetchTime += tRend.end - tRend.start
+
+            tComm.start = currentTimeMillis()
+
             distributeVDIs(subVDIColorBuffer!!, windowHeight * windowWidth * maxSupersegments * 4 / commSize, commSize)
 
             logger.info("Back in the management function")
@@ -465,9 +488,29 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                 logger.info("File dumped")
             }
 
-            gatherCompositedVDIs(compositedVDIColorBuffer!!,0, windowHeight * windowWidth * maxOutputSupersegments * 4 / (3 * commSize), rank, commSize, saveFiles) //3 * commSize because the supersegments here contain only 1 element
-//            saveFiles = false
+            tComposite.end = currentTimeMillis()
+            compositeTime += tComposite.end - tComposite.start
 
+            tComm.start = currentTimeMillis()
+
+            gatherCompositedVDIs(compositedVDIColorBuffer!!,0, windowHeight * windowWidth * maxOutputSupersegments * 4 / (3 * commSize), rank, commSize, saveFiles) //3 * commSize because the supersegments here contain only 1 element
+
+            tComm.end = currentTimeMillis()
+            commTime += tComm.end - tComm.start
+
+            tTotal.end = currentTimeMillis()
+            totalTime += tTotal.end - tTotal.start
+
+            if(rank == 0 && cnt!=0 && cnt%100 == 0) {
+                //print the timer values
+                logger.warn("Total vis time steps so far: $cnt. Printing vis timers now.")
+                logger.warn("Total time: $totalTime. Average is: ${totalTime.toFloat()/cnt.toFloat()}")
+                logger.warn("Total communication time: $commTime. Average is: ${commTime.toFloat()/cnt.toFloat()}")
+                logger.warn("Total rendering (image fetch) time: $imgFetchTime. Average is: ${imgFetchTime.toFloat()/cnt.toFloat()}")
+                logger.warn("Total compositing time: $compositeTime. Average is: ${compositeTime.toFloat()/cnt.toFloat()}")
+            }
+
+//            saveFiles = false
         }
     }
 
@@ -499,6 +542,11 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     @Suppress("unused")
     fun compositeVDIs(VDISetColour: ByteBuffer, sizePerProcess: Int) {
         //Receive the VDIs and composite them
+
+        tComm.end = currentTimeMillis()
+        commTime += tComm.end - tComm.start
+
+        tComposite.start = currentTimeMillis()
 
         logger.info("In the composite function")
 
