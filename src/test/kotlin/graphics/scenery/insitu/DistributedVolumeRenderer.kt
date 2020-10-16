@@ -96,6 +96,8 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     var totalTime: Long = 0
     var gpuSendTime: Long = 0
 
+    var cnt = 0 //the loop counter
+
     private external fun distributeVDIs(subVDIColor: ByteBuffer, sizePerProcess: Int, commSize: Int)
     private external fun gatherCompositedVDIs(compositedVDIColor: ByteBuffer, root: Int, subVDILen: Int, myRank: Int, commSize: Int, saveFiles: Boolean)
 
@@ -391,22 +393,20 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
 //        var imgFetchTime: Long = 0
 
-        var cnt = 0
-
         while(true) {
-            tTotal.start = currentTimeMillis()
-            tRend.start = currentTimeMillis()
 
-            if(cnt % 10 == 0) {
+            if(cnt == 0) {
                 tGPU.start = currentTimeMillis()
                 updateVolumes()
                 tGPU.end = currentTimeMillis()
 
                 gpuSendTime += tGPU.end - tGPU.start
             }
-            cnt++
             Thread.sleep(100)
+
             //Start here
+            tTotal.start = currentTimeMillis()
+            tRend.start = currentTimeMillis()
 
 //            // Get the rendered VDIs
 //            // after that,
@@ -450,7 +450,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 //            volumeManager.visible = false
 
             tRend.end = currentTimeMillis()
-            imgFetchTime += tRend.end - tRend.start
+            if(cnt>0) {imgFetchTime += tRend.end - tRend.start}
 
             tComm.start = currentTimeMillis()
 
@@ -495,17 +495,17 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             }
 
             tComposite.end = currentTimeMillis()
-            compositeTime += tComposite.end - tComposite.start
+            if(cnt>0) {compositeTime += tComposite.end - tComposite.start}
 
             tComm.start = currentTimeMillis()
 
             gatherCompositedVDIs(compositedVDIColorBuffer!!,0, windowHeight * windowWidth * maxOutputSupersegments * 4 / (3 * commSize), rank, commSize, saveFiles) //3 * commSize because the supersegments here contain only 1 element
 
             tComm.end = currentTimeMillis()
-            commTime += tComm.end - tComm.start
+            if(cnt>0) {commTime += tComm.end - tComm.start}
 
             tTotal.end = currentTimeMillis()
-            totalTime += tTotal.end - tTotal.start
+            if(cnt>0) {totalTime += tTotal.end - tTotal.start}
 
             if(rank == 0 && cnt!=0 && cnt%100 == 0) {
                 //print the timer values
@@ -517,12 +517,14 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                 logger.warn("Total GPU-send time: $gpuSendTime.")
             }
 
+            cnt++
+
 //            saveFiles = false
         }
     }
 
     fun updateVolumes() {
-        logger.info("Updating volumes")
+        logger.warn("Updating volumes")
         for(partnerNo in 0 until computePartners) {
             val numGrids = numGridsPerPartner[partnerNo]!!
             val volumesFromThisPartner = volumes[partnerNo]!!
@@ -536,6 +538,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                     logger.debug("Grid data represented by bytebuffer with position ${dataFromThisPartner[grid]?.position()} and " +
                             "limit ${dataFromThisPartner[grid]?.limit()} and capacity ${dataFromThisPartner[grid]?.capacity()}")
                     volumesFromThisPartner[grid]?.addTimepoint("t-${count}", dataFromThisPartner[grid] as ByteBuffer) //TODO try with constant name
+                    volumesFromThisPartner[grid]?.goToLastTimepoint()
 //                    val currentHashMap = volumeHashMaps[partnerNo]?.get(grid)!!
 //                    logger.debug("Going to timepoint ${currentHashMap.size-1}")
 //                    volumesFromThisPartner[grid]?.goToTimePoint(currentHashMap.size-1)
@@ -544,6 +547,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                 count++
             }
         }
+        logger.warn("finished updating")
     }
 
     @Suppress("unused")
@@ -551,7 +555,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
         //Receive the VDIs and composite them
 
         tComm.end = currentTimeMillis()
-        commTime += tComm.end - tComm.start
+        if(cnt>0) {commTime += tComm.end - tComm.start}
 
         tComposite.start = currentTimeMillis()
 
