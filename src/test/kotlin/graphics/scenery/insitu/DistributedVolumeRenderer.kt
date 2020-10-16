@@ -10,7 +10,6 @@ import graphics.scenery.compute.ComputeMetadata
 import graphics.scenery.textures.Texture
 import graphics.scenery.utils.H264Encoder
 import graphics.scenery.utils.Image
-import graphics.scenery.utils.Statistics
 import graphics.scenery.utils.SystemHelpers
 import graphics.scenery.utils.extensions.plus
 import graphics.scenery.volumes.BufferedVolume
@@ -514,7 +513,6 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             if(cnt>0) {totalTime += tTotal.end - tTotal.start}
 
             if(rank == 0 && cnt!=0 && cnt%100 == 0) {
-                logger.warn((hub.get<Statistics>() as? Statistics)?.toString())
                 //print the timer values
                 logger.warn("Total vis time steps so far: $cnt. Printing vis timers now.")
                 logger.warn("Total time: $totalTime. Average is: ${totalTime.toFloat()/cnt.toFloat()}")
