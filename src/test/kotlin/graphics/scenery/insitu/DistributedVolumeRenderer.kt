@@ -86,13 +86,17 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
     val tRend = Timer(0,0)
     val tComposite = Timer(0,0)
-    val tComm = Timer(0,0)
+    val tDistr = Timer(0,0)
+    val tGath = Timer(0,0)
+    val tStream = Timer(0,0)
     val tTotal = Timer(0,0)
     val tGPU = Timer(0,0)
 
     var imgFetchTime: Long = 0
     var compositeTime: Long = 0
-    var commTime: Long = 0
+    var distrTime: Long = 0
+    var gathTime: Long = 0
+    var streamTime: Long = 0
     var totalTime: Long = 0
     var gpuSendTime: Long = 0
 
@@ -452,7 +456,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             tRend.end = currentTimeMillis()
             if(cnt>0) {imgFetchTime += tRend.end - tRend.start}
 
-            tComm.start = currentTimeMillis()
+            tDistr.start = currentTimeMillis()
 
             distributeVDIs(subVDIColorBuffer!!, windowHeight * windowWidth * maxSupersegments * 4 / commSize, commSize)
 
@@ -497,12 +501,12 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             tComposite.end = currentTimeMillis()
             if(cnt>0) {compositeTime += tComposite.end - tComposite.start}
 
-            tComm.start = currentTimeMillis()
+            tGath.start = currentTimeMillis()
 
             gatherCompositedVDIs(compositedVDIColorBuffer!!,0, windowHeight * windowWidth * maxOutputSupersegments * 4 / (3 * commSize), rank, commSize, saveFiles) //3 * commSize because the supersegments here contain only 1 element
 
-            tComm.end = currentTimeMillis()
-            if(cnt>0) {commTime += tComm.end - tComm.start}
+            tStream.end = currentTimeMillis()
+            if(cnt>0) {streamTime += tStream.end - tStream.start}
 
             tTotal.end = currentTimeMillis()
             if(cnt>0) {totalTime += tTotal.end - tTotal.start}
@@ -511,7 +515,12 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                 //print the timer values
                 logger.warn("Total vis time steps so far: $cnt. Printing vis timers now.")
                 logger.warn("Total time: $totalTime. Average is: ${totalTime.toFloat()/cnt.toFloat()}")
-                logger.warn("Total communication time: $commTime. Average is: ${commTime.toFloat()/cnt.toFloat()}")
+                logger.warn("Total communication time: ${distrTime + gathTime}. Average is: ${(distrTime + gathTime).toFloat()/cnt.toFloat()}")
+                logger.warn("Total all_to_all time: $distrTime. Average is: ${distrTime.toFloat()/cnt.toFloat()}")
+                logger.warn("Total gather time: ${gathTime}. Average is: ${gathTime.toFloat()/cnt.toFloat()}")
+                logger.warn("Total streaming time: ${streamTime}. Average is: ${streamTime.toFloat()/cnt.toFloat()}")
+
+
                 logger.warn("Total rendering (image fetch) time: $imgFetchTime. Average is: ${imgFetchTime.toFloat()/cnt.toFloat()}")
                 logger.warn("Total compositing time: $compositeTime. Average is: ${compositeTime.toFloat()/cnt.toFloat()}")
                 logger.warn("Total GPU-send time: $gpuSendTime.")
@@ -554,8 +563,8 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     fun compositeVDIs(VDISetColour: ByteBuffer, sizePerProcess: Int) {
         //Receive the VDIs and composite them
 
-        tComm.end = currentTimeMillis()
-        if(cnt>0) {commTime += tComm.end - tComm.start}
+        tDistr.end = currentTimeMillis()
+        if(cnt>0) {distrTime += tDistr.end - tDistr.start}
 
         tComposite.start = currentTimeMillis()
 
@@ -597,7 +606,11 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 //                recordingFinished = true
 //            }
 //        } else {
-            encoder?.encodeFrame(image)
+        tGath.end = currentTimeMillis()
+        if(cnt>0) {gathTime += (tGath.end - tGath.start)}
+
+        tStream.start = currentTimeMillis()
+        encoder?.encodeFrame(image)
 //            if(startRecording) {
 //                movieWriter?.encodeFrame(image)
 //            }
