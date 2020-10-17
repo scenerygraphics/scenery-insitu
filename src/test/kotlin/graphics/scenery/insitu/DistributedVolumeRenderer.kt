@@ -47,14 +47,14 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     var commSize = 0
 
     var encoder: H264Encoder? = null
-//    var movieWriter: H264Encoder? = null
+    var movieWriter: H264Encoder? = null
 //    var movieWriter1: H264Encoder? = null
 //    var movieWriter2: H264Encoder? = null
 //    var movieWriter3: H264Encoder? = null
 //
-//    var startRecording = false
-//    var stopRecording = false
-//    var recordingFinished = false
+    var startRecording = false
+    var stopRecording = false
+    var recordingFinished = false
     val cam: Camera = DetachedHeadCamera()
 
     lateinit var data: Array<ArrayList<ByteBuffer?>?> // An array of the size computePartners, each element of which is a list of ShortBuffers, the individual grids of the compute partner
@@ -235,13 +235,13 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                 streamingAddress = "udp://${InetAddress.getLocalHost().hostAddress}:3337",
                 hub = hub)
 
-//        movieWriter = H264Encoder(
-//                (windowWidth * settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
-//                (windowHeight* settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
-//                "RenderMov.mp4",
-//                hub = hub,
-//                networked = false,
-//        )
+        movieWriter = H264Encoder(
+                (windowWidth * settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
+                (windowHeight* settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
+                "RenderMov.mp4",
+                hub = hub,
+                networked = false,
+        )
 //
 //        movieWriter1 = H264Encoder(
 //                (windowWidth * settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
@@ -599,23 +599,23 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     
     @Suppress("unused")
     fun streamImage(image: ByteBuffer) {
-//        if(stopRecording) {
-//            if(!recordingFinished) {
-//                logger.info("Finishing the recording now!")
-//                encoder?.finish()
-//                movieWriter?.finish()
-//                recordingFinished = true
-//            }
-//        } else {
+        if(stopRecording) {
+            if(!recordingFinished) {
+                logger.info("Finishing the recording now!")
+                encoder?.finish()
+                movieWriter?.finish()
+                recordingFinished = true
+            }
+        } else {
         tGath.end = currentTimeMillis()
         if(cnt>0) {gathTime += (tGath.end - tGath.start)}
 
         tStream.start = currentTimeMillis()
         encoder?.encodeFrame(image)
-//            if(startRecording) {
-//                movieWriter?.encodeFrame(image)
-//            }
-//        }
+            if(startRecording) {
+                movieWriter?.encodeFrame(image)
+            }
+        }
     }
 
     @Suppress("unused")
@@ -628,24 +628,24 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
         payloadBuffer.get(payload)
         val deserialized: List<Any> = objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
 
-//        if(payload.size == 13) {
-//            logger.info("Ok, I will apply the change in transfer function")
-//            changeTransferFunction()
-//        } else if(payload.size == 16) {
-//            logger.info("Ok, I will stop the video recording")
-//            stopRecording = true
-//            logger.info("Trying to stop the recording")
-//        } else if(payload.size == 17) {
-//            logger.info("Ok, I will start the video recording")
-//            startRecording = true
-//        } else {
+        if(payload.size == 13) {
+            logger.info("Ok, I will apply the change in transfer function")
+            changeTransferFunction()
+        } else if(payload.size == 16) {
+            logger.info("Ok, I will stop the video recording")
+            stopRecording = true
+            logger.info("Trying to stop the recording")
+        } else if(payload.size == 17) {
+            logger.info("Ok, I will start the video recording")
+            startRecording = true
+        } else {
             logger.info("Done deserializing and now will apply it to the camera")
             cam.rotation = stringToQuaternion(deserialized[0].toString())
             cam.position = stringToVector3f(deserialized[1].toString())
 
             logger.info("The rotation is: ${cam.rotation}")
             logger.info("The position is: ${cam.position}")
-//        }
+        }
     }
 
     private fun stringToQuaternion(inputString: String): Quaternionf {
