@@ -447,6 +447,15 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             tRend.end = System.nanoTime()
             if(cnt>0) {imgFetchTime += tRend.end - tRend.start}
 
+            subVDIColorBuffer = null
+
+            r?.requestTexture(subVDIColor) { colTex ->
+//                logger.info("Fetched color VDI from GPU")
+                colTex.contents?.let{ colVDI ->
+                    subVDIColorBuffer = colVDI
+                }
+            }
+
             tDistr.start = System.nanoTime()
 
             distributeVDIs(subVDIColorBuffer!!, windowHeight * windowWidth * maxSupersegments * 4 / commSize, commSize)
@@ -480,15 +489,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             tStream.end = System.nanoTime()
             if(cnt>0) {streamTime += tStream.end - tStream.start}
 
-            subVDIColorBuffer = null
             compositedVDIColorBuffer = null
-
-            r?.requestTexture(subVDIColor) { colTex ->
-//                logger.info("Fetched color VDI from GPU")
-                colTex.contents?.let{ colVDI ->
-                    subVDIColorBuffer = colVDI
-                }
-            }
 
             r?.requestTexture(compositedColor) { colTex ->
 //                logger.info("Fetched composited color VDI from GPU")
