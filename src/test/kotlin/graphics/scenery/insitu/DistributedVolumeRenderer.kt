@@ -2,7 +2,6 @@ package graphics.scenery.insitu
 
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.jogamp.opengl.math.Quaternion
 import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.backends.Shaders
@@ -10,8 +9,8 @@ import graphics.scenery.compute.ComputeMetadata
 import graphics.scenery.textures.Texture
 import graphics.scenery.utils.H264Encoder
 import graphics.scenery.utils.Image
+import graphics.scenery.utils.Statistics
 import graphics.scenery.utils.SystemHelpers
-import graphics.scenery.utils.extensions.plus
 import graphics.scenery.volumes.BufferedVolume
 import graphics.scenery.volumes.Colormap
 import graphics.scenery.volumes.Volume
@@ -24,17 +23,12 @@ import org.junit.Test
 import org.lwjgl.system.MemoryUtil
 import org.msgpack.jackson.dataformat.MessagePackFactory
 import org.scijava.ui.behaviour.ClickBehaviour
-import org.zeromq.ZContext
-import org.zeromq.ZMQ
 import tpietzsch.shadergen.generate.SegmentTemplate
 import tpietzsch.shadergen.generate.SegmentType
-import java.lang.System.currentTimeMillis
 import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.ByteOrder.BIG_ENDIAN
 import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.fixedRateTimer
 import kotlin.concurrent.thread
 import kotlin.math.absoluteValue
 
@@ -82,7 +76,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
     var saveFiles = false
 
-    data class Timer(var start:Long, var end: Long)
+    data class Timer(var start: Long, var end: Long)
 
     val tRend = Timer(0,0)
     val tComposite = Timer(0,0)
@@ -99,6 +93,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     var streamTime: Long = 0
     var totalTime: Long = 0
     var gpuSendTime: Long = 0
+    var totalPrev: Long = 0
 
     var cnt = 0 //the loop counter
 
@@ -397,66 +392,62 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
 //        var imgFetchTime: Long = 0
 
-        while(true) {
+        while(renderer?.firstImageReady == false) {
+            Thread.sleep(50)
+        }
 
-            if(cnt == 0) {
-                tGPU.start = currentTimeMillis()
-                updateVolumes()
-                tGPU.end = currentTimeMillis()
+        tGPU.start = System.nanoTime()
+        updateVolumes()
+        tGPU.end = System.nanoTime()
 
-                gpuSendTime += tGPU.end - tGPU.start
+        gpuSendTime += tGPU.end - tGPU.start
+
+        val r = renderer
+
+        val subVDIColor = volumeManager.material.textures["OutputSubVDIColor"]!!
+
+        r?.requestTexture(subVDIColor) { colTex ->
+            logger.info("Fetched color VDI from GPU")
+
+            colTex.contents?.let{ colVDI ->
+                subVDIColorBuffer = colVDI
             }
-            Thread.sleep(100)
+        }
 
+        val compositedColor = compute.material.textures["AlphaComposited"]!!
+
+        r?.requestTexture(compositedColor) { colTex ->
+            logger.info("Fetched composited color VDI from GPU")
+            colTex.contents?.let{ compColVDI ->
+                compositedVDIColorBuffer = compColVDI
+            }
+        }
+
+        while(true) {
             //Start here
-            tTotal.start = currentTimeMillis()
-            tRend.start = currentTimeMillis()
+            tTotal.start = System.nanoTime()
+            tRend.start = System.nanoTime()
 
-//            // Get the rendered VDIs
-//            // after that,
             logger.info("Getting the rendered subVDIs")
 
-            val subVDIColor = volumeManager.material.textures["OutputSubVDIColor"]!!
-//            val subVDIDepth = volumeManager.material.textures["OutputSubVDIDepth"]!!
-
-            val r = renderer
-
-            r?.requestTexture(subVDIColor) { colTex ->
-                logger.info("Fetched color VDI from GPU")
-
-                colTex.contents?.let{ colVDI ->
-                    subVDIColorBuffer = colVDI
-                }
-            }
-
-//            r?.requestTexture(subVDIDepth) { depthTex ->
-//
-//                depthTex.contents?.let { depthVDI ->
-//                    subVDIDepthBuffer = depthVDI
-//                }
-//            }
-
-//            while(subVDIColorBuffer == null || subVDIDepthBuffer == null) {
-//                Thread.sleep(5)
-//            }
-
             while(subVDIColorBuffer == null) {
+//                logger.warn("Waiting for the rendered image from the GPU")
                 Thread.sleep(5)
             }
 
-            if(saveFiles) {
-                logger.info("Dumping to file")
-                SystemHelpers.dumpToFile(subVDIColorBuffer!!, "$rank:textureSubCol-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
-//                SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "$rank:textureSubDepth-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
-                logger.info("File dumped")
-            }
+//            if(saveFiles) {
+//                logger.info("Dumping to file")
+//                SystemHelpers.dumpToFile(subVDIColorBuffer!!, "$rank:textureSubCol-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
+////                SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "$rank:textureSubDepth-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
+//                logger.info("File dumped")
+//            }
 
 //            volumeManager.visible = false
 
-            tRend.end = currentTimeMillis()
+            tRend.end = System.nanoTime()
             if(cnt>0) {imgFetchTime += tRend.end - tRend.start}
 
-            tDistr.start = currentTimeMillis()
+            tDistr.start = System.nanoTime()
 
             distributeVDIs(subVDIColorBuffer!!, windowHeight * windowWidth * maxSupersegments * 4 / commSize, commSize)
 
@@ -464,66 +455,66 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
             //fetch the composited VDI
 
-            val compositedColor = compute.material.textures["AlphaComposited"]!!
+//            compute.visible = false
+//            volumeManager.visible = true
+
+            while(compositedVDIColorBuffer == null) {
+//                logger.warn("Waiting for the composited image from the GPU")
+                Thread.sleep(5)
+            }
+
+//            if(saveFiles) {
+//                logger.info("Dumping to file")
+//                SystemHelpers.dumpToFile(compositedVDIColorBuffer!!, "$rank:textureCompCol-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
+////                SystemHelpers.dumpToFile(compositedVDIDepthBuffer!!, "$rank:textureCompDepth-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
+//                logger.info("File dumped")
+//            }
+
+            tComposite.end = System.nanoTime()
+            if(cnt>0) {compositeTime += tComposite.end - tComposite.start}
+
+            tGath.start = System.nanoTime()
+
+            gatherCompositedVDIs(compositedVDIColorBuffer!!,0, windowHeight * windowWidth * maxOutputSupersegments * 4 / (3 * commSize), rank, commSize, saveFiles) //3 * commSize because the supersegments here contain only 1 element
+
+            tStream.end = System.nanoTime()
+            if(cnt>0) {streamTime += tStream.end - tStream.start}
+
+            subVDIColorBuffer = null
+            compositedVDIColorBuffer = null
+
+            r?.requestTexture(subVDIColor) { colTex ->
+//                logger.info("Fetched color VDI from GPU")
+                colTex.contents?.let{ colVDI ->
+                    subVDIColorBuffer = colVDI
+                }
+            }
 
             r?.requestTexture(compositedColor) { colTex ->
-                logger.info("Fetched composited color VDI from GPU")
+//                logger.info("Fetched composited color VDI from GPU")
                 colTex.contents?.let{ compColVDI ->
                     compositedVDIColorBuffer = compColVDI
                 }
             }
 
-//            r?.requestTexture(compositedDepth) { depthTex ->
-//                depthTex.contents?.let { compDepthVDI ->
-//                    compositedVDIDepthBuffer = compDepthVDI
-////                    compute.visible = false
-//                }
-//            }
-
-//            compute.visible = false
-//            volumeManager.visible = true
-
-//            while(compositedVDIColorBuffer == null || compositedVDIDepthBuffer == null) {
-//                Thread.sleep(5)
-//            }
-
-            while(compositedVDIColorBuffer == null) {
-                Thread.sleep(5)
-            }
-
-            if(saveFiles) {
-                logger.info("Dumping to file")
-                SystemHelpers.dumpToFile(compositedVDIColorBuffer!!, "$rank:textureCompCol-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
-//                SystemHelpers.dumpToFile(compositedVDIDepthBuffer!!, "$rank:textureCompDepth-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
-                logger.info("File dumped")
-            }
-
-
-            tComposite.end = currentTimeMillis()
-            if(cnt>0) {compositeTime += tComposite.end - tComposite.start}
-
-            tGath.start = currentTimeMillis()
-
-            gatherCompositedVDIs(compositedVDIColorBuffer!!,0, windowHeight * windowWidth * maxOutputSupersegments * 4 / (3 * commSize), rank, commSize, saveFiles) //3 * commSize because the supersegments here contain only 1 element
-
-            tStream.end = currentTimeMillis()
-            if(cnt>0) {streamTime += tStream.end - tStream.start}
-
-            tTotal.end = currentTimeMillis()
+            tTotal.end = System.nanoTime()
             if(cnt>0) {totalTime += tTotal.end - tTotal.start}
 
             if(rank == 0 && cnt!=0 && cnt%100 == 0) {
                 //print the timer values
                 logger.warn("Total vis time steps so far: $cnt. Printing vis timers now.")
-                logger.warn("Total time: $totalTime. Average is: ${totalTime.toFloat()/cnt.toFloat()}")
-                logger.warn("Total communication time: ${distrTime + gathTime}. Average is: ${(distrTime + gathTime).toFloat()/cnt.toFloat()}")
-                logger.warn("Total all_to_all time: $distrTime. Average is: ${distrTime.toFloat()/cnt.toFloat()}")
-                logger.warn("Total gather time: ${gathTime}. Average is: ${gathTime.toFloat()/cnt.toFloat()}")
-                logger.warn("Total streaming time: ${streamTime}. Average is: ${streamTime.toFloat()/cnt.toFloat()}")
+                logger.warn((hub.get<Statistics>() as? Statistics)?.toString())
+                logger.warn("Total time: $totalTime. Average is: ${(totalTime.toDouble()/cnt.toDouble())/1000000.0f}")
+                logger.warn("Averaged over last 100, total time is: ${(totalTime-totalPrev)}. Average is: ${((totalTime-totalPrev).toDouble()/100.0)/1000000.0f}")
+                totalPrev=totalTime
+                logger.warn("Total communication time: ${distrTime + gathTime}. Average is: ${((distrTime + gathTime).toDouble()/cnt.toDouble())/1000000.0f}")
+                logger.warn("Total all_to_all time: $distrTime. Average is: ${(distrTime.toDouble()/cnt.toDouble())/1000000.0f}")
+                logger.warn("Total gather time: ${gathTime}. Average is: ${(gathTime.toDouble()/cnt.toDouble())/1000000.0f}")
+                logger.warn("Total streaming time: ${streamTime}. Average is: ${(streamTime.toDouble()/cnt.toDouble())/1000000.0f}")
 
 
-                logger.warn("Total rendering (image fetch) time: $imgFetchTime. Average is: ${imgFetchTime.toFloat()/cnt.toFloat()}")
-                logger.warn("Total compositing time: $compositeTime. Average is: ${compositeTime.toFloat()/cnt.toFloat()}")
+                logger.warn("Total rendering (image fetch) time: $imgFetchTime. Average is: ${(imgFetchTime.toDouble()/cnt.toDouble())/1000000.0f}")
+                logger.warn("Total compositing time: $compositeTime. Average is: ${(compositeTime.toDouble()/cnt.toDouble())/1000000.0f}")
                 logger.warn("Total GPU-send time: $gpuSendTime.")
             }
 
@@ -564,10 +555,10 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     fun compositeVDIs(VDISetColour: ByteBuffer, sizePerProcess: Int) {
         //Receive the VDIs and composite them
 
-        tDistr.end = currentTimeMillis()
+        tDistr.end = System.nanoTime()
         if(cnt>0) {distrTime += tDistr.end - tDistr.start}
 
-        tComposite.start = currentTimeMillis()
+        tComposite.start = System.nanoTime()
 
         logger.info("In the composite function")
 
@@ -580,7 +571,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
         compute.material.textures["VDIsColor"] = Texture(Vector3i(maxSupersegments*3, windowHeight, windowWidth), 4, contents = VDISetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
 //        compute.material.textures["VDIsDepth"] = Texture(Vector3i(maxSupersegments*2, windowHeight, windowWidth), 4, contents = VDISetDepth, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-        logger.info("Updated the ip textured")
+        logger.warn("Updated the textures to be composited")
 
         compute.visible = true
         logger.info("Set compute to visible")
@@ -607,10 +598,10 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                 recordingFinished = true
             }
         } else {
-        tGath.end = currentTimeMillis()
+        tGath.end = System.nanoTime()
         if(cnt>0) {gathTime += (tGath.end - tGath.start)}
 
-        tStream.start = currentTimeMillis()
+        tStream.start = System.nanoTime()
         encoder?.encodeFrame(image)
             if(startRecording) {
                 movieWriter?.encodeFrame(image)
