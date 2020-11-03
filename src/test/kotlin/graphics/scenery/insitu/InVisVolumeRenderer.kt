@@ -466,7 +466,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
                     volumesFromThisPartner[grid]?.addTimepoint("t-${count}", dataFromThisPartner[grid] as ByteBuffer) //TODO try with constant name
                     val currentHashMap = volumeHashMaps[partnerNo]?.get(grid)!!
                     logger.debug("Going to timepoint ${currentHashMap.size-1}")
-                    volumesFromThisPartner[grid]?.goToTimePoint(currentHashMap.size-1)
+//                    volumesFromThisPartner[grid]?.goToTimePoint(currentHashMap.size-1) //TODO: replace with new function call
 //                    volumesFromThisPartner[grid]?.purgeFirst(0, 1)
                 }
                 count++

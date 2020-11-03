@@ -247,7 +247,7 @@ class InVisSimpleVolumeRenderer: SceneryBase("InVisSimpleVolumeRenderer") {
                     logger.info("The origin of grid $grid of process $partnerNo is ${volumesFromThisPartner[grid]?.position}")
                     val currentHashMap = volumeHashMaps[partnerNo]?.get(grid)!!
                     logger.debug("Going to timepoint ${currentHashMap.size-1}")
-                    volumesFromThisPartner[grid]?.goToTimePoint(currentHashMap.size-1)
+//                    volumesFromThisPartner[grid]?.goToTimePoint(currentHashMap.size-1) //TODO: update to new function
 //                    volumesFromThisPartner[grid]?.purgeFirst(0, 1)
                 }
                 count++
