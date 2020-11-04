@@ -167,11 +167,11 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                 customSegments = hashMapOf(
                         SegmentType.FragmentShader to SegmentTemplate(
                                 this.javaClass,
-                                "VDIGenerator.comp",
+                                "VolumeRaycaster.comp",
                                 "intersectBoundingBox", "vis", "SampleVolume", "Convert", "Accumulate"),
                         SegmentType.Accumulator to SegmentTemplate(
 //                                this.javaClass,
-                                "AccumulateVDI.comp",
+                                "AccumulatePlainImage.comp",
                                 "vis", "sampleVolume", "convert")
                 ))
 
@@ -451,6 +451,15 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             tTotal.start = System.nanoTime()
             tRend.start = System.nanoTime()
 
+            //push data to the GPU
+            if(cnt%100 == 0) {
+                tGPU.start = System.nanoTime()
+                updateVolumes()
+                tGPU.end = System.nanoTime()
+
+                gpuSendTime += tGPU.end - tGPU.start
+            }
+
             while(composited.get() == prevAtomic) {
                 Thread.sleep(5)
             }
@@ -560,8 +569,8 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                 logger.warn("Total compositing time: $compositeTime. Average is: ${(compositeTime.toDouble()/cnt.toDouble())/1000000.0f}")
                 logger.warn("Averaged over last 100, compositing time is: ${(compositeTime-compositePrev)}. Average is: ${((compositeTime-compositePrev).toDouble()/100.0)/1000000.0f}")
                 compositePrev=compositeTime
-                logger.warn("Total GPU-send time: $gpuSendTime.")
-                logger.warn("Averaged over last 100, total time is: ${(gpuSendTime-gpuSendPrev)}. Average is: ${((gpuSendTime-gpuSendPrev).toDouble()/100.0)/1000000.0f}")
+                logger.warn("Total GPU-send time: $gpuSendTime. Average per vis time step is: ${(gpuSendTime.toDouble()/cnt.toDouble())/1000000.0f}")
+                logger.warn("Averaged over last 100, total time is: ${(gpuSendTime-gpuSendPrev)}. Average (per time step) is: ${((gpuSendTime-gpuSendPrev).toDouble()/100.0)/1000000.0f}")
                 gpuSendPrev=gpuSendTime
             }
 
