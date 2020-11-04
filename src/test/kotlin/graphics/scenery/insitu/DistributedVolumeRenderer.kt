@@ -179,9 +179,9 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 //        val outputTexture = Texture.fromImage(Image(outputBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
 //        outputTexture.mipmap = false
 //        volumeManager.material.textures["OutputRender"] = outputTexture
-        val outputSubColorBuffer = MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*3)
+        val outputSubColorBuffer = MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*2)
 //        val outputSubDepthBuffer = MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*2)
-        val outputSubVDIColor = Texture.fromImage(Image(outputSubColorBuffer, 3*maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+        val outputSubVDIColor = Texture.fromImage(Image(outputSubColorBuffer, 2*maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
         volumeManager.material.textures["OutputSubVDIColor"] = outputSubVDIColor
 //        val outputSubVDIDepth = Texture.fromImage(Image(outputSubDepthBuffer, 2*maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
 //        volumeManager.material.textures["OutputSubVDIDepth"] = outputSubVDIDepth
@@ -446,7 +446,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 //        }
 
 
-        var prevAtomic = composited.get()
+        var prevAtomic = subvdi.get()
         while(true) {
             tTotal.start = System.nanoTime()
             tRend.start = System.nanoTime()
@@ -460,13 +460,13 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                 gpuSendTime += tGPU.end - tGPU.start
             }
 
-            while(composited.get() == prevAtomic) {
+            while(subvdi.get() == prevAtomic) {
                 Thread.sleep(5)
             }
 
-            logger.warn("Previous value was: $prevAtomic and the new value is ${composited.get()}")
+            logger.warn("Previous value was: $prevAtomic and the new value is ${subvdi.get()}")
 
-            prevAtomic = composited.get()
+            prevAtomic = subvdi.get()
 
             subVDIColorBuffer = subVDIColor.contents
             compositedVDIColorBuffer = compositedColor.contents
@@ -529,7 +529,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
             tGath.start = System.nanoTime()
 //            Thread.sleep(20)
-            gatherCompositedVDIs(compositedVDIColorBuffer!!,0, windowHeight * windowWidth * maxOutputSupersegments * 4 / (3 * commSize), rank, commSize, saveFiles) //3 * commSize because the supersegments here contain only 1 element
+            gatherCompositedVDIs(compositedVDIColorBuffer!!,0, windowHeight * windowWidth * maxOutputSupersegments * 4 / (2 * commSize), rank, commSize, saveFiles) //3 * commSize because the supersegments here contain only 1 element
 
             tStream.end = System.nanoTime()
             if(cnt>0) {streamTime += tStream.end - tStream.start}
@@ -625,7 +625,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             logger.info("File dumped")
         }
 
-        compute.material.textures["VDIsColor"] = Texture(Vector3i(maxSupersegments*3, windowHeight, windowWidth), 4, contents = VDISetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+        compute.material.textures["VDIsColor"] = Texture(Vector3i(maxSupersegments*2, windowHeight, windowWidth), 4, contents = VDISetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
 //        compute.material.textures["VDIsDepth"] = Texture(Vector3i(maxSupersegments*2, windowHeight, windowWidth), 4, contents = VDISetDepth, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
         logger.warn("Updated the textures to be composited")
 

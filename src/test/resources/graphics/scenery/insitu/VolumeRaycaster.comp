@@ -59,46 +59,12 @@ void intersectBox( vec3 r_o, vec3 r_d, vec3 boxmin, vec3 boxmax, out float tnear
     tfar = min( min( tmax.x, tmax.y ), min( tmax.x, tmax.z ) );
 }
 
-float adjustOpacity(float a, float modifiedStepLength) {
-    return 1.0 - pow((1.0 - a), modifiedStepLength);
-}
-
-float diffPremultiplied(vec4 a, vec4 b) {
-    a.rgb = a.rgb * a.a;
-    b.rgb = b.rgb * b.a;
-
-    return length(a.rgb-b.rgb);
-}
-
 const vec4 bitEnc = vec4(1.,255.,65025.,16581375.);
 vec4 EncodeFloatRGBA (float v) {
     vec4 enc = bitEnc * v;
     enc = fract(enc);
     enc -= enc.yzww * vec2(1./255., 0.).xxxy;
     return enc;
-}
-
-vec4 encode(float x, float y){
-    vec4 rgba;
-
-    x += 128.;
-    y += 128.;
-
-    int ix = int( x * 256. ); // convert to int to split accurately
-    int v1x = ix / 256; // hi
-    int v1y = ix - v1x * 256; // lo
-
-    rgba.r = float( v1x + 1 ) / 255.; // normalize
-    rgba.g = float( v1y + 1 ) / 255.;
-
-    int iy = int( y * 256. );
-    int v2x = iy / 256; // hi
-    int v2y = iy - v2x * 256; // lo
-
-    rgba.b = float( v2x + 1 ) / 255.;
-    rgba.a = float( v2y + 1 ) / 255.;
-
-    return rgba - 1./256.;
 }
 
 // ---------------------
@@ -186,16 +152,12 @@ void main()
             */
         }
         vec4 encodedDepthStart;
-        vec4 encodedDepthEnd;
         encodedDepthStart = EncodeFloatRGBA(tnear);
-        encodedDepthEnd = EncodeFloatRGBA(step);
         imageStore(OutputSubVDIColor, ivec3(0, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), v);
         imageStore(OutputSubVDIColor, ivec3(1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), encodedDepthStart);
-        imageStore(OutputSubVDIColor, ivec3(2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), encodedDepthEnd);
     } else {
         imageStore(OutputSubVDIColor, ivec3(0, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
         imageStore(OutputSubVDIColor, ivec3(1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-        imageStore(OutputSubVDIColor, ivec3(2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
     }
 
 }
