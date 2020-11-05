@@ -106,7 +106,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
     var cnt = 0 //the loop counter
 
-    private external fun distributeVDIs(subVDIColor: ByteBuffer, sizePerProcess: Int, commSize: Int)
+    private external fun distributeVDIs(subVDIColor: ByteBuffer, subVDIDepth: ByteBuffer, sizePerProcess: Int, commSize: Int)
     private external fun gatherCompositedVDIs(compositedVDIColor: ByteBuffer, root: Int, subVDILen: Int, myRank: Int, commSize: Int, saveFiles: Boolean)
 
     @Suppress("unused")
@@ -175,16 +175,14 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                                 "vis", "sampleVolume", "convert")
                 ))
 
-//        val outputBuffer = MemoryUtil.memCalloc(windowWidth*windowHeight*4)
-//        val outputTexture = Texture.fromImage(Image(outputBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-//        outputTexture.mipmap = false
-//        volumeManager.material.textures["OutputRender"] = outputTexture
-        val outputSubColorBuffer = MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*2)
-//        val outputSubDepthBuffer = MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*2)
-        val outputSubVDIColor = Texture.fromImage(Image(outputSubColorBuffer, 2*maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+        logger.info("Init 2")
+
+        val outputSubColorBuffer = MemoryUtil.memCalloc(windowHeight*windowWidth*4)
+        val outputSubDepthBuffer = MemoryUtil.memCalloc(windowHeight*windowWidth*4)
+        val outputSubVDIColor = Texture.fromImage(Image(outputSubColorBuffer,  windowHeight, windowWidth), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+        val outputSubVDIDepth = Texture.fromImage(Image(outputSubDepthBuffer,  windowHeight, windowWidth), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
         volumeManager.material.textures["OutputSubVDIColor"] = outputSubVDIColor
-//        val outputSubVDIDepth = Texture.fromImage(Image(outputSubDepthBuffer, 2*maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-//        volumeManager.material.textures["OutputSubVDIDepth"] = outputSubVDIDepth
+        volumeManager.material.textures["OutputSubVDIDepth"] = outputSubVDIDepth
         hub.add(volumeManager)
 
 
@@ -393,7 +391,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     }
 
     private fun manageVDIGeneration() {
-//        var subVDIDepthBuffer: ByteBuffer? = null
+        var subVDIDepthBuffer: ByteBuffer? = null
         var subVDIColorBuffer: ByteBuffer? = null
         var bufferToSend: ByteBuffer? = null
 
@@ -415,6 +413,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
         val r = renderer
 
         val subVDIColor = volumeManager.material.textures["OutputSubVDIColor"]!!
+        val subVDIDepth = volumeManager.material.textures["OutputSubVDIDepth"]!!
 
 //        var reqRendered = r?.requestTexture(subVDIColor) { colTex ->
 //            logger.info("Fetched color VDI from GPU")
@@ -429,9 +428,14 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
         val composited = AtomicInteger(0)
         val subvdi = AtomicInteger(0)
+        val subdepth = AtomicInteger(0)
 
         (renderer as? VulkanRenderer)?.postRenderLambdas?.add {
             subVDIColor to subvdi
+        }
+
+        (renderer as? VulkanRenderer)?.postRenderLambdas?.add {
+            subVDIDepth to subdepth
         }
 
         (renderer as? VulkanRenderer)?.postRenderLambdas?.add {
@@ -469,6 +473,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             prevAtomic = subvdi.get()
 
             subVDIColorBuffer = subVDIColor.contents
+            subVDIDepthBuffer = subVDIDepth.contents
             compositedVDIColorBuffer = compositedColor.contents
 
             //Start here
@@ -479,7 +484,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 //                reqRendered!!.await()
 //            }
 
-            bufferToSend = subVDIColorBuffer
+//            bufferToSend = subVDIColorBuffer
 
 //            if(saveFiles) {
 //                logger.info("Dumping to file")
@@ -504,7 +509,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
             tDistr.start = System.nanoTime()
 //            Thread.sleep(50)
-            distributeVDIs(bufferToSend!!, windowHeight * windowWidth * maxSupersegments * 4 / commSize, commSize)
+            distributeVDIs(subVDIColorBuffer!!, subVDIDepthBuffer!!, windowHeight * windowWidth * maxSupersegments * 4 / commSize, commSize)
 
             logger.info("Back in the management function")
 
@@ -608,7 +613,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     }
 
     @Suppress("unused")
-    fun compositeVDIs(VDISetColour: ByteBuffer, sizePerProcess: Int) {
+    fun compositeVDIs(VDISetColour: ByteBuffer, VDISetDepth: ByteBuffer, sizePerProcess: Int) {
         //Receive the VDIs and composite them
 
         tDistr.end = System.nanoTime()
@@ -625,8 +630,8 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             logger.info("File dumped")
         }
 
-        compute.material.textures["VDIsColor"] = Texture(Vector3i(maxSupersegments*2, windowHeight, windowWidth), 4, contents = VDISetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-//        compute.material.textures["VDIsDepth"] = Texture(Vector3i(maxSupersegments*2, windowHeight, windowWidth), 4, contents = VDISetDepth, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+        compute.material.textures["VDIsColor"] = Texture(Vector3i(windowHeight, windowWidth, 1), 4, contents = VDISetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+        compute.material.textures["VDIsDepth"] = Texture(Vector3i(windowHeight, windowWidth, 1), 4, contents = VDISetDepth, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
         logger.warn("Updated the textures to be composited")
 
 //        compute.visible = true
