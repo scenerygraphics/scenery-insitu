@@ -551,31 +551,31 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             tTotal.end = System.nanoTime()
             if(cnt>0) {totalTime += tTotal.end - tTotal.start}
 
-            if(rank == 0 && cnt!=0 && cnt%100 == 0) {
+            if(cnt!=0 && cnt%100 == 0) {
                 //print the timer values
-                logger.warn("Total vis time steps so far: $cnt. Printing vis timers now.")
-                logger.warn((hub.get<Statistics>() as? Statistics)?.toString())
-                logger.warn("Total time: $totalTime. Average is: ${(totalTime.toDouble()/cnt.toDouble())/1000000.0f}")
-                logger.warn("Averaged over last 100, total time is: ${(totalTime-totalPrev)}. Average is: ${((totalTime-totalPrev).toDouble()/100.0)/1000000.0f}")
+                logger.warn("$rank:Total vis time steps so far: $cnt. Printing vis timers now.")
+                logger.warn("$rank:${(hub.get<Statistics>() as? Statistics)?.toString()}")
+                logger.warn("$rank:Total time: $totalTime. Average is: ${(totalTime.toDouble()/cnt.toDouble())/1000000.0f}")
+                logger.warn("$rank:Averaged over last 100, total time is: ${(totalTime-totalPrev)}. Average is: ${((totalTime-totalPrev).toDouble()/100.0)/1000000.0f}")
                 totalPrev=totalTime
-                logger.warn("Total communication time: ${distrTime + gathTime}. Average is: ${((distrTime + gathTime).toDouble()/cnt.toDouble())/1000000.0f}")
-                logger.warn("Total all_to_all time: $distrTime. Average is: ${(distrTime.toDouble()/cnt.toDouble())/1000000.0f}")
-                logger.warn("Averaged over last 100, all_to_all time is: ${(distrTime-distrPrev)}. Average is: ${((distrTime-distrPrev).toDouble()/100.0)/1000000.0f}")
+                logger.warn("$rank:Total communication time: ${distrTime + gathTime}. Average is: ${((distrTime + gathTime).toDouble()/cnt.toDouble())/1000000.0f}")
+                logger.warn("$rank:Total all_to_all time: $distrTime. Average is: ${(distrTime.toDouble()/cnt.toDouble())/1000000.0f}")
+                logger.warn("$rank:Averaged over last 100, all_to_all time is: ${(distrTime-distrPrev)}. Average is: ${((distrTime-distrPrev).toDouble()/100.0)/1000000.0f}")
                 distrPrev=distrTime
-                logger.warn("Total gather time: ${gathTime}. Average is: ${(gathTime.toDouble()/cnt.toDouble())/1000000.0f}")
-                logger.warn("Averaged over last 100, gather time is: ${(gathTime-gathPrev)}. Average is: ${((gathTime-gathPrev).toDouble()/100.0)/1000000.0f}")
+                logger.warn("$rank:Total gather time: ${gathTime}. Average is: ${(gathTime.toDouble()/cnt.toDouble())/1000000.0f}")
+                logger.warn("$rank:Averaged over last 100, gather time is: ${(gathTime-gathPrev)}. Average is: ${((gathTime-gathPrev).toDouble()/100.0)/1000000.0f}")
                 gathPrev=gathTime
-                logger.warn("Total streaming time: ${streamTime}. Average is: ${(streamTime.toDouble()/cnt.toDouble())/1000000.0f}")
-                logger.warn("Averaged over last 100, streaming time is: ${(streamTime-streamPrev)}. Average is: ${((streamTime-streamPrev).toDouble()/100.0)/1000000.0f}")
+                logger.warn("$rank:Total streaming time: ${streamTime}. Average is: ${(streamTime.toDouble()/cnt.toDouble())/1000000.0f}")
+                logger.warn("$rank:Averaged over last 100, streaming time is: ${(streamTime-streamPrev)}. Average is: ${((streamTime-streamPrev).toDouble()/100.0)/1000000.0f}")
                 streamPrev=streamTime
-                logger.warn("Total rendering (image fetch) time: $imgFetchTime. Average is: ${(imgFetchTime.toDouble()/cnt.toDouble())/1000000.0f}")
-                logger.warn("Averaged over last 100, rendering (image fetch) time is: ${(imgFetchTime-imgFetchPrev)}. Average is: ${((imgFetchTime-imgFetchPrev).toDouble()/100.0)/1000000.0f}")
+                logger.warn("$rank:Total rendering (image fetch) time: $imgFetchTime. Average is: ${(imgFetchTime.toDouble()/cnt.toDouble())/1000000.0f}")
+                logger.warn("$rank:Averaged over last 100, rendering (image fetch) time is: ${(imgFetchTime-imgFetchPrev)}. Average is: ${((imgFetchTime-imgFetchPrev).toDouble()/100.0)/1000000.0f}")
                 imgFetchPrev=imgFetchTime
-                logger.warn("Total compositing time: $compositeTime. Average is: ${(compositeTime.toDouble()/cnt.toDouble())/1000000.0f}")
-                logger.warn("Averaged over last 100, compositing time is: ${(compositeTime-compositePrev)}. Average is: ${((compositeTime-compositePrev).toDouble()/100.0)/1000000.0f}")
+                logger.warn("$rank:Total compositing time: $compositeTime. Average is: ${(compositeTime.toDouble()/cnt.toDouble())/1000000.0f}")
+                logger.warn("$rank:Averaged over last 100, compositing time is: ${(compositeTime-compositePrev)}. Average is: ${((compositeTime-compositePrev).toDouble()/100.0)/1000000.0f}")
                 compositePrev=compositeTime
-                logger.warn("Total GPU-send time: $gpuSendTime. Average per vis time step is: ${(gpuSendTime.toDouble()/cnt.toDouble())/1000000.0f}")
-                logger.warn("Averaged over last 100, total time is: ${(gpuSendTime-gpuSendPrev)}. Average (per time step) is: ${((gpuSendTime-gpuSendPrev).toDouble()/100.0)/1000000.0f}")
+                logger.warn("$rank:Total GPU-send time: $gpuSendTime. Average per vis time step is: ${(gpuSendTime.toDouble()/cnt.toDouble())/1000000.0f}")
+                logger.warn("$rank:Averaged over last 100, total time is: ${(gpuSendTime-gpuSendPrev)}. Average (per time step) is: ${((gpuSendTime-gpuSendPrev).toDouble()/100.0)/1000000.0f}")
                 gpuSendPrev=gpuSendTime
             }
 
