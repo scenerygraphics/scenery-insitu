@@ -1,5 +1,7 @@
 # scenery-insitu
 
+![Blood Cells Example, scenery running on a CAVE with a scientist exploring a Drosophila melanogaster microscopy dataset, APR representation of Zebrafish head vasculature, Rendering multiple volumes in a single scene, Interacting with microscopy data in realtime](https://cloud.mpi-cbg.de/index.php/apps/files/?dir=/&fileid=9776737#//output.gif)
+
 A rendering system based on the [scenery](scenery.graphics) library that performs in situ visualization of distributed numerical simulations. It is instrumented to work with simulations based on [OpenFPM](http://openfpm.mpi-cbg.de/) - an open-source framework for scalable particle- and mesh-based simulations.
 
 The application handles rendering of both volume data (e.g. from mesh-based simulations of fluid dynamics) as well as discrete particles (e.g. from  molecular dynamics simulations).
