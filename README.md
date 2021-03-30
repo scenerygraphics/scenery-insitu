@@ -1,8 +1,18 @@
 # scenery-insitu
 
-A rendering system based on the [scenery](scenery.graphics) library that performs in situ visualization of distributed numerical simulations. It is instrumented to work with simulations based on [OpenFPM](http://openfpm.mpi-cbg.de/) - an open-source framework for scalable particle- and mesh-based simulations.
+<p align="center">
+  <img src="./artwork/gray_scott.gif" width="320">
+  <img src="./artwork/vortex_in_cell.gif" width="320">
+</p>
 
-The application handles rendering of both volume data (e.g. from mesh-based simulations of fluid dynamics) as well as discrete particles (e.g. from  molecular dynamics simulations).
+In-situ (real-time) rendering outputs, produced using this repository, of distributed OpenFPM numerical simulations. Both simulations were distributed across 8 compute nodes of a high-performance cluster, with 20 CPU cores for the simulation, and 1 GPU for visualization, per node. The first output visualizes the concentration of a chemical in a 3D Gray-Scott reaction-diffusion simulation. The second output is from a hybrid particle-mesh simulation of the incompressible Navier-Stokes equation in vorticity formulation, initialized as a vortex ring. The magnitude of vorticity is visualized. 
+
+
+## Synopsis
+
+A rendering system based on the [scenery](scenery.graphics) library that performs real-time in-situ visualization of distributed numerical simulations. It is instrumented to work with simulations based on [OpenFPM](http://openfpm.mpi-cbg.de/) - an open-source framework for scalable particle- and mesh-based simulations.
+
+The application handles rendering of both volume data (e.g. from mesh-based simulations of fluid dynamics) as well as discrete particles (e.g. from  molecular dynamics simulations). The in-situ rendering is initialized and controlled by OpenFPM. This repository, therefore, can not be used standalone. 
 
 ## Volume Rendering
 
