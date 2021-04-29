@@ -74,7 +74,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     var count = 0
     val compute = Box()
 
-    val generateVDIs = true
+    val generateVDIs = false
     var maxSupersegments = 0
     var maxOutputSupersegments = 0
     var numLayers = 0
@@ -209,8 +209,10 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
         } else {
             outputSubVDIColor = Texture.fromImage(Image(outputSubColorBuffer,  windowHeight, windowWidth), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
             outputSubVDIDepth = Texture.fromImage(Image(outputSubDepthBuffer,  windowHeight, windowWidth), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+            volumeManager.customTextures.add("OutputSubVDIDepth")
             volumeManager.material.textures["OutputSubVDIDepth"] = outputSubVDIDepth // We only need a separate depth texture if we are rendering plain images
         }
+        volumeManager.customTextures.add("OutputSubVDIColor")
         volumeManager.material.textures["OutputSubVDIColor"] = outputSubVDIColor
         hub.add(volumeManager)
 
@@ -481,20 +483,14 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
         val subvdi = AtomicInteger(0)
         val subdepth = AtomicInteger(0)
 
-        (renderer as? VulkanRenderer)?.postRenderLambdas?.add {
-            subVDIColor to subvdi
-        }
+        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (subVDIColor to subvdi)
 
         if(!generateVDIs) {
             subVDIDepth = volumeManager.material.textures["OutputSubVDIDepth"]!!
-            (renderer as? VulkanRenderer)?.postRenderLambdas?.add {
-                subVDIDepth to subdepth
-            }
+            (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (subVDIDepth to subdepth)
         }
 
-        (renderer as? VulkanRenderer)?.postRenderLambdas?.add {
-            compositedColor to composited
-        }
+        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (compositedColor to composited)
 
 //        var reqComposited = r?.requestTexture(compositedColor) { colTex ->
 //            logger.info("Fetched composited color VDI from GPU")
