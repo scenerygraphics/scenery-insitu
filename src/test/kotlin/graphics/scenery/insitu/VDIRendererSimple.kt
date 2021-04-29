@@ -21,29 +21,26 @@ class VDIRendererSimple : SceneryBase("SimpleVDIRenderer", 600, 600) {
         renderer = hub.add(SceneryElement.Renderer,
                 Renderer.createRenderer(hub, applicationName, scene, windowWidth, windowHeight))
 
-        val numSupersegments = 50
+        val numSupersegments = 40
 
-        var buff = ByteArray(windowHeight*windowWidth*numSupersegments)
-        var depthBuff = ByteArray(windowHeight*windowWidth*2*numSupersegments)
-
-        buff = File("/home/aryaman/Repositories/openfpm_pdata/example/Grid/3_gray_scott_3d/Final_VDICol1594425655.raw").readBytes()
-        depthBuff = File("/home/aryaman/Repositories/openfpm_pdata/example/Grid/3_gray_scott_3d/Final_VDIDepth1594425655.raw").readBytes()
+        val buff = File("/home/aryaman/Repositories/openfpm_pdata/example/Grid/3_gray_scott_3d/size:1Final_VDICol100.raw").readBytes()
+//        depthBuff = File("/home/aryaman/Repositories/openfpm_pdata/example/Grid/3_gray_scott_3d/Final_VDIDepth1594425655.raw").readBytes()
 
         var colBuffer: ByteBuffer
-        var depthBuffer: ByteBuffer
+//        var depthBuffer: ByteBuffer
 //        colBuffer = ByteBuffer.wrap(buff)
 //        depthBuffer = ByteBuffer.wrap(depthBuff)
-        colBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * numSupersegments * 4)
-        depthBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * numSupersegments * 4 * 2)
+        colBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * numSupersegments * 3 * 4)
+//        depthBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * numSupersegments * 4 * 2)
 
         colBuffer.put(buff).flip()
-        depthBuffer.put(depthBuff).flip()
+//        depthBuffer.put(depthBuff).flip()
 
         logger.info("Length of color buffer is ${buff.size} and associated bytebuffer capacity is ${colBuffer.capacity()} it has remaining: ${colBuffer.remaining()}")
-        logger.info("Length of depth buffer is ${depthBuff.size} and associated bytebuffer capacity is ${depthBuffer.capacity()} it has remianing ${depthBuffer.remaining()}")
+//        logger.info("Length of depth buffer is ${depthBuff.size} and associated bytebuffer capacity is ${depthBuffer.capacity()} it has remianing ${depthBuffer.remaining()}")
 
         logger.info("Col sum is ${buff.sum()}")
-        logger.info("Depth sum is ${depthBuff.sum()}")
+//        logger.info("Depth sum is ${depthBuff.sum()}")
 
 
         val outputBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * 4)
@@ -57,18 +54,15 @@ class VDIRendererSimple : SceneryBase("SimpleVDIRenderer", 600, 600) {
                 workSizes = Vector3i(512, 512, 1),
                 invocationType = InvocationType.Once
         )
-        compute.material.textures["ColorVDI"] = Texture(Vector3i(numSupersegments, windowHeight, windowWidth), 4, contents = colBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-        compute.material.textures["DepthVDI"] = Texture(Vector3i(2*numSupersegments, windowHeight, windowWidth), 4, contents = depthBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+        compute.material.textures["InputVDI"] = Texture(Vector3i(numSupersegments*3, windowHeight, windowWidth), 4, contents = colBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+//        compute.material.textures["DepthVDI"] = Texture(Vector3i(2*numSupersegments, windowHeight, windowWidth), 4, contents = depthBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
 
         scene.addChild(compute)
 
-        val box = Box(Vector3f(1.0f, 1.0f, 1.0f))
-        box.name = "le box du win"
-        box.material.textures["diffuse"] = compute.material.textures["OutputViewport"]!!
-        box.material.metallic = 0.3f
-        box.material.roughness = 0.9f
+        val plane = FullscreenObject()
+        plane.material.textures["diffuse"] = compute.material.textures["OutputViewport"]!!
 
-        scene.addChild(box)
+        scene.addChild(plane)
 
         val light = PointLight(radius = 15.0f)
         light.position = Vector3f(0.0f, 0.0f, 2.0f)
@@ -84,15 +78,15 @@ class VDIRendererSimple : SceneryBase("SimpleVDIRenderer", 600, 600) {
             scene.addChild(this)
         }
 
-        thread {
-            while (running) {
-                box.rotation.rotateY(0.01f)
-                box.needsUpdate = true
-//                box.material.textures["diffuse"] = compute.material.textures["OutputViewport"]!!
-
-                Thread.sleep(20)
-            }
-        }
+//        thread {
+//            while (running) {
+//                box.rotation.rotateY(0.01f)
+//                box.needsUpdate = true
+////                box.material.textures["diffuse"] = compute.material.textures["OutputViewport"]!!
+//
+//                Thread.sleep(20)
+//            }
+//        }
     }
 
     @Test

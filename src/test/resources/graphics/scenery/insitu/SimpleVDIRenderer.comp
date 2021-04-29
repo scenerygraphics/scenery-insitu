@@ -1,9 +1,9 @@
 #version 450
 
 layout (local_size_x = 15, local_size_y = 15) in;
-layout (set = 0, binding = 0, rgba8) uniform readonly image3D ColorVDI;
+layout (set = 0, binding = 0, rgba8) uniform readonly image3D InputVDI;
 layout (set = 1, binding = 0, rgba8) uniform image2D OutputViewport;
-layout (set = 2, binding = 0, rgba8) uniform readonly image3D DepthVDI;
+//layout (set = 2, binding = 0, rgba8) uniform readonly image3D DepthVDI;
 
 vec2 decode(vec4 c){
     vec2 v = vec2(0.);
@@ -33,7 +33,7 @@ float adjustOpacity(float a, float modifiedStepLength) {
 }
 
 void main() {
-    ivec3 imageCoords  = imageSize(ColorVDI);
+    ivec3 imageCoords  = imageSize(InputVDI);
 
     int numSupersegments = imageCoords.r;
     vec4 v = vec4(0);
@@ -41,14 +41,14 @@ void main() {
     vec4 maxV = vec4(0);
 
     for(int i = 0; i < numSupersegments; i++) {
-        vec4 x = imageLoad(ColorVDI, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x));
+        vec4 x = imageLoad(InputVDI, ivec3(i*3, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x));
         vec3 newColor = x.rgb;
         float newAlpha = x.a;
 
         if(i<(numSupersegments-1)) {
 
-            vec4 d = imageLoad(DepthVDI, ivec3(i*2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x)); //Start point of this supersegment
-            vec4 dNext = imageLoad(DepthVDI, ivec3(i*2+2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x)); //Start point of next supersegment
+            vec4 d = imageLoad(InputVDI, ivec3(i*3+1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x)); //Start point of this supersegment
+            vec4 dNext = imageLoad(InputVDI, ivec3(i*3+2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x)); //End point of this supersegment
             float depthHere = DecodeFloatRGBA(d);
 
             if(i!=0 && depthHere == 0.0) {
