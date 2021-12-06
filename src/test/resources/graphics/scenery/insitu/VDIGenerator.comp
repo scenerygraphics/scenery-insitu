@@ -36,10 +36,16 @@ layout(push_constant) uniform currentEye_t {
 } currentEye;
 
 
+#define SEPARATE_DEPTH 0
+#define WORLD_ABS 0
+
 layout(local_size_x = 15, local_size_y = 15) in;
 layout(set = 2, binding = 0) uniform sampler3D volumeCache;
 layout(set = 3, binding = 0, rgba8) uniform image3D OutputSubVDIColor;
+
 #pragma scenery endverbatim
+
+
 
 // intersect ray with a box
 // http://www.siggraph.org/education/materials/HyperGraph/raytrace/rtinter3.htm
@@ -108,14 +114,25 @@ vec4 encode(float x, float y){
 
 void main()
 {
+
+//    imageStore(OutputSubVDIColor, ivec3(0, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(1, 0, 0, 1));
+//    imageStore(OutputSubVDIColor, ivec3(1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0.5));
+//    imageStore(OutputSubVDIColor, ivec3(2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(1));
+//
+//    if(true && 1>0) {
+//        return;
+//
+//    }
+
     mat4 ipv = InverseViewMatrices[0] * InverseProjectionMatrix;
+    mat4 pv = ProjectionMatrix * ViewMatrices[0];
     // frag coord in NDC
     // TODO: Re-introduce dithering
     //	vec2 fragCoord = (vrParameters.stereoEnabled ^ 1) * gl_FragCoord.xy + vrParameters.stereoEnabled * vec2((gl_FragCoord.x/2.0 + currentEye.eye * gl_FragCoord.x/2.0), gl_FragCoord.y);
     //	vec2 viewportSizeActual = (vrParameters.stereoEnabled ^ 1) * viewportSize + vrParameters.stereoEnabled * vec2(viewportSize.x/2.0, viewportSize.y);
     //	vec2 uv = 2 * ( gl_FragCoord.xy + dsp ) / viewportSizeActual - 1;
     ivec3 imageCoords  = imageSize(OutputSubVDIColor);
-    float newSupSegThresh = 0.00000001;
+    float newSupSegThresh = 0.05;
 
     vec2 texcoord = gl_GlobalInvocationID.xy/vec2(imageCoords.b, imageCoords.g);
     vec2 uv = texcoord * 2.0 - vec2(1.0);
@@ -152,8 +169,13 @@ void main()
 
     // -------------------------------------------------------
 
+#if SEPARATE_DEPTH
+    int maxSupersegments = imageCoords.r;
+#else
     int maxSupersegments = imageCoords.r/3;
-    float minOpacity = 0.000000000000000001; //If alpha is less than this, the sample is considered transparent and not included in generated supersegments
+#endif
+
+    float minOpacity = 0.001; //If alpha is less than this, the sample is considered transparent and not included in generated supersegments
     int supersegmentNum = 0;
 
     if ( tnear < tfar )
@@ -188,6 +210,16 @@ void main()
 
             vec4 wpos = mix( wfront, wback, step );
 
+            vec4 ro_world, rd_world;
+#if WORLD_ABS
+                ro_world = InverseViewMatrices[0] * vec4(0, 0, 0, 1);
+                ro_world = ro_world / ro_world.w;
+
+                rd_world = wback - wfront;
+                rd_world = normalize(rd_world);
+#endif
+
+
             // $insert{Accumulate}
             /*
             inserts something like the following (keys: vis,blockTexture,convert)
@@ -202,18 +234,30 @@ void main()
         FragColor = v;
         if(supersegmentNum < maxSupersegments) {
             for(int i = supersegmentNum; i < maxSupersegments; i++) {
+#if SEPARATE_DEPTH
+                imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIDepth, ivec3(2 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIDepth, ivec3(2 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+#else
                 imageStore(OutputSubVDIColor, ivec3(3 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
                 imageStore(OutputSubVDIColor, ivec3(3 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
                 imageStore(OutputSubVDIColor, ivec3(3 * i + 2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+#endif
             }
         }
     } else {
         FragColor = vec4(0, 0, 0, 0);
         if(supersegmentNum < maxSupersegments) {
             for(int i = supersegmentNum; i < maxSupersegments; i++) {
+#if SEPARATE_DEPTH
+                imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIDepth, ivec3(2 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIDepth, ivec3(2 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+#else
                 imageStore(OutputSubVDIColor, ivec3(3 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
                 imageStore(OutputSubVDIColor, ivec3(3 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
                 imageStore(OutputSubVDIColor, ivec3(3 * i + 2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+#endif
             }
         }
     }
