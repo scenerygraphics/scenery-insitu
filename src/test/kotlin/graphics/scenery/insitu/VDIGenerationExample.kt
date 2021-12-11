@@ -31,7 +31,7 @@ class VDIGenerationExample : SceneryBase("VDI Generation") {
 
     lateinit var volumeManager: VolumeManager
 
-    val separateDepth = false
+    val separateDepth = true
     val world_abs = false
 
     val old_viewpoint = true
@@ -250,9 +250,11 @@ class VDIGenerationExample : SceneryBase("VDI Generation") {
                 } else {
                     fileName = "VDI${cnt}_ndc"
                 }
-                SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)
                 if(separateDepth) {
+                    SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col")
                     SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth")
+                } else {
+                    SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)
                 }
                 logger.info("Wrote VDI $cnt")
             }
