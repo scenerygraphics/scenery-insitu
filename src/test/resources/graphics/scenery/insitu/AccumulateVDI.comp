@@ -1,6 +1,13 @@
 if (vis)
 {
     vec4 x = sampleVolume(wpos);
+
+    #if USE_PRINTF
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("Step: %d, color of sample: (%f, %f, %f, %f)", i, x.rgba);
+    }
+    #endif
+
     float newAlpha = x.a;
     vec3 newColor = x.rgb;
 
@@ -9,7 +16,7 @@ if (vis)
 
     float ndc_step = ndcPos.z;
 
-    if(newAlpha < minOpacity) {
+    if(newAlpha <= minOpacity) {
         transparentSample = true;
     }
 
@@ -21,20 +28,33 @@ if (vis)
 //        supersegmentNum++;
 
 //        float segLen = step - supSegStartPoint;
-        float segLen = ndc_step - supSegStartPoint;
+//        float segLen = ndc_step - supSegStartPoint;
+        float segLen = length(wprev - supseg_start_w);
         vec4 supersegmentAdjusted;
         supersegmentAdjusted.rgb = curV.rgb / curV.a;
-//        supersegmentAdjusted.a = adjustOpacity(curV.a, 1.0/segLen);
-        supersegmentAdjusted.a = curV.a;
+        supersegmentAdjusted.a = adjustOpacity(curV.a, 1.0/segLen);
+//        supersegmentAdjusted.a = curV.a;
 //        supersegmentAdjusted = x;
         float diff = diffPremultiplied(supersegmentAdjusted, x);
+
+        #if USE_PRINTF
+        if(gl_GlobalInvocationID.xy == debug_pixel) {
+            debugPrintfEXT("Diff is: %f, color of supseg (non-premultiplied) was: (%f, %f, %f, %f)", diff, supersegmentAdjusted.rgba);
+        }
+        #endif
 
         bool newSupSeg = false;
         if(diff >= newSupSegThresh) {
             newSupSeg = true;
+            #if USE_PRINTF
+            if(gl_GlobalInvocationID.xy == debug_pixel) {
+                debugPrintfEXT("Termination criteria reached for %dth time, color of supseg was: (%f, %f, %f, %f)", num_terminations, supersegmentAdjusted.rgba);
+            }
+            #endif
+            num_terminations++;
         }
 
-        if(lastSample || ((newSupSeg || transparentSample) && !lastSupersegment)) {
+        if(lastSample || ((newSupSeg || transparentSample) && !lastSupersegment)) { //closing a supersegment
             supersegmentIsOpen = false;
 //            supSegEndPoint = step;
 
@@ -70,7 +90,7 @@ if (vis)
         }
     }
 
-    if( (!lastSample) && (!supersegmentIsOpen) && (!transparentSample) ) {
+    if( (!lastSample) && (!supersegmentIsOpen) && (!transparentSample) ) { //opening a supersegment
         supersegmentIsOpen = true;
 //        supSegStartPoint = step;
 #if WORLD_ABS
@@ -85,16 +105,18 @@ if (vis)
 #else
             supSegStartPoint = ndc_step;
 #endif
+        supseg_start_w = wprev;
         curV = vec4( 0 );
     }
 
-//    float w = adjustOpacity(newAlpha, nw + step * fwnw);
-    float w = newAlpha;
+    float w = adjustOpacity(newAlpha, length(wpos - wprev));
+
+//    float w = newAlpha;
     curV.rgb = curV.rgb + (1 - curV.a) * newColor * w;
     curV.a = curV.a + (1 - curV.a) * w;
 
-    v.rgb = v.rgb + (1.0f - v.a) * newColor * newAlpha; //TODO Remove
-    v.a = v.a + (1.0f - v.a) * newAlpha;
+    v.rgb = v.rgb + (1.0f - v.a) * newColor * w; //TODO Remove
+    v.a = v.a + (1.0f - v.a) * w;
 
 //    if(v.a >= 1.0f) {
 //        break;

@@ -36,16 +36,23 @@ layout(push_constant) uniform currentEye_t {
 } currentEye;
 
 
-#define SEPARATE_DEPTH 0
+#define SEPARATE_DEPTH 1
 #define WORLD_ABS 0
+
+#define USE_PRINTF 1
+
+#if USE_PRINTF
+#extension GL_EXT_debug_printf : enable
+#endif
 
 layout(local_size_x = 15, local_size_y = 15) in;
 layout(set = 2, binding = 0) uniform sampler3D volumeCache;
 layout(set = 3, binding = 0, rgba8) uniform image3D OutputSubVDIColor;
+layout(set = 4, binding = 0, r32f) uniform image3D OutputSubVDIDepth;
 
 #pragma scenery endverbatim
 
-
+ivec2 debug_pixel = ivec2(460, 350);
 
 // intersect ray with a box
 // http://www.siggraph.org/education/materials/HyperGraph/raytrace/rtinter3.htm
@@ -132,7 +139,7 @@ void main()
     //	vec2 viewportSizeActual = (vrParameters.stereoEnabled ^ 1) * viewportSize + vrParameters.stereoEnabled * vec2(viewportSize.x/2.0, viewportSize.y);
     //	vec2 uv = 2 * ( gl_FragCoord.xy + dsp ) / viewportSizeActual - 1;
     ivec3 imageCoords  = imageSize(OutputSubVDIColor);
-    float newSupSegThresh = 0.05;
+    float newSupSegThresh = 0.00014;
 
     vec2 texcoord = gl_GlobalInvocationID.xy/vec2(imageCoords.b, imageCoords.g);
     vec2 uv = texcoord * 2.0 - vec2(1.0);
@@ -175,8 +182,9 @@ void main()
     int maxSupersegments = imageCoords.r/3;
 #endif
 
-    float minOpacity = 0.001; //If alpha is less than this, the sample is considered transparent and not included in generated supersegments
+    float minOpacity = 0.0; //If alpha is less than this, the sample is considered transparent and not included in generated supersegments
     int supersegmentNum = 0;
+    int num_terminations = 1;
 
     if ( tnear < tfar )
     {
@@ -195,8 +203,13 @@ void main()
         bool lastSupersegment = false;
 
         float step = tnear;
+        vec4 wprev = mix(wfront, wback, step);
+
+        step += nw + step * fwnw;
+
         vec4 v = vec4( 0 );
         vec4 curV = vec4( 0 );
+        vec4 supseg_start_w = vec4(0);
         for ( int i = 0; i < numSteps; ++i, step += nw + step * fwnw )
         {
             transparentSample = false;
@@ -230,7 +243,10 @@ void main()
                 v = max(v, convert(x));
             }
             */
+
+            wprev = wpos;
         }
+        v.xyz = pow(v.xyz, vec3(1/2.2));
         FragColor = v;
         if(supersegmentNum < maxSupersegments) {
             for(int i = supersegmentNum; i < maxSupersegments; i++) {
