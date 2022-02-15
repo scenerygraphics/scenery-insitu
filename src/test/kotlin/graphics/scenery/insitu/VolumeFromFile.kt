@@ -28,13 +28,15 @@ import kotlin.concurrent.thread
  *
  * @author Aryaman Gupta <argupta@mpi-cbg.de>
  */
-class VolumeFromFile: SceneryBase("Volume Rendering", 1280, 720) {
+class VolumeFromFile: SceneryBase("Volume Rendering", 1832, 1016) {
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
-    val generateVDIs = true
+    val generateVDIs = false
     val separateDepth = true
     val world_abs = false
+    val dataset = "Stagbeetle"
+    val closeAfter = 1000000L
 
     override fun init() {
         renderer = hub.add(Renderer.createRenderer(hub, applicationName, scene, windowWidth, windowHeight))
@@ -122,7 +124,7 @@ class VolumeFromFile: SceneryBase("Volume Rendering", 1280, 720) {
         scene.addChild(shell)
         shell.visible = false
 
-        val volume = Volume.fromPathRaw(Paths.get("/home/aryaman/Datasets/Volume/Backpack"), hub)
+        val volume = Volume.fromPathRaw(Paths.get("/home/aryaman/Datasets/Volume/$dataset"), hub)
         volume.name = "volume"
         volume.colormap = Colormap.get("hot")
         volume.spatial {
@@ -132,7 +134,17 @@ class VolumeFromFile: SceneryBase("Volume Rendering", 1280, 720) {
 //            scale = Vector3f(20.0f, 20.0f, 20.0f)
         }
 
-        volume.pixelToWorldRatio = 0.0075f
+        if(dataset == "Stagbeetle") {
+        volume.pixelToWorldRatio = (0.0075f/832f) * 512f
+        } else {
+            volume.pixelToWorldRatio = 0.0075f
+        }
+
+        logger.info("Local scale: ${volume.localScale()}")
+        logger.info("Vertex size: ${volume.vertexSize}")
+        logger.info("Vertices: ${volume.vertices.toString()}")
+        logger.info("Texcoord size: ${volume.texcoordSize}")
+        logger.info("Texcoords: ${volume.texcoords.toString()}")
 
         with(volume.transferFunction) {
             addControlPoint(0.0f, 0.0f)
@@ -170,6 +182,10 @@ class VolumeFromFile: SceneryBase("Volume Rendering", 1280, 720) {
 //                println("${cam.spatial().rotation}")
 //            }
 //        }
+        thread {
+            Thread.sleep(closeAfter)
+            renderer?.shouldClose = true
+        }
 
     }
 
@@ -209,7 +225,6 @@ class VolumeFromFile: SceneryBase("Volume Rendering", 1280, 720) {
 
             if(cnt < 20) {
                 var fileName = ""
-                val dataset = "Backpack"
                 if(world_abs) {
                     fileName = "${dataset}VDI${cnt}_world_new"
                 } else {
