@@ -1,6 +1,7 @@
 package graphics.scenery.insitu
 
 import graphics.scenery.*
+import graphics.scenery.attribute.material.Material
 import graphics.scenery.backends.Renderer
 import graphics.scenery.backends.Shaders
 import graphics.scenery.compute.ComputeMetadata
@@ -137,7 +138,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
         val outputSubColorBuffer = MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*3)
 //        val outputSubDepthBuffer = MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*2)
         val outputSubVDIColor = Texture.fromImage(Image(outputSubColorBuffer, 3*maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-        volumeManager.material.textures["OutputSubVDIColor"] = outputSubVDIColor
+        volumeManager.material().textures["OutputSubVDIColor"] = outputSubVDIColor
 //        val outputSubVDIDepth = Texture.fromImage(Image(outputSubDepthBuffer, 2*maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
 //        volumeManager.material.textures["OutputSubVDIDepth"] = outputSubVDIDepth
         hub.add(volumeManager)
@@ -145,10 +146,10 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
 
         compute.name = "compositor node"
 
-        compute.material = ShaderMaterial(Shaders.ShadersFromFiles(arrayOf("VDICompositor.comp"), this::class.java))
+        compute.setMaterial(ShaderMaterial(Shaders.ShadersFromFiles(arrayOf("VDICompositor.comp"), this@InVisVolumeRenderer::class.java)))
         val outputColours = MemoryUtil.memCalloc(3*maxOutputSupersegments*windowHeight*windowWidth*4 / commSize)
         val compositedVDIColor = Texture.fromImage(Image(outputColours, 3*maxOutputSupersegments, windowHeight,  windowWidth/commSize), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-        compute.material.textures["CompositedVDIColor"] = compositedVDIColor
+        compute.material().textures["CompositedVDIColor"] = compositedVDIColor
 
 //        val outputDepths = MemoryUtil.memCalloc(2*maxOutputSupersegments*windowHeight*windowWidth*4 / commSize)
 //        val compositedVDIDepth = Texture.fromImage(Image(outputDepths, 2*maxOutputSupersegments, windowHeight,  windowWidth/commSize), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
@@ -229,10 +230,12 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
         }
 
         val shell = Box(Vector3f(10.0f, 10.0f, 10.0f), insideNormals = true)
-        shell.material.cullingMode = Material.CullingMode.None
-        shell.material.diffuse = Vector3f(0.1f, 0.1f, 0.1f)
-        shell.material.specular = Vector3f(0.0f)
-        shell.material.ambient = Vector3f(0.0f)
+        shell.material{
+            cullingMode = Material.CullingMode.None
+            diffuse = Vector3f(0.1f, 0.1f, 0.1f)
+            specular = Vector3f(0.0f)
+            ambient = Vector3f(0.0f)
+        }
         shell.position = Vector3f(0.0f, 4.0f, 0.0f)
         scene.addChild(shell)
         shell.visible = false
@@ -365,7 +368,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
 //            // after that,
             logger.info("Getting the rendered subVDIs")
 
-            val subVDIColor = volumeManager.material.textures["OutputSubVDIColor"]!!
+            val subVDIColor = volumeManager.material().textures["OutputSubVDIColor"]!!
 //            val subVDIDepth = volumeManager.material.textures["OutputSubVDIDepth"]!!
 
             val r = renderer
@@ -408,7 +411,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
 
             //fetch the composited VDI
 
-            val compositedColor = compute.material.textures["CompositedVDIColor"]!!
+            val compositedColor = compute.material().textures["CompositedVDIColor"]!!
 //            val compositedDepth = compute.material.textures["CompositedVDIDepth"]!!
 
             r?.requestTexture(compositedColor) { colTex ->
@@ -487,7 +490,7 @@ class InVisVolumeRenderer: SceneryBase("InVisVolumeRenderer") {
             logger.info("File dumped")
         }
 
-        compute.material.textures["VDIsColor"] = Texture(Vector3i(maxSupersegments*3, windowHeight, windowWidth), 4, contents = VDISetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+        compute.material().textures["VDIsColor"] = Texture(Vector3i(maxSupersegments*3, windowHeight, windowWidth), 4, contents = VDISetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
 //        compute.material.textures["VDIsDepth"] = Texture(Vector3i(maxSupersegments*2, windowHeight, windowWidth), 4, contents = VDISetDepth, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
         logger.info("Updated the ip textured")
 

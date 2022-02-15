@@ -45,34 +45,34 @@ class VDIRendererSimple : SceneryBase("SimpleVDIRenderer", 600, 600) {
 
         val outputBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * 4)
 
-        val compute = Node()
+        val compute = RichNode()
         compute.name = "compute node"
-        compute.material = ShaderMaterial(Shaders.ShadersFromFiles(arrayOf("SimpleVDIRenderer.comp"), this::class.java))
-        compute.material.textures["OutputViewport"] = Texture.fromImage(Image(outputBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-        compute.material.textures["OutputViewport"]!!.mipmap = false
+        compute.setMaterial(ShaderMaterial(Shaders.ShadersFromFiles(arrayOf("SimpleVDIRenderer.comp"), this::class.java)))
+        compute.material().textures["OutputViewport"] = Texture.fromImage(Image(outputBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+        compute.material().textures["OutputViewport"]!!.mipmap = false
         compute.metadata["ComputeMetadata"] = ComputeMetadata(
                 workSizes = Vector3i(512, 512, 1),
                 invocationType = InvocationType.Once
         )
-        compute.material.textures["InputVDI"] = Texture(Vector3i(numSupersegments*3, windowHeight, windowWidth), 4, contents = colBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+        compute.material().textures["InputVDI"] = Texture(Vector3i(numSupersegments*3, windowHeight, windowWidth), 4, contents = colBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
 //        compute.material.textures["DepthVDI"] = Texture(Vector3i(2*numSupersegments, windowHeight, windowWidth), 4, contents = depthBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
 
         scene.addChild(compute)
 
         val plane = FullscreenObject()
-        plane.material.textures["diffuse"] = compute.material.textures["OutputViewport"]!!
+        plane.material().textures["diffuse"] = compute.material().textures["OutputViewport"]!!
 
         scene.addChild(plane)
 
         val light = PointLight(radius = 15.0f)
-        light.position = Vector3f(0.0f, 0.0f, 2.0f)
+        light.spatial().position = Vector3f(0.0f, 0.0f, 2.0f)
         light.intensity = 5.0f
         light.emissionColor = Vector3f(1.0f, 1.0f, 1.0f)
         scene.addChild(light)
 
         val cam: Camera = DetachedHeadCamera()
         with(cam) {
-            position = Vector3f(0.0f, 0.0f, 5.0f)
+            spatial().position = Vector3f(0.0f, 0.0f, 5.0f)
             perspectiveCamera(50.0f, 512, 512)
 
             scene.addChild(this)

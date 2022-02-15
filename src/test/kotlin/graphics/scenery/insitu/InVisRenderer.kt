@@ -2,6 +2,7 @@ package graphics.scenery.insitu
 
 import com.jogamp.opengl.math.Quaternion
 import graphics.scenery.*
+import graphics.scenery.attribute.material.Material
 import graphics.scenery.backends.Renderer
 import graphics.scenery.net.NodePublisher
 import graphics.scenery.net.NodeSubscriber
@@ -63,8 +64,8 @@ class InVisRenderer : SceneryBase("InVisRenderer"){
         }
 
         val box = Box(Vector3f(10.0f, 10.0f, 10.0f), insideNormals = true)
-        box.material.diffuse = Vector3f(0.9f, 0.9f, 0.9f)
-        box.material.cullingMode = Material.CullingMode.Front
+        box.material().diffuse = Vector3f(0.9f, 0.9f, 0.9f)
+        box.material().cullingMode = Material.CullingMode.Front
         scene.addChild(box)
 
         val light = PointLight(radius = 15.0f)
@@ -185,13 +186,13 @@ class InVisRenderer : SceneryBase("InVisRenderer"){
 
                 if (counter < spheres[c]!!.size) {
                     // if sphere exists, update its position and color
-                    spheres[c]!![counter].position = Vector3f(x, y, z) // isn't this also a copy? can we just set s.position.mElements to a buffer?
-                    spheres[c]!![counter].material.diffuse = Vector3f(255 * scale, 0f, 255 * (1 - scale)) // blue for low speed, red for high
+                    spheres[c]!![counter].spatial().position = Vector3f(x, y, z) // isn't this also a copy? can we just set s.position.mElements to a buffer?
+                    spheres[c]!![counter].material().diffuse = Vector3f(255 * scale, 0f, 255 * (1 - scale)) // blue for low speed, red for high
                 } else {
                     // if sphere does not exist, create it and add it to the list
                     val s = Sphere(0.03f, 10)
-                    s.position = Vector3f(x, y, z) // isn't this also a copy? can we just set s.position.mElements to a buffer?
-                    s.material.diffuse = Vector3f(255 * scale, 0f, 255 * (1 - scale)) // blue for low speed, red for high
+                    s.spatial().position = Vector3f(x, y, z) // isn't this also a copy? can we just set s.position.mElements to a buffer?
+                    s.material().diffuse = Vector3f(255 * scale, 0f, 255 * (1 - scale)) // blue for low speed, red for high
                     scene.addChild(s)
                     spheres[c]!!.add(s)
                 }

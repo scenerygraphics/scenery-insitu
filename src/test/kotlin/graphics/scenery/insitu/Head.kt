@@ -11,9 +11,9 @@ import graphics.scenery.net.NodePublisher
 import graphics.scenery.net.NodeSubscriber
 import graphics.scenery.numerics.Random
 import graphics.scenery.textures.Texture
-import mpi.MPI
-import mpi.MPIException
-import mpi.Request
+//import mpi.MPI
+//import mpi.MPIException
+//import mpi.Request
 import net.imglib2.type.numeric.real.FloatType
 import org.joml.Vector3f
 import org.joml.Vector3i
@@ -112,7 +112,7 @@ class Head : SceneryBase("InVis Head") {
             val depth = image[rank-1]?.slice()
             image[rank-1]?.position(0)
 //            logger.info("Setting texture $colorName")
-            fsb.material.textures[colorName] = Texture(Vector3i(windowSize, windowSize, 1), 3, contents = color)
+            fsb.material().textures[colorName] = Texture(Vector3i(windowSize, windowSize, 1), 3, contents = color)
 //            if (color != null) {
 //                logger.info("Printing the color buffer. The capacity is ${color.capacity()}")
 //            }
@@ -125,7 +125,7 @@ class Head : SceneryBase("InVis Head") {
 //            }
 //            fsb.material.transferTextures[colorName] = GenericTexture("whatever", GLVector(windowSize.toFloat(), windowSize.toFloat(), 1.0f), 3, contents = color)
 //            logger.info("Setting texture $depthName")
-            fsb.material.textures[depthName] = Texture(Vector3i(windowSize, windowSize, 1), 1, type = FloatType(), contents = depth)
+            fsb.material().textures[depthName] = Texture(Vector3i(windowSize, windowSize, 1), 1, type = FloatType(), contents = depth)
 
 //            fsb.material.textures[depthName] = "fromBuffer:$depthName"
 //            fsb.material.transferTextures[depthName] = GenericTexture("whatever", GLVector(windowSize.toFloat(), windowSize.toFloat(), 1.0f), 1, type = GLTypeEnum.Float, contents = depth)

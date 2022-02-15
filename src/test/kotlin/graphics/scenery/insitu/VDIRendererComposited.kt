@@ -15,7 +15,7 @@ import java.io.File
 import java.nio.ByteBuffer
 import kotlin.concurrent.thread
 
-class VDIRendererComposted : SceneryBase("CompositedVDIRenderer") {
+class VDIRendererComposited : SceneryBase("CompositedVDIRenderer") {
     override fun init() {
         renderer = hub.add(SceneryElement.Renderer,
                 Renderer.createRenderer(hub, applicationName, scene, 512, 512))
@@ -36,24 +36,26 @@ class VDIRendererComposted : SceneryBase("CompositedVDIRenderer") {
 
         val outputBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * 4)
 
-        val compute = Node()
+        val compute = RichNode()
         compute.name = "compute node"
-        compute.material = ShaderMaterial(Shaders.ShadersFromFiles(arrayOf("CompositedVDIRenderer.comp"), this::class.java))
-        compute.material.textures["OutputViewport"] = Texture.fromImage(Image(outputBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+        compute.setMaterial(ShaderMaterial(Shaders.ShadersFromFiles(arrayOf("CompositedVDIRenderer.comp"), this@VDIRendererComposited::class.java)))
+        compute.material().textures["OutputViewport"] = Texture.fromImage(Image(outputBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
         compute.metadata["ComputeMetadata"] = ComputeMetadata(
                 workSizes = Vector3i(512, 512, 1),
                 invocationType = InvocationType.Once
         )
-        compute.material.textures["InputColorVDI"] = Texture(Vector3i(numSupersegments, windowHeight * windowWidth, 1), 4, contents = colBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-        compute.material.textures["InputDepthVDI"] = Texture(Vector3i(numSupersegments, windowHeight * windowWidth, 1), 4, contents = depthBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+        compute.material().textures["InputColorVDI"] = Texture(Vector3i(numSupersegments, windowHeight * windowWidth, 1), 4, contents = colBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+        compute.material().textures["InputDepthVDI"] = Texture(Vector3i(numSupersegments, windowHeight * windowWidth, 1), 4, contents = depthBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
 
         scene.addChild(compute)
 
         val box = Box(Vector3f(1.0f, 1.0f, 1.0f))
         box.name = "le box du win"
-        box.material.textures["diffuse"] = compute.material.textures["OutputViewport"]!!
-        box.material.metallic = 0.3f
-        box.material.roughness = 0.9f
+        box.material {
+            textures["diffuse"] = compute.material().textures["OutputViewport"]!!
+            metallic = 0.3f
+            roughness = 0.9f
+        }
 
         scene.addChild(box)
 
@@ -65,7 +67,7 @@ class VDIRendererComposted : SceneryBase("CompositedVDIRenderer") {
 
         val cam: Camera = DetachedHeadCamera()
         with(cam) {
-            position = Vector3f(0.0f, 0.0f, 5.0f)
+            spatial().position = Vector3f(0.0f, 0.0f, 5.0f)
             perspectiveCamera(50.0f, 512, 512)
 
             scene.addChild(this)
@@ -73,8 +75,8 @@ class VDIRendererComposted : SceneryBase("CompositedVDIRenderer") {
 
         thread {
             while (running) {
-                box.rotation.rotateY(0.01f)
-                box.needsUpdate = true
+                box.spatial().rotation.rotateY(0.01f)
+                box.spatial().needsUpdate = true
 //                box.material.textures["diffuse"] = compute.material.textures["OutputViewport"]!!
 
                 Thread.sleep(20)

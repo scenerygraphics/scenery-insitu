@@ -49,21 +49,21 @@ class VDICompositingExample:SceneryBase("VDIComposit", 512, 512) {
 
         compute.name = "compositor node"
 
-        compute.material = ShaderMaterial(Shaders.ShadersFromFiles(arrayOf("VDICompositor.comp"), this::class.java))
+        compute.setMaterial(ShaderMaterial(Shaders.ShadersFromFiles(arrayOf("VDICompositor.comp"), this@VDICompositingExample::class.java)))
         val outputColours = MemoryUtil.memCalloc(maxOutputSupersegments*windowHeight*windowWidth*4 / commSize)
         val compositedVDIColor = Texture.fromImage(Image(outputColours, maxOutputSupersegments, windowHeight,  windowWidth/commSize), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-        compute.material.textures["CompositedVDIColor"] = compositedVDIColor
+        compute.material().textures["CompositedVDIColor"] = compositedVDIColor
 
         val outputDepths = MemoryUtil.memCalloc(2*maxOutputSupersegments*windowHeight*windowWidth*4 / commSize)
         val compositedVDIDepth = Texture.fromImage(Image(outputDepths, 2*maxOutputSupersegments, windowHeight,  windowWidth/commSize), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-        compute.material.textures["CompositedVDIDepth"] = compositedVDIDepth
+        compute.material().textures["CompositedVDIDepth"] = compositedVDIDepth
 
         compute.metadata["ComputeMetadata"] = ComputeMetadata(
                 workSizes = Vector3i(windowHeight, windowWidth/commSize, 1)
         )
 
-        compute.material.textures["VDIsColor"] = Texture(Vector3i(maxSupersegments, windowHeight, windowWidth), 4, contents = colBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-        compute.material.textures["VDIsDepth"] = Texture(Vector3i(maxSupersegments*2, windowHeight, windowWidth), 4, contents = depthBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+        compute.material().textures["VDIsColor"] = Texture(Vector3i(maxSupersegments, windowHeight, windowWidth), 4, contents = colBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+        compute.material().textures["VDIsDepth"] = Texture(Vector3i(maxSupersegments*2, windowHeight, windowWidth), 4, contents = depthBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
         logger.info("Updated the ip textured")
 
         compute.visible = true
@@ -87,38 +87,39 @@ class VDICompositingExample:SceneryBase("VDIComposit", 512, 512) {
 
     override fun inputSetup() {
         super.inputSetup()
-
-        inputHandler?.addBehaviour("save_texture", ClickBehaviour { _, _ ->
-            logger.info("Finding node")
-            val node = scene.find("compositor node") ?: return@ClickBehaviour
-            val texture = node.material.textures["CompositedVDIColor"]!!
-            val textureDepth = node.material.textures["CompositedVDIDepth"]!!
-            val r = renderer ?: return@ClickBehaviour
-            logger.info("Node found, saving texture")
-
-            val result = r.requestTexture(texture) { tex ->
-                logger.info("Received texture")
-
-                tex.contents?.let { buffer ->
-                    logger.info("Dumping to file")
-                    SystemHelpers.dumpToFile(buffer, "/home/aryaman/Desktop/vdi_files/texture-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
-                    logger.info("File dumped")
-                }
-
-            }
-
-            val resultDepth = r.requestTexture(textureDepth) { tex ->
-                logger.info("Received depth texture")
-
-                tex.contents?.let { buffer ->
-                    logger.info("Dumping to file")
-                    SystemHelpers.dumpToFile(buffer, "/home/aryaman/Desktop/vdi_files/texture-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
-                    logger.info("File dumped")
-                }
-
-            }
-
-        })
+        //TODO: modify the below for new scenery syntax
+//
+//        inputHandler?.addBehaviour("save_texture", ClickBehaviour { _, _ ->
+//            logger.info("Finding node")
+//            val node = scene.find("compositor node") ?: return@ClickBehaviour
+//            val texture = node.material.textures["CompositedVDIColor"]!!
+//            val textureDepth = node.material.textures["CompositedVDIDepth"]!!
+//            val r = renderer ?: return@ClickBehaviour
+//            logger.info("Node found, saving texture")
+//
+//            val result = r.requestTexture(texture) { tex ->
+//                logger.info("Received texture")
+//
+//                tex.contents?.let { buffer ->
+//                    logger.info("Dumping to file")
+//                    SystemHelpers.dumpToFile(buffer, "/home/aryaman/Desktop/vdi_files/texture-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
+//                    logger.info("File dumped")
+//                }
+//
+//            }
+//
+//            val resultDepth = r.requestTexture(textureDepth) { tex ->
+//                logger.info("Received depth texture")
+//
+//                tex.contents?.let { buffer ->
+//                    logger.info("Dumping to file")
+//                    SystemHelpers.dumpToFile(buffer, "/home/aryaman/Desktop/vdi_files/texture-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
+//                    logger.info("File dumped")
+//                }
+//
+//            }
+//
+//        })
         inputHandler?.addKeyBinding("save_texture", "E")
     }
 

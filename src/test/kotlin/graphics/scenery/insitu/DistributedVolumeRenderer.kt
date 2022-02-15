@@ -3,12 +3,13 @@ package graphics.scenery.insitu
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import graphics.scenery.*
+import graphics.scenery.attribute.material.Material
 import graphics.scenery.backends.Renderer
 import graphics.scenery.backends.Shaders
 import graphics.scenery.backends.vulkan.VulkanRenderer
 import graphics.scenery.compute.ComputeMetadata
 import graphics.scenery.textures.Texture
-import graphics.scenery.utils.H264Encoder
+import graphics.scenery.utils.VideoEncoder
 import graphics.scenery.utils.Image
 import graphics.scenery.utils.Statistics
 import graphics.scenery.utils.SystemHelpers
@@ -34,7 +35,7 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.thread
 import kotlin.math.absoluteValue
 
-class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
+class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer", wantREPL = false) {
 
     // The below will be updated by the C++ code
     var windowSize = 500
@@ -42,8 +43,8 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     var rank = 0
     var commSize = 0
 
-    var encoder: H264Encoder? = null
-    var movieWriter: H264Encoder? = null
+    var encoder: VideoEncoder? = null
+    var movieWriter: VideoEncoder? = null
 //    var movieWriter1: H264Encoder? = null
 //    var movieWriter2: H264Encoder? = null
 //    var movieWriter3: H264Encoder? = null
@@ -159,6 +160,9 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
     }
 
     override fun init() {
+
+        logger.info("Reached the init function!")
+
         windowHeight = 600
         windowWidth = 600
 
@@ -210,22 +214,22 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             outputSubVDIColor = Texture.fromImage(Image(outputSubColorBuffer,  windowHeight, windowWidth), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
             outputSubVDIDepth = Texture.fromImage(Image(outputSubDepthBuffer,  windowHeight, windowWidth), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
             volumeManager.customTextures.add("OutputSubVDIDepth")
-            volumeManager.material.textures["OutputSubVDIDepth"] = outputSubVDIDepth // We only need a separate depth texture if we are rendering plain images
+            volumeManager.material().textures["OutputSubVDIDepth"] = outputSubVDIDepth // We only need a separate depth texture if we are rendering plain images
         }
         volumeManager.customTextures.add("OutputSubVDIColor")
-        volumeManager.material.textures["OutputSubVDIColor"] = outputSubVDIColor
+        volumeManager.material().textures["OutputSubVDIColor"] = outputSubVDIColor
         hub.add(volumeManager)
 
         compute.name = "compositor node"
-        compute.material = ShaderMaterial(Shaders.ShadersFromFiles(arrayOf(compositeShader), this::class.java))
+        compute.setMaterial(ShaderMaterial(Shaders.ShadersFromFiles(arrayOf(compositeShader), this@DistributedVolumeRenderer::class.java)))
         if(generateVDIs) {
             val outputColours = MemoryUtil.memCalloc(3*maxOutputSupersegments*windowHeight*windowWidth*4 / commSize)
             val compositedVDIColor = Texture.fromImage(Image(outputColours, 3*maxOutputSupersegments, windowHeight,  windowWidth/commSize), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-            compute.material.textures["CompositedVDIColor"] = compositedVDIColor
+            compute.material().textures["CompositedVDIColor"] = compositedVDIColor
         } else {
             val outputColours = MemoryUtil.memCalloc(windowHeight*windowWidth*4 / commSize)
             val alphaComposited = Texture.fromImage(Image(outputColours, windowHeight,  windowWidth/commSize), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-            compute.material.textures["AlphaComposited"] = alphaComposited
+            compute.material().textures["AlphaComposited"] = alphaComposited
         }
         compute.metadata["ComputeMetadata"] = ComputeMetadata(
                 workSizes = Vector3i(windowHeight, windowWidth/commSize, 1)
@@ -234,18 +238,20 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
         scene.addChild(compute)
 
         with(cam) {
-            position = Vector3f(-4.365f, 0.38f, 0.62f)
+            spatial().position = Vector3f(-4.365f, 0.38f, 0.62f)
             perspectiveCamera(50.0f, windowWidth, windowHeight)
 
             scene.addChild(this)
         }
 
         val shell = Box(Vector3f(10.0f, 10.0f, 10.0f), insideNormals = true)
-        shell.material.cullingMode = Material.CullingMode.None
-        shell.material.diffuse = Vector3f(0.1f, 0.1f, 0.1f)
-        shell.material.specular = Vector3f(0.0f)
-        shell.material.ambient = Vector3f(0.0f)
-        shell.position = Vector3f(0.0f, 4.0f, 0.0f)
+        shell.material {
+            cullingMode = Material.CullingMode.None
+            diffuse = Vector3f(0.1f, 0.1f, 0.1f)
+            specular = Vector3f(0.0f)
+            ambient = Vector3f(0.0f)
+        }
+        shell.spatial().position = Vector3f(0.0f, 4.0f, 0.0f)
         scene.addChild(shell)
         shell.visible = false
 
@@ -254,7 +260,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
         }
 
         lights.mapIndexed { i, light ->
-            light.position = Vector3f(2.0f * i - 4.0f,  i - 1.0f, 0.0f)
+            light.spatial().position = Vector3f(2.0f * i - 4.0f,  i - 1.0f, 0.0f)
             light.emissionColor = Vector3f(1.0f, 1.0f, 1.0f)
             light.intensity = 0.2f
             scene.addChild(light)
@@ -266,15 +272,17 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
         if(generateVDIs) {
             //TODO: implement VDI streaming
         } else {
-            encoder = H264Encoder(
+            encoder = VideoEncoder(
                 (windowWidth * settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
                 (windowHeight* settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
                 "udp://${InetAddress.getLocalHost().hostAddress}:3337",
                 networked = true,
-                streamingAddress = "udp://${InetAddress.getLocalHost().hostAddress}:3337",
                 hub = hub)
 
-            movieWriter = H264Encoder(
+            settings.set("VideoEncoder.StreamVideo", true)
+            settings.set("VideoEncoder.StreamingAddress", "udp://${InetAddress.getLocalHost().hostAddress}:3337") //TODO: maybe try RTP instead of UDP
+
+            movieWriter = VideoEncoder( //TODO: check whether the VideoEncoder still supports have one instance streamed and another on disk
                 (windowWidth * settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
                 (windowHeight* settings.get<Float>("Renderer.SupersamplingFactor")).toInt(),
                 "RenderMov.mp4",
@@ -343,9 +351,11 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
                     val pixelToWorld = 0.02f
                     origins[grid] = origins[grid].mul(pixelToWorld)
 
-                    cam.position = Vector3f(3.213f, 8.264E-1f, -9.844E-1f)
+                    cam.spatial {
+                        position = Vector3f(3.213f, 8.264E-1f, -9.844E-1f)
+                        rotation = Quaternionf(3.049E-2,  9.596E-1, -1.144E-1, -2.553E-1)
+                    }
 
-                    cam.rotation = Quaternionf(3.049E-2,  9.596E-1, -1.144E-1, -2.553E-1)
 
 //                    cam.position = origins[grid] + Vector3f(0.0f, 0.0f, 2.0f)
 //
@@ -378,7 +388,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             volumesInitialized = true
 
             logger.warn("The inv view matrix is:")
-            logger.warn(cam.getTransformation().invert().toString())
+            logger.warn(cam.spatial().getTransformation().invert().toString())
 
             manageVDIGeneration()
         }
@@ -459,7 +469,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
         val r = renderer
 
-        val subVDIColor = volumeManager.material.textures["OutputSubVDIColor"]!!
+        val subVDIColor = volumeManager.material().textures["OutputSubVDIColor"]!!
 
         var subVDIDepth: Texture? = null
 
@@ -473,9 +483,9 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
         val compositedColor =
             if(generateVDIs) {
-                compute.material.textures["CompositedVDIColor"]!!
+                compute.material().textures["CompositedVDIColor"]!!
             } else {
-                compute.material.textures["AlphaComposited"]!!
+                compute.material().textures["AlphaComposited"]!!
 
             }
 
@@ -486,7 +496,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
         (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (subVDIColor to subvdi)
 
         if(!generateVDIs) {
-            subVDIDepth = volumeManager.material.textures["OutputSubVDIDepth"]!!
+            subVDIDepth = volumeManager.material().textures["OutputSubVDIDepth"]!!
             (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (subVDIDepth to subdepth)
         }
 
@@ -502,8 +512,10 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
         var prevAtomic = subvdi.get()
         while(true) {
+            logger.info("Here1")
             tTotal.start = System.nanoTime()
             tRend.start = System.nanoTime()
+            logger.info("Here2")
 
             //push data to the GPU
             if(cnt%20 == 0) {
@@ -513,6 +525,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 
                 gpuSendTime += tGPU.end - tGPU.start
             }
+            logger.info("Here3")
 
             while(subvdi.get() == prevAtomic) {
                 Thread.sleep(5)
@@ -588,6 +601,8 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 //            Thread.sleep(20)
             gatherCompositedVDIs(compositedVDIColorBuffer!!,0, windowHeight * windowWidth * maxOutputSupersegments * 4 * numLayers/ commSize,
                 rank, commSize, generateVDIs, saveFiles) //3 * commSize because the supersegments here contain only 1 element
+
+            logger.info("Back in the management function after gathering and streaming")
 
             tStream.end = System.nanoTime()
             if(cnt>0) {streamTime += tStream.end - tStream.start}
@@ -684,10 +699,10 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
         }
 
         if(generateVDIs) {
-            compute.material.textures["VDIsColor"] = Texture(Vector3i(maxSupersegments*3, windowHeight, windowWidth), 4, contents = VDISetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+            compute.material().textures["VDIsColor"] = Texture(Vector3i(maxSupersegments*3, windowHeight, windowWidth), 4, contents = VDISetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
         } else {
-            compute.material.textures["VDIsColor"] = Texture(Vector3i(windowHeight, windowWidth, 1), 4, contents = VDISetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-            compute.material.textures["VDIsDepth"] = Texture(Vector3i(windowHeight, windowWidth, 1), 4, contents = VDISetDepth, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+            compute.material().textures["VDIsColor"] = Texture(Vector3i(windowHeight, windowWidth, 1), 4, contents = VDISetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+            compute.material().textures["VDIsDepth"] = Texture(Vector3i(windowHeight, windowWidth, 1), 4, contents = VDISetDepth, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
         }
         logger.warn("Updated the textures to be composited")
 
@@ -750,8 +765,8 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
             startRecording = true
         } else {
             logger.info("Done deserializing and now will apply it to the camera")
-            cam.rotation = stringToQuaternion(deserialized[0].toString())
-            cam.position = stringToVector3f(deserialized[1].toString())
+            cam.spatial().rotation = stringToQuaternion(deserialized[0].toString())
+            cam.spatial().position = stringToVector3f(deserialized[1].toString())
 
             logger.info("The rotation is: ${cam.rotation}")
             logger.info("The position is: ${cam.position}")
@@ -774,6 +789,7 @@ class DistributedVolumeRenderer: SceneryBase("DistributedVolumeRenderer") {
 //        System.setProperty("scenery.MasterNode", "tcp://127.0.0.1:6666")
 //        System.setProperty("scenery.master", "false")
 //        System.setProperty("scenery.Headless", "true")
+        logger.info("In the main function. Calling super main!")
         super.main()
     }
 }

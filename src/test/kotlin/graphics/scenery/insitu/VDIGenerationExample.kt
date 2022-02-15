@@ -1,6 +1,7 @@
 package graphics.scenery.insitu
 
 import graphics.scenery.*
+import graphics.scenery.attribute.material.Material
 import graphics.scenery.backends.Renderer
 import graphics.scenery.backends.vulkan.VulkanRenderer
 import graphics.scenery.numerics.Random
@@ -40,7 +41,8 @@ class VDIGenerationExample : SceneryBase("VDI Generation") {
         windowWidth = 1280
         windowHeight = 720
 
-        renderer = hub.add(Renderer.createRenderer(hub, applicationName, scene, windowWidth, windowHeight))
+        renderer = hub.add(SceneryElement.Renderer,
+            Renderer.createRenderer(hub, applicationName, scene, windowWidth, windowHeight))
 
         val raycastShader: String
         val accumulateShader: String
@@ -84,12 +86,12 @@ class VDIGenerationExample : SceneryBase("VDI Generation") {
         outputSubVDIColor = Texture.fromImage(Image(outputSubColorBuffer, numLayers*maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
 
         volumeManager.customTextures.add("OutputSubVDIColor")
-        volumeManager.material.textures["OutputSubVDIColor"] = outputSubVDIColor
+        volumeManager.material().textures["OutputSubVDIColor"] = outputSubVDIColor
 
         if(separateDepth) {
             outputSubVDIDepth = Texture.fromImage(Image(outputSubDepthBuffer, 2*maxSupersegments, windowHeight, windowWidth),  usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
             volumeManager.customTextures.add("OutputSubVDIDepth")
-            volumeManager.material.textures["OutputSubVDIDepth"] = outputSubVDIDepth
+            volumeManager.material().textures["OutputSubVDIDepth"] = outputSubVDIDepth
         }
 
         hub.add(volumeManager)
@@ -98,10 +100,10 @@ class VDIGenerationExample : SceneryBase("VDI Generation") {
         with(cam) {
 //            position = Vector3f(-1.0f, -0.2f, -20f)
             if(old_viewpoint) {
-                position = Vector3f(-4.365f, 0.38f, 0.62f)
+                spatial().position = Vector3f(-4.365f, 0.38f, 0.62f)
                 perspectiveCamera(50.0f, windowWidth, windowHeight)
             } else {
-                position = Vector3f(0f, 0f, 0f)
+                spatial().position = Vector3f(0f, 0f, 0f)
                 perspectiveCamera(33.716797f, windowWidth, windowHeight, 1f, 10000f)
             }
 
@@ -109,27 +111,32 @@ class VDIGenerationExample : SceneryBase("VDI Generation") {
         }
 
         if(old_viewpoint) {
-            cam.position = Vector3f(3.213f, 8.264E-1f, -9.844E-1f)
-            cam.rotation = Quaternionf(3.049E-2, 9.596E-1, -1.144E-1, -2.553E-1)
+            cam.spatial{
+                position = Vector3f(3.213f, 8.264E-1f, -9.844E-1f)
+                rotation = Quaternionf(3.049E-2, 9.596E-1, -1.144E-1, -2.553E-1)
+            }
 
             cam.farPlaneDistance = 20.0f
         } else {
-            cam.rotation.rotateZ(-0f)
-            cam.rotation.rotateY(-3.484829104f)
-            cam.rotation.rotateX(0.07563105061f)
+            cam.spatial {
+                rotation.rotateZ(-0f)
+                rotation.rotateY(-3.484829104f)
+                rotation.rotateX(0.07563105061f)
 
-            logger.info("After rot and before translation, Inv view matrix was: ${cam.getTransformationForEye(0).invert()}")
-
-            cam.position = Vector3f(-313.644989f, -74.846016f, -822.299500f)
+                logger.info("After rot and before translation, Inv view matrix was: ${cam.getTransformationForEye(0).invert()}")
+                position = Vector3f(-313.644989f, -74.846016f, -822.299500f)
+            }
         }
 
 
         val shell = Box(Vector3f(10.0f, 10.0f, 10.0f), insideNormals = true)
-        shell.material.cullingMode = Material.CullingMode.None
-        shell.material.diffuse = Vector3f(0.1f, 0.1f, 0.1f)
-        shell.material.specular = Vector3f(0.0f)
-        shell.material.ambient = Vector3f(0.0f)
-        shell.position = Vector3f(0.0f, 4.0f, 0.0f)
+        shell.material {
+            cullingMode = Material.CullingMode.None
+            diffuse = Vector3f(0.1f, 0.1f, 0.1f)
+            specular = Vector3f(0.0f)
+            ambient = Vector3f(0.0f)
+        }
+        shell.spatial().position = Vector3f(0.0f, 4.0f, 0.0f)
         scene.addChild(shell)
         shell.visible = false
 
@@ -140,14 +147,14 @@ class VDIGenerationExample : SceneryBase("VDI Generation") {
         }
 
         volume.name = "volume"
-        volume.position = Vector3f(2.0f, 2.0f, 4.0f)
+        volume.spatial().position = Vector3f(2.0f, 2.0f, 4.0f)
 //        volume.position = cam.position + cam.forward.mul(6f)
         volume.colormap = Colormap.get("hot")
         if(old_viewpoint) {
             volume.pixelToWorldRatio = 0.03f
         } else {
             volume.pixelToWorldRatio = 1f
-            volume.position = Vector3f(-128f)
+            volume.spatial().position = Vector3f(-128f)
         }
 
         with(volume.transferFunction) {
@@ -217,7 +224,7 @@ class VDIGenerationExample : SceneryBase("VDI Generation") {
             Thread.sleep(50)
         }
 
-        val subVDIColor = volumeManager.material.textures["OutputSubVDIColor"]!!
+        val subVDIColor = volumeManager.material().textures["OutputSubVDIColor"]!!
         val subvdi = AtomicInteger(0)
 
         (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (subVDIColor to subvdi)
@@ -226,7 +233,7 @@ class VDIGenerationExample : SceneryBase("VDI Generation") {
         var subVDIDepth: Texture? = null
 
         if(separateDepth) {
-            subVDIDepth = volumeManager.material.textures["OutputSubVDIDepth"]!!
+            subVDIDepth = volumeManager.material().textures["OutputSubVDIDepth"]!!
             (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (subVDIDepth to subvdiCnt)
         }
 

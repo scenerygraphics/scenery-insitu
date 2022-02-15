@@ -6,6 +6,7 @@ import org.zeromq.ZContext
 import org.zeromq.ZMQ
 import java.nio.ByteBuffer
 
+@Suppress("unused")
 class InSituMaster : SceneryBase("In situ master") {
 
     var insituRunning = true

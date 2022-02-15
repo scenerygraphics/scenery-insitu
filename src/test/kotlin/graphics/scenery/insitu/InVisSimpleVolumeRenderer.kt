@@ -1,6 +1,7 @@
 package graphics.scenery.insitu
 
 import graphics.scenery.*
+import graphics.scenery.attribute.material.Material
 import graphics.scenery.backends.Renderer
 import graphics.scenery.backends.Shaders
 import graphics.scenery.compute.ComputeMetadata
@@ -136,10 +137,10 @@ class InVisSimpleVolumeRenderer: SceneryBase("InVisSimpleVolumeRenderer") {
         }
 
         val shell = Box(Vector3f(10.0f, 10.0f, 10.0f), insideNormals = true)
-        shell.material.cullingMode = Material.CullingMode.None
-        shell.material.diffuse = Vector3f(0.1f, 0.1f, 0.1f)
-        shell.material.specular = Vector3f(0.0f)
-        shell.material.ambient = Vector3f(0.0f)
+        shell.material().cullingMode = Material.CullingMode.None
+        shell.material().diffuse = Vector3f(0.1f, 0.1f, 0.1f)
+        shell.material().specular = Vector3f(0.0f)
+        shell.material().ambient = Vector3f(0.0f)
         shell.position = Vector3f(0.0f, 4.0f, 0.0f)
         scene.addChild(shell)
         shell.visible = false
