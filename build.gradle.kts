@@ -15,7 +15,6 @@ repositories {
 }
 
 dependencies {
-    implementation(platform(kotlin("bom")))
 
     implementation(kotlin("stdlib-jdk8"))
     implementation(kotlin("reflect"))
@@ -29,7 +28,7 @@ dependencies {
 //    implementation("graphics.scenery:scenery:8ed735b") {
 //        isTransitive = true
 //    }
-    api("graphics.scenery:scenery:cf297d4")
+    api("graphics.scenery:scenery:087637a")
 //    {
 //        isTransitive = true
 //    }
