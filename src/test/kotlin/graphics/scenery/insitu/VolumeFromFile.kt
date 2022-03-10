@@ -9,7 +9,6 @@ import graphics.scenery.textures.Texture
 import graphics.scenery.utils.Image
 import graphics.scenery.utils.SystemHelpers
 import graphics.scenery.volumes.*
-import net.imglib2.type.numeric.NumericType
 import net.imglib2.type.numeric.integer.UnsignedByteType
 import net.imglib2.type.numeric.integer.UnsignedShortType
 import net.imglib2.type.numeric.real.FloatType
@@ -41,8 +40,11 @@ class VolumeFromFile: SceneryBase("Volume Rendering", 1832, 1016) {
     val generateVDIs = false
     val separateDepth = true
     val world_abs = false
-    val dataset = "Stagbeetle"
-    val closeAfter = 1000000L
+    val dataset = "Beechnut"
+    val num_parts = 3
+    val volumeDims = Vector3f(1024f, 1024f, 1546f)
+
+    val closeAfter = 350000L
 
     /**
      * Reads raw volumetric data from a [file].
@@ -197,38 +199,32 @@ class VolumeFromFile: SceneryBase("Volume Rendering", 1832, 1016) {
         scene.addChild(shell)
         shell.visible = false
 
-        val volume = fromPathRaw(Paths.get("/home/aryaman/Datasets/Volume/$dataset"))
-        volume.name = "volume"
-        volume.colormap = Colormap.get("hot")
-        volume.spatial {
-//            position = Vector3f(0.0f, 4.0f, -3.5f)
-//            rotation = rotation.rotateXYZ(0.05f, 0.05f, 0.05f)
-            position = Vector3f(2.0f, 6.0f, 4.0f)
-//            scale = Vector3f(20.0f, 20.0f, 20.0f)
-        }
+        val volumeList = ArrayList<BufferedVolume>()
+        val datasetPath = Paths.get("/home/aryaman/Datasets/Volume/${dataset}")
 
-        if(dataset == "Stagbeetle") {
-        volume.pixelToWorldRatio = (0.0075f/832f) * 512f
-        } else {
-            volume.pixelToWorldRatio = 0.0075f
-        }
-
-        logger.info("Local scale: ${volume.localScale()}")
-        logger.info("Vertex size: ${volume.vertexSize}")
-        logger.info("Vertices: ${volume.vertices.toString()}")
-        logger.info("Texcoord size: ${volume.texcoordSize}")
-        logger.info("Texcoords: ${volume.texcoords.toString()}")
-
-        with(volume.transferFunction) {
+        val tf = TransferFunction()
+        with(tf) {
             addControlPoint(0.0f, 0.0f)
-            addControlPoint(0.1f, 0.15f)
-            addControlPoint(0.2f, 0.4f)
-            addControlPoint(0.4f, 0.8f)
-            addControlPoint(0.6f, 0.1f)
-            addControlPoint(0.8f, 0.0f)
-            addControlPoint(1.0f, 0.0f)
+            addControlPoint(0.005f, 0.0f)
+            addControlPoint(0.01f, 0.1f)
         }
-        scene.addChild(volume)
+
+        val pixelToWorld = (0.0075f * 512f) / volumeDims.x
+
+
+
+        for(i in 1..num_parts) {
+            val volume = fromPathRaw(Paths.get("$datasetPath/Part$i"))
+            volume.name = "volume"
+            volume.colormap = Colormap.get("hot")
+
+            volume.pixelToWorldRatio = pixelToWorld
+            volume.transferFunction = tf
+            volume.spatial().position = Vector3f(2.0f, 6.0f, 4.0f - ((i - 1) * ((volumeDims.z / num_parts) * pixelToWorld)))
+            scene.addChild(volume)
+            volumeList.add(volume)
+        }
+
 
         val lights = (0 until 3).map {
             PointLight(radius = 15.0f)
