@@ -28,7 +28,7 @@ dependencies {
 //    implementation("graphics.scenery:scenery:8ed735b") {
 //        isTransitive = true
 //    }
-    api("graphics.scenery:scenery:087637a")
+    api("graphics.scenery:scenery:0.7.0-beta-8-SNAPSHOT-00")
 //    {
 //        isTransitive = true
 //    }
