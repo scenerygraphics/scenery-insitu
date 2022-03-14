@@ -13,9 +13,8 @@ import org.junit.Test
 import org.lwjgl.system.MemoryUtil
 import java.io.File
 import java.nio.ByteBuffer
-import kotlin.concurrent.thread
 
-class VDIRendererSimple : SceneryBase("SimpleVDIRenderer", 600, 600) {
+class VDIRendererSimple_old : SceneryBase("SimpleVDIRenderer", 600, 600) {
     override fun init() {
 
         renderer = hub.add(SceneryElement.Renderer,

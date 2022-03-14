@@ -33,11 +33,11 @@ import kotlin.streams.toList
  *
  * @author Aryaman Gupta <argupta@mpi-cbg.de>
  */
-class VolumeFromFile: SceneryBase("Volume Rendering", 1832, 1016) {
+class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
-    val generateVDIs = true
+    val generateVDIs = false
     val separateDepth = true
     val world_abs = false
     val dataset = "Kingsnake"
@@ -328,7 +328,7 @@ class VolumeFromFile: SceneryBase("Volume Rendering", 1832, 1016) {
     companion object {
         @JvmStatic
         fun main(args: Array<String>) {
-            VolumeFromFile().main()
+            VolumeFromFileExample().main()
         }
     }
 }
