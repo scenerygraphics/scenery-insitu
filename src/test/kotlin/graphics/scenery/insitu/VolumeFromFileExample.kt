@@ -37,14 +37,15 @@ class VolumeFromFile: SceneryBase("Volume Rendering", 1832, 1016) {
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
-    val generateVDIs = false
+    val generateVDIs = true
     val separateDepth = true
     val world_abs = false
-    val dataset = "Beechnut"
-    val num_parts = 3
-    val volumeDims = Vector3f(1024f, 1024f, 1546f)
+    val dataset = "Kingsnake"
+    val num_parts = 1
+    val volumeDims = Vector3f(1024f, 1024f, 795f)
+    val is16bit = false
 
-    val closeAfter = 350000L
+    val closeAfter = 20000L
 
     /**
      * Reads raw volumetric data from a [file].
@@ -204,9 +205,18 @@ class VolumeFromFile: SceneryBase("Volume Rendering", 1832, 1016) {
 
         val tf = TransferFunction()
         with(tf) {
-            addControlPoint(0.0f, 0.0f)
-            addControlPoint(0.005f, 0.0f)
-            addControlPoint(0.01f, 0.1f)
+            if(dataset == "Stagbeetle") {
+                addControlPoint(0.0f, 0.0f)
+                addControlPoint(0.005f, 0.0f)
+                addControlPoint(0.01f, 0.1f)
+            } else if (dataset == "Kingsnake") {
+                addControlPoint(0.0f, 0.0f)
+                addControlPoint(0.4f, 0.0f)
+                addControlPoint(0.5f, 0.5f)
+            } else {
+                logger.info("Using a standard transfer function")
+                TransferFunction.ramp(0.1f, 0.5f)
+            }
         }
 
         val pixelToWorld = (0.0075f * 512f) / volumeDims.x
@@ -214,7 +224,7 @@ class VolumeFromFile: SceneryBase("Volume Rendering", 1832, 1016) {
 
 
         for(i in 1..num_parts) {
-            val volume = fromPathRaw(Paths.get("$datasetPath/Part$i"))
+            val volume = fromPathRaw(Paths.get("$datasetPath/Part$i"), is16bit)
             volume.name = "volume"
             volume.colormap = Colormap.get("hot")
 
