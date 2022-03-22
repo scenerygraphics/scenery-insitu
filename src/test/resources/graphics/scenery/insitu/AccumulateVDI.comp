@@ -13,13 +13,13 @@ if (vis)
         float newAlpha = x.a;
         vec3 newColor = x.rgb;
 
-        vec4 ndcPos = pv * wpos;
-        ndcPos *= 1. / ndcPos.w;
-
-        float ndc_step = ndcPos.z;
-
         if(newAlpha <= minOpacity) {
             transparentSample = true;
+        } else {
+            w_prev_non_transp = wpos;
+            ndcPos = pv * wpos;
+            ndcPos *= 1. / ndcPos.w;
+            ndc_step = ndcPos.z;
         }
 
         if(supersegmentIsOpen) {
@@ -55,7 +55,7 @@ if (vis)
                 //            supSegEndPoint = step;
 
                 #if WORLD_ABS
-                vec3 diff = wpos.xyz - ro_world.xyz;
+                vec3 diff = w_prev_non_transp.xyz - ro_world.xyz;
                 if(!(abs(rd_world.x) < 0.05)) {
                     supSegEndPoint = diff.x / (rd_world.x);
                 } else if (!(abs(rd_world.y) < 0.05)) {
@@ -101,7 +101,7 @@ if (vis)
             supersegmentIsOpen = true;
             //        supSegStartPoint = step;
             #if WORLD_ABS
-            vec3 diff = wpos.xyz - ro_world.xyz;
+            vec3 diff = w_prev_non_transp.xyz - ro_world.xyz;
             if(!(abs(rd_world.x) < 0.05)) {
                 supSegStartPoint = diff.x / (rd_world.x);
             } else if (!(abs(rd_world.y) < 0.05)) {
