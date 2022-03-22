@@ -5,7 +5,7 @@ if (vis)
 
     if(x.r > -0.5 || lastSample) { // we need to process this sample only if it is from a volume that actually exists at this sample point
         #if USE_PRINTF
-        if(gl_GlobalInvocationID.xy == debug_pixel) {
+        if(gl_GlobalInvocationID.xy == debug_pixel && thresh_found) {
             debugPrintfEXT("Step: %d, color of sample: (%f, %f, %f, %f) at position: (%f, %f, %f, %f)", i, x.rgba, wpos.xyzw);
         }
         #endif
@@ -42,11 +42,11 @@ if (vis)
             bool newSupSeg = false;
             if(diff >= newSupSegThresh) {
                 newSupSeg = true;
-                #if USE_PRINTF
-                if(gl_GlobalInvocationID.xy == debug_pixel) {
-                    debugPrintfEXT("Termination criteria reached for %dth time, color of supseg was: (%f, %f, %f, %f)", num_terminations, supersegmentAdjusted.rgba);
-                }
-                #endif
+//                #if USE_PRINTF
+//                if(gl_GlobalInvocationID.xy == debug_pixel) {
+//                    debugPrintfEXT("Termination criteria reached for %dth time, color of supseg was: (%f, %f, %f, %f)", num_terminations, supersegmentAdjusted.rgba);
+//                }
+//                #endif
                 num_terminations++;
             }
 
@@ -63,32 +63,37 @@ if (vis)
                 } else {
                     supSegEndPoint = diff.z / (rd_world.z);
                 }
-                    #else
+                #else
                 supSegEndPoint = ndc_step;
                 #endif
 
-                #if USE_PRINTF
-                if(gl_GlobalInvocationID.xy == debug_pixel) {
-                    debugPrintfEXT("Closing supseg: %d", supersegmentNum);
+//                #if USE_PRINTF
+//                if(gl_GlobalInvocationID.xy == debug_pixel) {
+//                    debugPrintfEXT("Closing supseg: %d", supersegmentNum);
+//                }
+//                #endif
+
+                if(thresh_found) {
+
+                    vec4 encodedDepthStart;
+                    vec4 encodedDepthEnd;
+                    encodedDepthStart = EncodeFloatRGBA(supSegStartPoint);
+                    encodedDepthEnd = EncodeFloatRGBA(supSegEndPoint);
+                    //            encodedDepths = encode(supSegStartPoint, supSegEndPoint);
+                    #if SEPARATE_DEPTH
+                    imageStore(OutputSubVDIDepth, ivec3(2 * supersegmentNum, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(supSegStartPoint, 0, 0, 0));
+                    imageStore(OutputSubVDIDepth, ivec3(2 * supersegmentNum + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(supSegEndPoint, 0, 0, 0));
+                    imageStore(OutputSubVDIColor, ivec3(supersegmentNum, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), supersegmentAdjusted);
+
+                    #else
+                    imageStore(OutputSubVDIColor, ivec3(3 * supersegmentNum + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), encodedDepthStart);
+                    imageStore(OutputSubVDIColor, ivec3(3 * supersegmentNum + 2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), encodedDepthEnd);
+                    imageStore(OutputSubVDIColor, ivec3(3 * supersegmentNum, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), supersegmentAdjusted);
+                    #endif
+
+                    supersegmentNum++;
+                    supsegs_written = true;
                 }
-                #endif
-
-                vec4 encodedDepthStart;
-                vec4 encodedDepthEnd;
-                encodedDepthStart = EncodeFloatRGBA(supSegStartPoint);
-                encodedDepthEnd = EncodeFloatRGBA(supSegEndPoint);
-                //            encodedDepths = encode(supSegStartPoint, supSegEndPoint);
-                #if SEPARATE_DEPTH
-                imageStore(OutputSubVDIDepth, ivec3(2 * supersegmentNum, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(supSegStartPoint, 0, 0, 0));
-                imageStore(OutputSubVDIDepth, ivec3(2 * supersegmentNum + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(supSegEndPoint, 0, 0, 0));
-                imageStore(OutputSubVDIColor, ivec3(supersegmentNum, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), supersegmentAdjusted);
-
-                #else
-                imageStore(OutputSubVDIColor, ivec3(3 * supersegmentNum + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), encodedDepthStart);
-                imageStore(OutputSubVDIColor, ivec3(3 * supersegmentNum + 2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), encodedDepthEnd);
-                imageStore(OutputSubVDIColor, ivec3(3 * supersegmentNum, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), supersegmentAdjusted);
-                #endif
-                supersegmentNum++;
             }
         }
 
