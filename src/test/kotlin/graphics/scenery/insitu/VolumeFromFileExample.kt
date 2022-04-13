@@ -37,13 +37,14 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
-    val generateVDIs = false
+    val generateVDIs = true
     val separateDepth = true
+    val colors32bit = true
     val world_abs = false
-    val dataset = "Kingsnake"
+    val dataset = "Stagbeetle"
     val num_parts = 1
-    val volumeDims = Vector3f(1024f, 1024f, 795f)
-    val is16bit = false
+    val volumeDims = Vector3f(832f, 832f, 494f)
+    val is16bit = true
 
     val closeAfter = 20000L
 
@@ -138,36 +139,46 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                     SegmentType.FragmentShader to SegmentTemplate(
                         this.javaClass,
                         raycastShader,
-                        "intersectBoundingBox", "vis", "SampleVolume", "Convert", "Accumulate",
+                        "intersectBoundingBox", "vis", "localNear", "localFar", "SampleVolume", "Convert", "Accumulate",
                     ),
                     SegmentType.Accumulator to SegmentTemplate(
 //                                this.javaClass,
                         accumulateShader,
-                        "vis", "sampleVolume", "convert",
+                        "vis", "localNear", "localFar", "sampleVolume", "convert",
                     ),
                 ),
             )
 
-            val outputSubColorBuffer = MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*numLayers)
+            val outputSubColorBuffer = if(colors32bit) {
+                MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*numLayers * 4)
+            } else {
+                MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*numLayers)
+            }
             val outputSubDepthBuffer = if(separateDepth) {
-                MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*2)
+                MemoryUtil.memCalloc(windowHeight*windowWidth*2*maxSupersegments*2)
             } else {
                 MemoryUtil.memCalloc(0)
             }
             val outputSubVDIColor: Texture
             val outputSubVDIDepth: Texture
 
-            outputSubVDIColor = Texture.fromImage(
-                Image(outputSubColorBuffer, numLayers*maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(
-                    Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+            outputSubVDIColor = if(colors32bit) {
+                Texture.fromImage(
+                    Image(outputSubColorBuffer, numLayers * maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(
+                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 4, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+            } else {
+                Texture.fromImage(
+                    Image(outputSubColorBuffer, numLayers * maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(
+                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+            }
 
             volumeManager.customTextures.add("OutputSubVDIColor")
             volumeManager.material().textures["OutputSubVDIColor"] = outputSubVDIColor
 
             if(separateDepth) {
                 outputSubVDIDepth = Texture.fromImage(
-                    Image(outputSubDepthBuffer, 2*maxSupersegments, windowHeight, windowWidth),  usage = hashSetOf(
-                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+                    Image(outputSubDepthBuffer, maxSupersegments, windowHeight, windowWidth),  usage = hashSetOf(
+                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = UnsignedShortType(), channels = 2, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
                 volumeManager.customTextures.add("OutputSubVDIDepth")
                 volumeManager.material().textures["OutputSubVDIDepth"] = outputSubVDIDepth
             }
@@ -205,7 +216,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
         val tf = TransferFunction()
         with(tf) {
-            if(dataset == "Stagbeetle") {
+            if(dataset == "Stagbeetle" || dataset == "Stagbeetle_divided") {
                 addControlPoint(0.0f, 0.0f)
                 addControlPoint(0.005f, 0.0f)
                 addControlPoint(0.01f, 0.1f)
@@ -213,6 +224,11 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                 addControlPoint(0.0f, 0.0f)
                 addControlPoint(0.4f, 0.0f)
                 addControlPoint(0.5f, 0.5f)
+            } else if (dataset == "Beechnut") {
+                addControlPoint(0.0f, 0.0f)
+                addControlPoint(0.20f, 0.0f)
+                addControlPoint(0.25f, 0.2f)
+                addControlPoint(0.35f, 0.0f)
             } else {
                 logger.info("Using a standard transfer function")
                 TransferFunction.ramp(0.1f, 0.5f)
@@ -231,7 +247,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             volume.pixelToWorldRatio = pixelToWorld
             volume.transferFunction = tf
             volume.spatial().position = Vector3f(2.0f, 6.0f, 4.0f - ((i - 1) * ((volumeDims.z / num_parts) * pixelToWorld)))
+            volume.spatial().updateWorld(true)
             scene.addChild(volume)
+            println("Volume model matrix is: ${volume.spatial().model}")
             volumeList.add(volume)
         }
 
