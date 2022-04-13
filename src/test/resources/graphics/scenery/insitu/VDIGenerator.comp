@@ -53,7 +53,7 @@ layout(set = 4, binding = 0, rg16ui) uniform uimage3D OutputSubVDIDepth;
 
 #pragma scenery endverbatim
 
-ivec2 debug_pixel = ivec2(1017, 519);
+ivec2 debug_pixel = ivec2(340, 525);
 
 // intersect ray with a box
 // http://www.siggraph.org/education/materials/HyperGraph/raytrace/rtinter3.htm
@@ -133,6 +133,7 @@ vec4 encode(float x, float y){
     return rgba - 1./256.;
 }
 
+#if INT_DEPTHS
 void writeSupersegment(int index, uint start, uint end, vec4 color) {
     #if USE_PRINTF
     if(gl_GlobalInvocationID.xy == debug_pixel) {
@@ -146,6 +147,22 @@ void writeSupersegment(int index, uint start, uint end, vec4 color) {
     imageStore(OutputSubVDIColor, ivec3(index, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), color);
     #endif
 }
+#else
+void writeSupersegment(int index, float start, float end, vec4 color) {
+    #if USE_PRINTF
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("Writing supseg: %d. Start: %f, end: %f, color: (%f, %f, %f, %f)", index, start, end, color.rgba);
+    }
+    #endif
+
+
+    #if SEPARATE_DEPTH
+    imageStore(OutputSubVDIDepth, ivec3(2 * index, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(start, 0, 0, 0));
+    imageStore(OutputSubVDIDepth, ivec3(2 * index + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(end, 0, 0, 0));
+    imageStore(OutputSubVDIColor, ivec3(index, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), color);
+    #endif
+}
+#endif
 
 bool thresh_found = false;
 
@@ -202,6 +219,13 @@ void main()
     wfront *= 1 / wfront.w;
     vec4 wback = ipv * back;
     wback *= 1 / wback.w;
+
+    #if USE_PRINTF
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("front: (%f, %f, %f, %f) back: (%f, %f, %f, %f).", front.xyzw, back.xyzw);
+        debugPrintfEXT("wfront: (%f, %f, %f, %f) wback: (%f, %f, %f, %f).", wfront.xyzw, wback.xyzw);
+    }
+    #endif
 
     // -- bounding box intersection for all volumes ----------
     float tnear = 1, tfar = 0, tmax = getMaxDepth( depthUV );
