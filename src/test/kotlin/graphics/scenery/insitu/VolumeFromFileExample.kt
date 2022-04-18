@@ -9,24 +9,33 @@ import graphics.scenery.textures.Texture
 import graphics.scenery.utils.Image
 import graphics.scenery.utils.SystemHelpers
 import graphics.scenery.volumes.*
+import graphics.scenery.volumes.vdi.VDIData
+import graphics.scenery.volumes.vdi.VDIDataIO
+import graphics.scenery.volumes.vdi.VDIMetadata
 import net.imglib2.type.numeric.integer.UnsignedByteType
+import net.imglib2.type.numeric.integer.UnsignedIntType
 import net.imglib2.type.numeric.integer.UnsignedShortType
 import net.imglib2.type.numeric.real.FloatType
-import org.joml.Quaternionf
-import org.joml.Vector3f
-import org.joml.Vector3i
+import org.joml.*
 import org.lwjgl.system.MemoryUtil
 import tpietzsch.shadergen.generate.SegmentTemplate
 import tpietzsch.shadergen.generate.SegmentType
+import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.lang.UnsupportedOperationException
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.zip.GZIPOutputStream
+import java.util.zip.ZipOutputStream
 import kotlin.concurrent.thread
+import kotlin.math.pow
 import kotlin.streams.toList
+import kotlin.system.measureNanoTime
 
 /**
  * Class to test volume rendering performance on data loaded from file
@@ -45,8 +54,11 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
     val num_parts = 1
     val volumeDims = Vector3f(832f, 832f, 494f)
     val is16bit = true
+    val volumeList = ArrayList<BufferedVolume>()
+    val cam: Camera = DetachedHeadCamera(hmd)
+    val numOctreeLayers = 8
 
-    val closeAfter = 20000L
+    val closeAfter = 5000000L
 
     /**
      * Reads raw volumetric data from a [file].
@@ -155,12 +167,18 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                 MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*numLayers)
             }
             val outputSubDepthBuffer = if(separateDepth) {
+//                MemoryUtil.memCalloc(windowHeight*windowWidth*2*maxSupersegments*2 * 2)
                 MemoryUtil.memCalloc(windowHeight*windowWidth*2*maxSupersegments*2)
             } else {
                 MemoryUtil.memCalloc(0)
             }
+
+            val numVoxels = 2.0.pow(numOctreeLayers)
+            val lowestLevel = MemoryUtil.memCalloc(numVoxels.pow(3).toInt() * 4)
+
             val outputSubVDIColor: Texture
             val outputSubVDIDepth: Texture
+            val gridCells: Texture
 
             outputSubVDIColor = if(colors32bit) {
                 Texture.fromImage(
@@ -179,15 +197,21 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                 outputSubVDIDepth = Texture.fromImage(
                     Image(outputSubDepthBuffer, maxSupersegments, windowHeight, windowWidth),  usage = hashSetOf(
                         Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = UnsignedShortType(), channels = 2, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+//                    Image(outputSubDepthBuffer, 2*maxSupersegments, windowHeight, windowWidth),  usage = hashSetOf(
+//                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
                 volumeManager.customTextures.add("OutputSubVDIDepth")
                 volumeManager.material().textures["OutputSubVDIDepth"] = outputSubVDIDepth
             }
+
+            gridCells = Texture.fromImage(Image(lowestLevel, numVoxels.toInt(), numVoxels.toInt(), numVoxels.toInt()), channels = 1, type = UnsignedIntType(),
+                usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+            volumeManager.customTextures.add("OctreeCells")
+            volumeManager.material().textures["OctreeCells"] = gridCells
 
             hub.add(volumeManager)
 
         }
 
-        val cam: Camera = DetachedHeadCamera(hmd)
         with(cam) {
             spatial {
 //                position = Vector3f(2.508E+0f, -1.749E+0f,  7.245E+0f)
@@ -211,7 +235,6 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
         scene.addChild(shell)
         shell.visible = false
 
-        val volumeList = ArrayList<BufferedVolume>()
         val datasetPath = Paths.get("/home/aryaman/Datasets/Volume/${dataset}")
 
         val tf = TransferFunction()
@@ -249,7 +272,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             volume.spatial().position = Vector3f(2.0f, 6.0f, 4.0f - ((i - 1) * ((volumeDims.z / num_parts) * pixelToWorld)))
             volume.spatial().updateWorld(true)
             scene.addChild(volume)
-            println("Volume model matrix is: ${volume.spatial().model}")
+            println("Volume model matrix is: ${Matrix4f(volume.spatial().model).invert()}")
             volumeList.add(volume)
         }
 
@@ -289,8 +312,10 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
     private fun manageVDIGeneration() {
         var subVDIDepthBuffer: ByteBuffer? = null
         var subVDIColorBuffer: ByteBuffer?
+        var gridCellsBuff: ByteBuffer?
 
         while(renderer?.firstImageReady == false) {
+//        while(renderer?.firstImageReady == false || volumeManager.shaderProperties.isEmpty()) {
             Thread.sleep(50)
         }
 
@@ -307,6 +332,11 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (subVDIDepth to subvdiCnt)
         }
 
+        val gridCells = volumeManager.material().textures["OctreeCells"]!!
+        val gridTexturesCnt = AtomicInteger(0)
+
+        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (gridCells to gridTexturesCnt)
+
         var prevAtomic = subvdi.get()
 
         var cnt = 0
@@ -319,8 +349,31 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             if(separateDepth) {
                 subVDIDepthBuffer = subVDIDepth!!.contents
             }
+            gridCellsBuff = gridCells.contents
 
+//            val camera = volumeManager.getScene()?.activeObserver ?: throw UnsupportedOperationException("No camera found")
+            val camera = cam
             if(cnt < 20) {
+
+                logger.info(volumeManager.shaderProperties.keys.joinToString())
+                val vdiData = VDIData(subVDIDepthBuffer!!, subVDIColorBuffer!!, gridCellsBuff!!, VDIMetadata(
+                    projection = camera.spatial().projection,
+                    view = camera.spatial().getTransformation(),
+                    volumeDimensions = volumeDims,
+                    model = volumeList.first().spatial().world,
+                    nw = volumeList.first().volumeManager.shaderProperties["nw"] as Float,
+                    windowDimensions = Vector2i(camera.width, camera.height)
+                ))
+
+                val duration = measureNanoTime {
+                    val file = FileOutputStream(File("vdidump$cnt.gz"))
+                    val comp = GZIPOutputStream(file, 65536)
+                    VDIDataIO.write(vdiData, comp)
+                    logger.info("written the dump")
+                    file.close()
+                }
+                logger.info("time taken: $duration")
+
                 var fileName = ""
                 if(world_abs) {
                     fileName = "${dataset}VDI${cnt}_world_new"
@@ -330,8 +383,10 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                 if(separateDepth) {
                     SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col")
                     SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth")
+                    SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
                 } else {
                     SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)
+                    SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
                 }
                 logger.info("Wrote VDI $cnt")
             }
