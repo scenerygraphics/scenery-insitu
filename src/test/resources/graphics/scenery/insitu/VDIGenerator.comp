@@ -50,10 +50,11 @@ layout(local_size_x = 15, local_size_y = 15) in; //TODO: change to 16x16
 layout(set = 2, binding = 0) uniform sampler3D volumeCache;
 layout(set = 3, binding = 0, rgba32f) uniform image3D OutputSubVDIColor;
 layout(set = 4, binding = 0, rg16ui) uniform uimage3D OutputSubVDIDepth;
+layout (set = 8, binding = 0, r32ui) uniform uimage3D OctreeCells;
 
 #pragma scenery endverbatim
 
-ivec2 debug_pixel = ivec2(340, 525);
+ivec2 debug_pixel = ivec2(832, 512);
 
 // intersect ray with a box
 // http://www.siggraph.org/education/materials/HyperGraph/raytrace/rtinter3.htm
@@ -149,12 +150,6 @@ void writeSupersegment(int index, uint start, uint end, vec4 color) {
 }
 #else
 void writeSupersegment(int index, float start, float end, vec4 color) {
-    #if USE_PRINTF
-    if(gl_GlobalInvocationID.xy == debug_pixel) {
-        debugPrintfEXT("Writing supseg: %d. Start: %f, end: %f, color: (%f, %f, %f, %f)", index, start, end, color.rgba);
-    }
-    #endif
-
 
     #if SEPARATE_DEPTH
     imageStore(OutputSubVDIDepth, ivec3(2 * index, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(start, 0, 0, 0));
@@ -163,6 +158,30 @@ void writeSupersegment(int index, float start, float end, vec4 color) {
     #endif
 }
 #endif
+
+void update_cell_count(ivec3 cell) {
+    uint ret = imageAtomicAdd(OctreeCells, cell, 1);
+
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("Updated the cell: (%d, %d, %d). Value earlier: %d", cell.xyz, int(ret));
+    }
+}
+
+int num_cells;
+float near_plane = 0.1; //TODO: generalize
+float far_plane = 20.0;
+
+int findZInterval_view(float z_view) {
+
+    float dist_from_front = abs(z_view - (-1 * near_plane));
+    float interval_size = ((far_plane - near_plane) / num_cells);
+    int interval_num = int(floor(dist_from_front / interval_size));
+
+    //    if(gl_GlobalInvocationID.xy == debug_pixel) {
+    //        debugPrintfEXT("for z_view: %f, dist_from_front: %f, interval size: %f, interval found is: %d", z_view, dist_from_front, interval_size, interval_num);
+    //    }
+    return interval_num;
+}
 
 bool thresh_found = false;
 
@@ -183,14 +202,25 @@ void main()
 //
 //    }
 
-    #if USE_PRINTF
-    if(gl_GlobalInvocationID.xy == debug_pixel) {
-        debugPrintfEXT("Model matrix is: (%f, %f, %f, %f)", im_x_13_x_[0][0], im_x_13_x_[0][1], im_x_13_x_[0][2], im_x_13_x_[0][3]);
-        debugPrintfEXT("Model matrix is: (%f, %f, %f, %f)", im_x_13_x_[1][0], im_x_13_x_[1][1], im_x_13_x_[1][2], im_x_13_x_[1][3]);
-        debugPrintfEXT("Model matrix is: (%f, %f, %f, %f)", im_x_13_x_[2][0], im_x_13_x_[2][1], im_x_13_x_[2][2], im_x_13_x_[2][3]);
-        debugPrintfEXT("Model matrix is: (%f, %f, %f, %f)", im_x_13_x_[3][0], im_x_13_x_[3][1], im_x_13_x_[3][2], im_x_13_x_[3][3]);
-    }
-    #endif
+//    #if USE_PRINTF
+//    if(gl_GlobalInvocationID.xy == debug_pixel) {
+//        debugPrintfEXT("Model matrix is: (%f, %f, %f, %f)", im_x_13_x_[0][0], im_x_13_x_[0][1], im_x_13_x_[0][2], im_x_13_x_[0][3]);
+//        debugPrintfEXT("Model matrix is: (%f, %f, %f, %f)", im_x_13_x_[1][0], im_x_13_x_[1][1], im_x_13_x_[1][2], im_x_13_x_[1][3]);
+//        debugPrintfEXT("Model matrix is: (%f, %f, %f, %f)", im_x_13_x_[2][0], im_x_13_x_[2][1], im_x_13_x_[2][2], im_x_13_x_[2][3]);
+//        debugPrintfEXT("Model matrix is: (%f, %f, %f, %f)", im_x_13_x_[3][0], im_x_13_x_[3][1], im_x_13_x_[3][2], im_x_13_x_[3][3]);
+//    }
+//    #endif
+
+    ivec3 imageCoords  = imageSize(OutputSubVDIColor);
+    int windowWidth = imageCoords.b;
+    int windowHeight = imageCoords.g;
+
+    num_cells = imageSize(OctreeCells).r;
+
+
+    ivec3 grid_cell = ivec3(0);
+    grid_cell.x = int(floor((float(gl_GlobalInvocationID.x) / windowWidth) * num_cells));
+    grid_cell.y = int(floor((float(gl_GlobalInvocationID.y) / windowHeight) * num_cells));
 
     mat4 ipv = InverseViewMatrices[0] * InverseProjectionMatrix;
     mat4 pv = ProjectionMatrix * ViewMatrices[0];
@@ -199,8 +229,7 @@ void main()
     //	vec2 fragCoord = (vrParameters.stereoEnabled ^ 1) * gl_FragCoord.xy + vrParameters.stereoEnabled * vec2((gl_FragCoord.x/2.0 + currentEye.eye * gl_FragCoord.x/2.0), gl_FragCoord.y);
     //	vec2 viewportSizeActual = (vrParameters.stereoEnabled ^ 1) * viewportSize + vrParameters.stereoEnabled * vec2(viewportSize.x/2.0, viewportSize.y);
     //	vec2 uv = 2 * ( gl_FragCoord.xy + dsp ) / viewportSizeActual - 1;
-    ivec3 imageCoords  = imageSize(OutputSubVDIColor);
-//    float newSupSegThresh = 0.00014;
+    //    float newSupSegThresh = 0.00014;
     float newSupSegThresh = 0.04555;
 
     vec2 texcoord = gl_GlobalInvocationID.xy/vec2(imageCoords.b, imageCoords.g);

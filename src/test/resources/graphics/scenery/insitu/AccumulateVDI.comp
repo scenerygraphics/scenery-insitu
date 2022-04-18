@@ -3,11 +3,11 @@ if (vis && step > localNear && step < localFar)
     transparentSample = false;
     vec4 x = sampleVolume(wpos);
 
-    #if USE_PRINTF
-    if(gl_GlobalInvocationID.xy == debug_pixel && thresh_found) {
-        debugPrintfEXT("Step: %d, color of sample: (%f, %f, %f, %f) at position: (%f, %f, %f, %f)", i, x.rgba, wpos.xyzw);
-    }
-    #endif
+//    #if USE_PRINTF
+//    if(gl_GlobalInvocationID.xy == debug_pixel && thresh_found) {
+//        debugPrintfEXT("Step: %d, color of sample: (%f, %f, %f, %f) at position: (%f, %f, %f, %f)", i, x.rgba, wpos.xyzw);
+//    }
+//    #endif
 
     if(x.r > -0.5 || lastSample) { // we need to process this sample only if it is from a volume that actually exists at this sample point
 //        #if USE_PRINTF
@@ -91,6 +91,11 @@ if (vis && step > localNear && step < localFar)
                 }
                 #else
                     #if INT_DEPTHS
+//                    #if USE_PRINTF
+//                    if(gl_GlobalInvocationID.xy == debug_pixel && thresh_found) {
+//                        debugPrintfEXT("Supseg: %d. Recording end point as : %d. ndc at this stage: %f", supersegmentNum, (supSegStartPoint + steps_in_supseg), ndc_step);
+//                    }
+//                    #endif
                     supSegEndPoint = supSegStartPoint + steps_in_supseg;
                     #else
                     supSegEndPoint = ndc_step;
@@ -100,16 +105,25 @@ if (vis && step > localNear && step < localFar)
 
                 if(thresh_found) {
 
-                    bool equal = (w_prev_non_transp == wprev);
+                    writeSupersegment(supersegmentNum, supSegStartPoint, supSegEndPoint, supersegmentAdjusted);
 
-                    #if USE_PRINTF
-                    if(gl_GlobalInvocationID.xy == debug_pixel) {
-                        debugPrintfEXT("Closing supseg: %d. w_prev_non_transp: (%f, %f, %f, %f), wprev: (%f, %f, %f, %f). Equal?: %d", supersegmentNum, w_prev_non_transp.xyzw, wprev.xyzw, equal);
-                        debugPrintfEXT("Supseg: start %d, end: %d, color: (%f, %f, %f, %f), before opacity correction: (%f, %f, %f, %f). Correction length: %f. Total composited color rn: (%f, %f, %f, %f)", supSegStartPoint, supSegEndPoint, supersegmentAdjusted.rgba, curV.rgba, segLen, v.rgba);
+                    #if INT_DEPTHS
+                    float start_step = tnear + nw * supSegStartPoint;
+                    vec4 start_w = mix(wfront, wback, start_step);
+                    vec4 start_v = ViewMatrices[0] * start_w;
+
+                    float end_step = tnear + nw * supSegEndPoint;
+                    vec4 end_w = mix(wfront, wback, end_step);
+                    vec4 end_v = ViewMatrices[0] * end_w;
+
+                    int start_cell = findZInterval_view(start_v.z);
+                    int end_cell = findZInterval_view(end_v.z);
+
+                    for(int j = start_cell; j <= end_cell; j++) {
+                        grid_cell.z = j;
+                        update_cell_count(grid_cell);
                     }
                     #endif
-
-                    writeSupersegment(supersegmentNum, supSegStartPoint, supSegEndPoint, supersegmentAdjusted);
 
                     supersegmentNum++;
                 }
@@ -138,6 +152,12 @@ if (vis && step > localNear && step < localFar)
             }
             #else
                 #if INT_DEPTHS
+                #if USE_PRINTF
+                if(gl_GlobalInvocationID.xy == debug_pixel && thresh_found) {
+                    debugPrintfEXT("Supseg: %d. Recording start point as : %d. ndc at this stage: %f", supersegmentNum, i, ndc_step);
+                }
+                #endif
+
                 supSegStartPoint = i;
                 #else
                 supSegStartPoint = ndc_step;
@@ -162,11 +182,11 @@ if (vis && step > localNear && step < localFar)
             v.rgb = v.rgb + (1.0f - v.a) * newColor * w; //TODO Remove
             v.a = v.a + (1.0f - v.a) * w;
 
-            #if USE_PRINTF
-            if(gl_GlobalInvocationID.xy == debug_pixel && thresh_found) {
-                debugPrintfEXT("Step: %d. Accumulated color so far: (%f, %f, %f, %f)", i, v);
-            }
-            #endif
+//            #if USE_PRINTF
+//            if(gl_GlobalInvocationID.xy == debug_pixel && thresh_found) {
+//                debugPrintfEXT("Step: %d. Accumulated color so far: (%f, %f, %f, %f)", i, v);
+//            }
+//            #endif
 
 
             if(lastSample && supersegmentIsOpen) { //close the supersegment after the last sample is accumulated
@@ -206,16 +226,25 @@ if (vis && step > localNear && step < localFar)
 
                 if(thresh_found) {
 
-                    bool equal = (w_prev_non_transp == wprev);
-
-//                    #if USE_PRINTF
-//                    if(gl_GlobalInvocationID.xy == debug_pixel) {
-//                        debugPrintfEXT("Closing supseg: %d. w_prev_non_transp: (%f, %f, %f, %f), wprev: (%f, %f, %f, %f). Equal?: %d", supersegmentNum, w_prev_non_transp.xyzw, wprev.xyzw, equal);
-//                        debugPrintfEXT("Supseg: start %d, end: %d, color: (%f, %f, %f, %f), before opacity correction: (%f, %f, %f, %f). Correction length: %f. Total composited color rn: (%f, %f, %f, %f)", supSegStartPoint, supSegEndPoint, supersegmentAdjusted.rgba, curV.rgba, segLen, v.rgba);
-//                    }
-//                    #endif
-
                     writeSupersegment(supersegmentNum, supSegStartPoint, supSegEndPoint, supersegmentAdjusted);
+
+                    #if INT_DEPTHS
+                    float start_step = tnear + nw * supSegStartPoint;
+                    vec4 start_w = mix(wfront, wback, start_step);
+                    vec4 start_v = ViewMatrices[0] * start_w;
+
+                    float end_step = tnear + nw * supSegEndPoint;
+                    vec4 end_w = mix(wfront, wback, end_step);
+                    vec4 end_v = ViewMatrices[0] * end_w;
+
+                    int start_cell = findZInterval_view(start_v.z);
+                    int end_cell = findZInterval_view(end_v.z);
+
+                    for(int j = start_cell; j <= end_cell; j++) {
+                        grid_cell.z = j;
+                        update_cell_count(grid_cell);
+                    }
+                    #endif
 
                     supersegmentNum++;
                 }
