@@ -23,6 +23,7 @@ dependencies {
     implementation("org.slf4j:slf4j-api:1.7.25")
 
     implementation("org.jetbrains.kotlin:kotlin-scripting-jsr223:1.5.31")
+    implementation("com.esotericsoftware:kryo:5.2.0")
 
 
 //    implementation("graphics.scenery:scenery:8ed735b") {
