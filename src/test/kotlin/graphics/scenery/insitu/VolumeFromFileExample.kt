@@ -1,5 +1,6 @@
 package graphics.scenery.insitu
 
+import bdv.tools.transformation.TransformedSource
 import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.controls.TrackedStereoGlasses
@@ -8,6 +9,9 @@ import graphics.scenery.backends.vulkan.VulkanRenderer
 import graphics.scenery.textures.Texture
 import graphics.scenery.utils.Image
 import graphics.scenery.utils.SystemHelpers
+import graphics.scenery.utils.extensions.minus
+import graphics.scenery.utils.extensions.plus
+import graphics.scenery.utils.extensions.times
 import graphics.scenery.volumes.*
 import graphics.scenery.volumes.vdi.VDIData
 import graphics.scenery.volumes.vdi.VDIDataIO
@@ -46,14 +50,14 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
-    val generateVDIs = true
+    val generateVDIs = false
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
-    val dataset = "Stagbeetle"
+    val dataset = "Kingsnake"
     val num_parts = 1
-    val volumeDims = Vector3f(832f, 832f, 494f)
-    val is16bit = true
+    val volumeDims = Vector3f(1024f, 1024f, 795f)
+    val is16bit = false
     val volumeList = ArrayList<BufferedVolume>()
     val cam: Camera = DetachedHeadCamera(hmd)
     val numOctreeLayers = 8
@@ -260,21 +264,33 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
         val pixelToWorld = (0.0075f * 512f) / volumeDims.x
 
+        val parent = RichNode()
 
+        var prev_slices = 0f
+        var current_slices = 0f
 
         for(i in 1..num_parts) {
             val volume = fromPathRaw(Paths.get("$datasetPath/Part$i"), is16bit)
             volume.name = "volume"
             volume.colormap = Colormap.get("hot")
-
+            val source = (volume.ds.sources[0].spimSource as TransformedSource).wrappedSource as? BufferSource<*>
+            current_slices = source!!.depth.toFloat()
             volume.pixelToWorldRatio = pixelToWorld
             volume.transferFunction = tf
-            volume.spatial().position = Vector3f(2.0f, 6.0f, 4.0f - ((i - 1) * ((volumeDims.z / num_parts) * pixelToWorld)))
-            volume.spatial().updateWorld(true)
-            scene.addChild(volume)
+//            volume.spatial().position = Vector3f(2.0f, 6.0f, 4.0f - ((i - 1) * ((volumeDims.z / num_parts) * pixelToWorld)))
+//            if(i > 1) {
+                volume.spatial().position = Vector3f(volumeList.lastOrNull()?.spatial()?.position?: Vector3f(0f)) - Vector3f(0f, 0f, (prev_slices/2f + current_slices/2f) * pixelToWorld)
+//            }
+            prev_slices = current_slices
+//            volume.spatial().updateWorld(true)
+            parent.addChild(volume)
             println("Volume model matrix is: ${Matrix4f(volume.spatial().model).invert()}")
             volumeList.add(volume)
         }
+
+        parent.spatial().position = Vector3f(2.0f, 6.0f, 4.0f) - Vector3f(0.0f, 0.0f, volumeList.map { it.spatial().position.z }.sum()/2.0f)
+
+        scene.addChild(parent)
 
 
         val lights = (0 until 3).map {
@@ -353,6 +369,13 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
 //            val camera = volumeManager.getScene()?.activeObserver ?: throw UnsupportedOperationException("No camera found")
             val camera = cam
+
+            val model = volumeList.first().spatial().world
+
+            val translated = Matrix4f(model).translate(Vector3f(-1f) * volumeList.first().spatial().position).translate(Vector3f(2.0f, 6.0f, 4.0f))
+
+            logger.info("The model matrix added to the vdi is: $model. After translation: $translated")
+
             if(cnt < 20) {
 
                 logger.info(volumeManager.shaderProperties.keys.joinToString())
@@ -360,13 +383,13 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                     projection = camera.spatial().projection,
                     view = camera.spatial().getTransformation(),
                     volumeDimensions = volumeDims,
-                    model = volumeList.first().spatial().world,
+                    model = model,
                     nw = volumeList.first().volumeManager.shaderProperties["nw"] as Float,
                     windowDimensions = Vector2i(camera.width, camera.height)
                 ))
 
                 val duration = measureNanoTime {
-                    val file = FileOutputStream(File("vdidump$cnt.gz"))
+                    val file = FileOutputStream(File("${dataset}vdidump$cnt.gz"))
                     val comp = GZIPOutputStream(file, 65536)
                     VDIDataIO.write(vdiData, comp)
                     logger.info("written the dump")
