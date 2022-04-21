@@ -5,13 +5,15 @@ import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.controls.TrackedStereoGlasses
 import graphics.scenery.attribute.material.Material
+import graphics.scenery.backends.Shaders
 import graphics.scenery.backends.vulkan.VulkanRenderer
+import graphics.scenery.compute.ComputeMetadata
+import graphics.scenery.compute.InvocationType
 import graphics.scenery.textures.Texture
 import graphics.scenery.utils.Image
 import graphics.scenery.utils.SystemHelpers
 import graphics.scenery.utils.extensions.minus
 import graphics.scenery.utils.extensions.plus
-import graphics.scenery.utils.extensions.times
 import graphics.scenery.volumes.*
 import graphics.scenery.volumes.vdi.VDIData
 import graphics.scenery.volumes.vdi.VDIDataIO
@@ -27,15 +29,12 @@ import tpietzsch.shadergen.generate.SegmentType
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.lang.UnsupportedOperationException
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.zip.GZIPOutputStream
-import java.util.zip.ZipOutputStream
 import kotlin.concurrent.thread
 import kotlin.math.pow
 import kotlin.streams.toList
@@ -50,19 +49,19 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
-    val generateVDIs = false
+    val generateVDIs = true
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
-    val dataset = "Kingsnake"
-    val num_parts = 1
-    val volumeDims = Vector3f(1024f, 1024f, 795f)
-    val is16bit = false
+    val dataset = "Stagbeetle_divided"
+    val num_parts = 2
+    val volumeDims = Vector3f(832f, 832f, 494f)
+    val is16bit = true
     val volumeList = ArrayList<BufferedVolume>()
     val cam: Camera = DetachedHeadCamera(hmd)
     val numOctreeLayers = 8
 
-    val closeAfter = 5000000L
+    val closeAfter = 25000L
 
     /**
      * Reads raw volumetric data from a [file].
@@ -177,8 +176,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                 MemoryUtil.memCalloc(0)
             }
 
-            val numVoxels = 2.0.pow(numOctreeLayers)
-            val lowestLevel = MemoryUtil.memCalloc(numVoxels.pow(3).toInt() * 4)
+            val numGridCells = 2.0.pow(numOctreeLayers)
+            val lowestLevel = MemoryUtil.memCalloc(numGridCells.pow(3).toInt() * 4)
 
             val outputSubVDIColor: Texture
             val outputSubVDIDepth: Texture
@@ -207,12 +206,24 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                 volumeManager.material().textures["OutputSubVDIDepth"] = outputSubVDIDepth
             }
 
-            gridCells = Texture.fromImage(Image(lowestLevel, numVoxels.toInt(), numVoxels.toInt(), numVoxels.toInt()), channels = 1, type = UnsignedIntType(),
+            gridCells = Texture.fromImage(Image(lowestLevel, numGridCells.toInt(), numGridCells.toInt(), numGridCells.toInt()), channels = 1, type = UnsignedIntType(),
                 usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
             volumeManager.customTextures.add("OctreeCells")
             volumeManager.material().textures["OctreeCells"] = gridCells
 
             hub.add(volumeManager)
+
+            val compute = RichNode()
+            compute.setMaterial(ShaderMaterial(Shaders.ShadersFromFiles(arrayOf("GridCellsToZero.comp"), this@VolumeFromFileExample::class.java)))
+
+            compute.metadata["ComputeMetadata"] = ComputeMetadata(
+                workSizes = Vector3i(numGridCells.toInt(), numGridCells.toInt(), 1),
+                invocationType = InvocationType.Permanent
+            )
+
+            compute.material().textures["GridCells"] = gridCells
+
+            scene.addChild(compute)
 
         }
 
@@ -220,8 +231,10 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             spatial {
 //                position = Vector3f(2.508E+0f, -1.749E+0f,  7.245E+0f)
 //                rotation = Quaternionf(2.789E-2,  4.970E-2,  1.388E-3,  9.984E-1)
-                position = Vector3f(3.213f, 8.264E-1f, -9.844E-1f)
-                rotation = Quaternionf(3.049E-2, 9.596E-1, -1.144E-1, -2.553E-1)
+//                position = Vector3f(3.213f, 8.264E-1f, -9.844E-1f)
+                position = Vector3f(0f, 0f, 5f)
+//                rotation = Quaternionf(3.049E-2, 9.596E-1, -1.144E-1, -2.553E-1)
+//                rotation = Quaternionf(3.049E-2, 9.596E-1, -1.144E-1, -2.553E-1)
             }
             perspectiveCamera(50.0f, windowWidth, windowHeight)
             cam.farPlaneDistance = 20.0f
@@ -262,33 +275,42 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             }
         }
 
-        val pixelToWorld = (0.0075f * 512f) / volumeDims.x
+        val pixelToWorld = (0.0075f * 512f) / 832f
 
         val parent = RichNode()
 
         var prev_slices = 0f
         var current_slices = 0f
 
+        var prevIndex = 0f
+
         for(i in 1..num_parts) {
             val volume = fromPathRaw(Paths.get("$datasetPath/Part$i"), is16bit)
             volume.name = "volume"
             volume.colormap = Colormap.get("hot")
+            volume.origin = Origin.FrontBottomLeft
             val source = (volume.ds.sources[0].spimSource as TransformedSource).wrappedSource as? BufferSource<*>
             current_slices = source!!.depth.toFloat()
+            logger.info("current slices: $current_slices")
             volume.pixelToWorldRatio = pixelToWorld
             volume.transferFunction = tf
 //            volume.spatial().position = Vector3f(2.0f, 6.0f, 4.0f - ((i - 1) * ((volumeDims.z / num_parts) * pixelToWorld)))
 //            if(i > 1) {
-                volume.spatial().position = Vector3f(volumeList.lastOrNull()?.spatial()?.position?: Vector3f(0f)) - Vector3f(0f, 0f, (prev_slices/2f + current_slices/2f) * pixelToWorld)
+//            val temp = Vector3f(volumeList.lastOrNull()?.spatial()?.position?: Vector3f(0f)) - Vector3f(0f, 0f, (prev_slices/2f + current_slices/2f) * pixelToWorld)
+            val temp = Vector3f(0f, 0f, -1.0f * (prevIndex) * pixelToWorld)
+            volume.spatial().position = temp
 //            }
+            prevIndex += current_slices
+            logger.info("volume slice $i position set to $temp")
             prev_slices = current_slices
 //            volume.spatial().updateWorld(true)
             parent.addChild(volume)
-            println("Volume model matrix is: ${Matrix4f(volume.spatial().model).invert()}")
+//            println("Volume model matrix is: ${Matrix4f(volume.spatial().model).invert()}")
             volumeList.add(volume)
         }
 
-        parent.spatial().position = Vector3f(2.0f, 6.0f, 4.0f) - Vector3f(0.0f, 0.0f, volumeList.map { it.spatial().position.z }.sum()/2.0f)
+//        parent.spatial().position = Vector3f(2.0f, 6.0f, 4.0f) - Vector3f(0.0f, 0.0f, volumeList.map { it.spatial().position.z }.sum()/2.0f)
+        parent.spatial().position = Vector3f(0f)
 
         scene.addChild(parent)
 
@@ -372,9 +394,10 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
             val model = volumeList.first().spatial().world
 
-            val translated = Matrix4f(model).translate(Vector3f(-1f) * volumeList.first().spatial().position).translate(Vector3f(2.0f, 6.0f, 4.0f))
+//            val translated = Matrix4f(model).translate(Vector3f(-1f) * volumeList.first().spatial().worldPosition()).translate(volumeList.first().spatial().worldPosition())
 
-            logger.info("The model matrix added to the vdi is: $model. After translation: $translated")
+            logger.info("The model matrix added to the vdi is: $model.")
+//            logger.info(" After translation: $translated")
 
             if(cnt < 20) {
 
@@ -389,13 +412,13 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                 ))
 
                 val duration = measureNanoTime {
-                    val file = FileOutputStream(File("${dataset}vdidump$cnt.gz"))
-                    val comp = GZIPOutputStream(file, 65536)
-                    VDIDataIO.write(vdiData, comp)
+                    val file = FileOutputStream(File("${dataset}vdidump$cnt"))
+//                    val comp = GZIPOutputStream(file, 65536)
+                    VDIDataIO.write(vdiData, file)
                     logger.info("written the dump")
                     file.close()
                 }
-                logger.info("time taken: $duration")
+                logger.info("time taken (uncompressed): ${duration * 10e-9}")
 
                 var fileName = ""
                 if(world_abs) {
