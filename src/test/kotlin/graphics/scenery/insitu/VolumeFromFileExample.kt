@@ -36,6 +36,7 @@ import java.nio.file.Paths
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
+import kotlin.math.log
 import kotlin.math.pow
 import kotlin.streams.toList
 import kotlin.system.measureNanoTime
@@ -45,6 +46,9 @@ import kotlin.system.measureNanoTime
  *
  * @author Aryaman Gupta <argupta@mpi-cbg.de>
  */
+
+data class Timer(var start: Long, var end: Long)
+
 class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
     var hmd: TrackedStereoGlasses? = null
 
@@ -53,8 +57,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
-    val dataset = "Stagbeetle_divided"
-    val num_parts = 2
+    val dataset = "Stagbeetle"
+    val num_parts = 1
     val volumeDims = Vector3f(832f, 832f, 494f)
     val is16bit = true
     val volumeList = ArrayList<BufferedVolume>()
@@ -229,12 +233,10 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
         with(cam) {
             spatial {
-//                position = Vector3f(2.508E+0f, -1.749E+0f,  7.245E+0f)
-//                rotation = Quaternionf(2.789E-2,  4.970E-2,  1.388E-3,  9.984E-1)
-//                position = Vector3f(3.213f, 8.264E-1f, -9.844E-1f)
-                position = Vector3f(0f, 0f, 5f)
-//                rotation = Quaternionf(3.049E-2, 9.596E-1, -1.144E-1, -2.553E-1)
-//                rotation = Quaternionf(3.049E-2, 9.596E-1, -1.144E-1, -2.553E-1)
+                position = Vector3f(3.345E+0f, -8.651E-1f, -2.857E+0f)
+                rotation = Quaternionf(3.148E-2, -9.600E-1, -1.204E-1,  2.509E-1)
+//                position = Vector3f(5.436E+0f, -8.650E-1f, -7.923E-1f)
+//                rotation = Quaternionf(7.029E-2, -8.529E-1, -1.191E-1,  5.034E-1)
             }
             perspectiveCamera(50.0f, windowWidth, windowHeight)
             cam.farPlaneDistance = 20.0f
@@ -275,7 +277,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             }
         }
 
-        val pixelToWorld = (0.0075f * 512f) / 832f
+        val pixelToWorld = (0.0075f * 512f) / volumeDims.x
 
         val parent = RichNode()
 
@@ -378,7 +380,12 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
         var prevAtomic = subvdi.get()
 
         var cnt = 0
+
+        val tGeneration = Timer(0, 0)
+
+
         while (true) {
+            tGeneration.start = System.nanoTime()
             while(subvdi.get() == prevAtomic) {
                 Thread.sleep(5)
             }
@@ -388,6 +395,14 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                 subVDIDepthBuffer = subVDIDepth!!.contents
             }
             gridCellsBuff = gridCells.contents
+
+            tGeneration.end = System.nanoTime()
+
+            val timeTaken = tGeneration.end - tGeneration.start
+
+            logger.info("Time taken for generation (only correct if VDIs were not being written to disk): ${timeTaken}")
+
+
 
 //            val camera = volumeManager.getScene()?.activeObserver ?: throw UnsupportedOperationException("No camera found")
             val camera = cam
@@ -402,23 +417,31 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             if(cnt < 20) {
 
                 logger.info(volumeManager.shaderProperties.keys.joinToString())
-                val vdiData = VDIData(subVDIDepthBuffer!!, subVDIColorBuffer!!, gridCellsBuff!!, VDIMetadata(
-                    projection = camera.spatial().projection,
-                    view = camera.spatial().getTransformation(),
-                    volumeDimensions = volumeDims,
-                    model = model,
-                    nw = volumeList.first().volumeManager.shaderProperties["nw"] as Float,
-                    windowDimensions = Vector2i(camera.width, camera.height)
-                ))
+//                val vdiData = VDIData(subVDIDepthBuffer!!, subVDIColorBuffer!!, gridCellsBuff!!, VDIMetadata(
 
-                val duration = measureNanoTime {
-                    val file = FileOutputStream(File("${dataset}vdidump$cnt"))
+                val total_duration = measureNanoTime {
+                    val vdiData = VDIData(
+                        VDIMetadata(
+                            projection = camera.spatial().projection,
+                            view = camera.spatial().getTransformation(),
+                            volumeDimensions = volumeDims,
+                            model = model,
+                            nw = volumeList.first().volumeManager.shaderProperties["nw"] as Float,
+                            windowDimensions = Vector2i(camera.width, camera.height)
+                        )
+                    )
+
+                    val duration = measureNanoTime {
+                        val file = FileOutputStream(File("${dataset}vdidump$cnt"))
 //                    val comp = GZIPOutputStream(file, 65536)
-                    VDIDataIO.write(vdiData, file)
-                    logger.info("written the dump")
-                    file.close()
+                        VDIDataIO.write(vdiData, file)
+                        logger.info("written the dump")
+                        file.close()
+                    }
+                    logger.info("time taken (uncompressed): ${duration}")
                 }
-                logger.info("time taken (uncompressed): ${duration * 10e-9}")
+
+                logger.info("total serialization duration: ${total_duration}")
 
                 var fileName = ""
                 if(world_abs) {
