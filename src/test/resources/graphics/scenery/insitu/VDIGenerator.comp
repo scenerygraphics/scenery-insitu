@@ -54,7 +54,7 @@ layout (set = 8, binding = 0, r32ui) uniform uimage3D OctreeCells;
 
 #pragma scenery endverbatim
 
-ivec2 debug_pixel = ivec2(832, 512);
+ivec2 debug_pixel = ivec2(516, 474);
 
 // intersect ray with a box
 // http://www.siggraph.org/education/materials/HyperGraph/raytrace/rtinter3.htm
@@ -162,9 +162,9 @@ void writeSupersegment(int index, float start, float end, vec4 color) {
 void update_cell_count(ivec3 cell) {
     uint ret = imageAtomicAdd(OctreeCells, cell, 1);
 
-    if(gl_GlobalInvocationID.xy == debug_pixel) {
-        debugPrintfEXT("Updated the cell: (%d, %d, %d). Value earlier: %d", cell.xyz, int(ret));
-    }
+//    if(cell.x == 128 && cell.y == 128) {
+//        debugPrintfEXT("Updated the cell: (%d, %d, %d). Value earlier: %d", cell.xyz, int(ret));
+//    }
 }
 
 int num_cells;
@@ -249,12 +249,12 @@ void main()
     vec4 wback = ipv * back;
     wback *= 1 / wback.w;
 
-    #if USE_PRINTF
-    if(gl_GlobalInvocationID.xy == debug_pixel) {
-        debugPrintfEXT("front: (%f, %f, %f, %f) back: (%f, %f, %f, %f).", front.xyzw, back.xyzw);
-        debugPrintfEXT("wfront: (%f, %f, %f, %f) wback: (%f, %f, %f, %f).", wfront.xyzw, wback.xyzw);
-    }
-    #endif
+//    #if USE_PRINTF
+//    if(gl_GlobalInvocationID.xy == debug_pixel) {
+//        debugPrintfEXT("front: (%f, %f, %f, %f) back: (%f, %f, %f, %f).", front.xyzw, back.xyzw);
+//        debugPrintfEXT("wfront: (%f, %f, %f, %f) wback: (%f, %f, %f, %f).", wfront.xyzw, wback.xyzw);
+//    }
+//    #endif
 
     // -- bounding box intersection for all volumes ----------
     float tnear = 1, tfar = 0, tmax = getMaxDepth( depthUV );
@@ -300,11 +300,11 @@ void main()
 //        :
         int ( trunc( ( tfar - tnear ) / nw + 1 ) );
 
-        #if USE_PRINTF
-        if(gl_GlobalInvocationID.xy == debug_pixel) {
-            debugPrintfEXT("tnear: %f, tfar: %f, nw: %f. numSteps: %d.", tnear, tfar, nw, numSteps);
-        }
-        #endif
+//        #if USE_PRINTF
+//        if(gl_GlobalInvocationID.xy == debug_pixel) {
+//            debugPrintfEXT("tnear: %f, tfar: %f, nw: %f. numSteps: %d.", tnear, tfar, nw, numSteps);
+//        }
+//        #endif
 
         float low_thresh = 0.0;
         float high_thresh = 1.732; //sq. root of 3
@@ -312,9 +312,8 @@ void main()
         bool final_generation_step = false;
         bool supsegs_written = false;
 
-        int desired_supsegs = 6;
-        int delta = 0; // up to delta supsegs less than max is acceptable
-        maxSupersegments = 6;
+        int desired_supsegs = maxSupersegments;
+        int delta = 3; // up to delta supsegs less than max is acceptable
 
         vec4 v = vec4( 0 );
 
@@ -353,6 +352,7 @@ void main()
             float ndc_step;
 
             int steps_in_supseg = 0;
+            int steps_trunc_trans = 0;
 
 //        step += nw + step * fwnw;
 //            step += nw; //TODO: correct this to start exactly at the near plane
@@ -405,11 +405,11 @@ void main()
                 wprev = wpos;
             }
 
-            #if USE_PRINTF
-            if(gl_GlobalInvocationID.xy == debug_pixel) {
-                debugPrintfEXT("Iteration: %d of searching for thresh. Low: %f, high: %f, mid: %f. Num terminations: %d", iter, low_thresh, high_thresh, mid_thresh, num_terminations);
-            }
-            #endif
+//            #if USE_PRINTF //TODO: check if the iterations are actually taking place and benchmark against fixed threshold
+//            if(gl_GlobalInvocationID.xy == debug_pixel) {
+//                debugPrintfEXT("Iteration: %d of searching for thresh. Low: %f, high: %f, mid: %f. Num terminations: %d", iter, low_thresh, high_thresh, mid_thresh, num_terminations);
+//            }
+//            #endif
 
             if(!supsegs_written) {
 
@@ -445,11 +445,11 @@ void main()
                 mid_thresh = (low_thresh + high_thresh) / 2.0;
             }
 
-            #if USE_PRINTF
-            if(gl_GlobalInvocationID.xy == debug_pixel && supsegs_written) {
-                debugPrintfEXT("Before applying the exponential, color was: (%f, %f, %f, %f)", v.rgba);
-            }
-            #endif
+//            #if USE_PRINTF
+//            if(gl_GlobalInvocationID.xy == debug_pixel && supsegs_written) {
+//                debugPrintfEXT("Before applying the exponential, color was: (%f, %f, %f, %f)", v.rgba);
+//            }
+//            #endif
 
             v.xyz = pow(v.xyz, vec3(1/2.2)); //TODO: remove
             FragColor = v;
