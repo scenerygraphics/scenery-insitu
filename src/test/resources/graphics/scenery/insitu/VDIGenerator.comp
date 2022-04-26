@@ -54,7 +54,7 @@ layout (set = 8, binding = 0, r32ui) uniform uimage3D OctreeCells;
 
 #pragma scenery endverbatim
 
-ivec2 debug_pixel = ivec2(516, 474);
+ivec2 debug_pixel = ivec2(503, 637);
 
 // intersect ray with a box
 // http://www.siggraph.org/education/materials/HyperGraph/raytrace/rtinter3.htm
@@ -162,24 +162,24 @@ void writeSupersegment(int index, float start, float end, vec4 color) {
 void update_cell_count(ivec3 cell) {
     uint ret = imageAtomicAdd(OctreeCells, cell, 1);
 
-//    if(cell.x == 128 && cell.y == 128) {
-//        debugPrintfEXT("Updated the cell: (%d, %d, %d). Value earlier: %d", cell.xyz, int(ret));
-//    }
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("Updated the cell: (%d, %d, %d). Prev value was: %u", cell.xyz, ret);
+    }
 }
 
-int num_cells;
+ivec3 num_cells;
 float near_plane = 0.1; //TODO: generalize
 float far_plane = 20.0;
 
 int findZInterval_view(float z_view) {
 
     float dist_from_front = abs(z_view - (-1 * near_plane));
-    float interval_size = ((far_plane - near_plane) / num_cells);
+    float interval_size = ((far_plane - near_plane) / num_cells.z);
     int interval_num = int(floor(dist_from_front / interval_size));
 
-    //    if(gl_GlobalInvocationID.xy == debug_pixel) {
-    //        debugPrintfEXT("for z_view: %f, dist_from_front: %f, interval size: %f, interval found is: %d", z_view, dist_from_front, interval_size, interval_num);
-    //    }
+        if(gl_GlobalInvocationID.xy == debug_pixel) {
+            debugPrintfEXT("for z_view: %f, dist_from_front: %f, interval size: %f, interval found is: %d", z_view, dist_from_front, interval_size, interval_num);
+        }
     return interval_num;
 }
 
@@ -215,12 +215,12 @@ void main()
     int windowWidth = imageCoords.b;
     int windowHeight = imageCoords.g;
 
-    num_cells = imageSize(OctreeCells).r;
+    num_cells = imageSize(OctreeCells).xyz;
 
 
     ivec3 grid_cell = ivec3(0);
-    grid_cell.x = int(floor((float(gl_GlobalInvocationID.x) / windowWidth) * num_cells));
-    grid_cell.y = int(floor((float(gl_GlobalInvocationID.y) / windowHeight) * num_cells));
+    grid_cell.x = int(floor((float(gl_GlobalInvocationID.x) / windowWidth) * num_cells.x));
+    grid_cell.y = int(floor((float(gl_GlobalInvocationID.y) / windowHeight) * num_cells.y));
 
     mat4 ipv = InverseViewMatrices[0] * InverseProjectionMatrix;
     mat4 pv = ProjectionMatrix * ViewMatrices[0];

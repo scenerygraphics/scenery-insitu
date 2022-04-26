@@ -268,11 +268,11 @@ if (vis && step > localNear && step < localFar)
             }
         }
 
-        #if USE_PRINTF
-        if(gl_GlobalInvocationID.xy == debug_pixel && thresh_found) {
-            debugPrintfEXT("Accumulated so far: within supseg: (%f, %f, %f, %f) overall: (%f, %f, %f, %f)", curV.rgba, v.rgba);
-        }
-        #endif
+//        #if USE_PRINTF
+//        if(gl_GlobalInvocationID.xy == debug_pixel && thresh_found) {
+//            debugPrintfEXT("Accumulated so far: within supseg: (%f, %f, %f, %f) overall: (%f, %f, %f, %f)", curV.rgba, v.rgba);
+//        }
+//        #endif
 //        }
 
 

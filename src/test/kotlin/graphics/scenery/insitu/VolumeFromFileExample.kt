@@ -53,12 +53,12 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
-    val generateVDIs = true
+    val generateVDIs = false
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
-    val dataset = "Stagbeetle"
-    val num_parts = 1
+    val dataset = "Stagbeetle_divided"
+    val num_parts = 2
     val volumeDims = Vector3f(832f, 832f, 494f)
     val is16bit = true
     val volumeList = ArrayList<BufferedVolume>()
@@ -180,8 +180,10 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                 MemoryUtil.memCalloc(0)
             }
 
-            val numGridCells = 2.0.pow(numOctreeLayers)
-            val lowestLevel = MemoryUtil.memCalloc(numGridCells.pow(3).toInt() * 4)
+//            val numGridCells = 2.0.pow(numOctreeLayers)
+            val numGridCells = Vector3f(windowWidth.toFloat() / 8f, windowHeight.toFloat() / 8f, maxSupersegments.toFloat())
+//            val numGridCells = Vector3f(256f, 256f, 256f)
+            val lowestLevel = MemoryUtil.memCalloc(numGridCells.x.toInt() * numGridCells.y.toInt() * numGridCells.z.toInt() * 4)
 
             val outputSubVDIColor: Texture
             val outputSubVDIDepth: Texture
@@ -210,7 +212,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                 volumeManager.material().textures["OutputSubVDIDepth"] = outputSubVDIDepth
             }
 
-            gridCells = Texture.fromImage(Image(lowestLevel, numGridCells.toInt(), numGridCells.toInt(), numGridCells.toInt()), channels = 1, type = UnsignedIntType(),
+            gridCells = Texture.fromImage(Image(lowestLevel, numGridCells.x.toInt(), numGridCells.y.toInt(), numGridCells.z.toInt()), channels = 1, type = UnsignedIntType(),
                 usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
             volumeManager.customTextures.add("OctreeCells")
             volumeManager.material().textures["OctreeCells"] = gridCells
@@ -221,7 +223,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             compute.setMaterial(ShaderMaterial(Shaders.ShadersFromFiles(arrayOf("GridCellsToZero.comp"), this@VolumeFromFileExample::class.java)))
 
             compute.metadata["ComputeMetadata"] = ComputeMetadata(
-                workSizes = Vector3i(numGridCells.toInt(), numGridCells.toInt(), 1),
+                workSizes = Vector3i(numGridCells.x.toInt(), numGridCells.y.toInt(), 1),
                 invocationType = InvocationType.Permanent
             )
 
@@ -301,6 +303,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 //            val temp = Vector3f(volumeList.lastOrNull()?.spatial()?.position?: Vector3f(0f)) - Vector3f(0f, 0f, (prev_slices/2f + current_slices/2f) * pixelToWorld)
             val temp = Vector3f(0f, 0f, -1.0f * (prevIndex) * pixelToWorld)
             volume.spatial().position = temp
+//            if(num_parts > 1) {
+//                volume.spatial().scale = Vector3f(1.0f, 1.0f, 2.0f)
+//            }
 //            }
             prevIndex += current_slices
             logger.info("volume slice $i position set to $temp")
