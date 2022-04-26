@@ -58,14 +58,19 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
     val colors32bit = true
     val world_abs = false
     val dataset = "Stagbeetle_divided"
-    val num_parts = 2
+//    val dataset = "Stagbeetle"
+    val num_parts = if(dataset.contains("divided")) {
+        2
+    } else {
+        1
+    }
     val volumeDims = Vector3f(832f, 832f, 494f)
     val is16bit = true
     val volumeList = ArrayList<BufferedVolume>()
     val cam: Camera = DetachedHeadCamera(hmd)
     val numOctreeLayers = 8
 
-    val closeAfter = 25000L
+    val closeAfter = 250000L
 
     /**
      * Reads raw volumetric data from a [file].
@@ -233,10 +238,15 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
         }
 
+        val origin = Box(Vector3f(0.1f))
+        origin.material().diffuse = Vector3f(1.0f, 0.0f, 0.0f)
+        scene.addChild(origin)
+
         with(cam) {
             spatial {
-                position = Vector3f(3.345E+0f, -8.651E-1f, -2.857E+0f)
-                rotation = Quaternionf(3.148E-2, -9.600E-1, -1.204E-1,  2.509E-1)
+//                position = Vector3f(3.345E+0f, -8.651E-1f, -2.857E+0f)
+            position = Vector3f(0.0f, 0.0f, 5.0f)
+//                rotation = Quaternionf(3.148E-2, -9.600E-1, -1.204E-1,  2.509E-1)
 //                position = Vector3f(5.436E+0f, -8.650E-1f, -7.923E-1f)
 //                rotation = Quaternionf(7.029E-2, -8.529E-1, -1.191E-1,  5.034E-1)
             }
@@ -301,7 +311,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 //            volume.spatial().position = Vector3f(2.0f, 6.0f, 4.0f - ((i - 1) * ((volumeDims.z / num_parts) * pixelToWorld)))
 //            if(i > 1) {
 //            val temp = Vector3f(volumeList.lastOrNull()?.spatial()?.position?: Vector3f(0f)) - Vector3f(0f, 0f, (prev_slices/2f + current_slices/2f) * pixelToWorld)
-            val temp = Vector3f(0f, 0f, -1.0f * (prevIndex) * pixelToWorld)
+            val temp = Vector3f(0f, 0f, 1.0f * (prevIndex) * pixelToWorld)
             volume.spatial().position = temp
 //            if(num_parts > 1) {
 //                volume.spatial().scale = Vector3f(1.0f, 1.0f, 2.0f)
@@ -321,6 +331,12 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
         scene.addChild(parent)
 
+        val pivot = Box(Vector3f(20.0f))
+        pivot.material().diffuse = Vector3f(0.0f, 1.0f, 0.0f)
+        pivot.spatial().position = Vector3f(volumeDims.x/2.0f, volumeDims.y/2.0f, volumeDims.z/2.0f)
+        parent.children.first().addChild(pivot)
+        parent.spatial().updateWorld(true)
+        cam.target = pivot.spatial().worldPosition(Vector3f(0.0f))
 
         val lights = (0 until 3).map {
             PointLight(radius = 15.0f)
