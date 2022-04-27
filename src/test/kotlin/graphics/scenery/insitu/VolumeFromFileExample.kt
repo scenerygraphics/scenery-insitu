@@ -276,6 +276,13 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                 addControlPoint(0.20f, 0.0f)
                 addControlPoint(0.25f, 0.2f)
                 addControlPoint(0.35f, 0.0f)
+            } else if (dataset == "Simulation") {
+                addControlPoint(0.0f, 0.0f)
+                addControlPoint(0.2f, 0.0f)
+                addControlPoint(0.4f, 0.4f)
+                addControlPoint(0.5f, 0.45f)
+                addControlPoint(0.6f, 0.0f)
+                addControlPoint(1.0f, 0.0f)
             } else {
                 logger.info("Using a standard transfer function")
                 TransferFunction.ramp(0.1f, 0.5f)
