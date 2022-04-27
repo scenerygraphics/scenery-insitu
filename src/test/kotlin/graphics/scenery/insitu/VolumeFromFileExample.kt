@@ -14,6 +14,7 @@ import graphics.scenery.utils.Image
 import graphics.scenery.utils.SystemHelpers
 import graphics.scenery.utils.extensions.minus
 import graphics.scenery.utils.extensions.plus
+import graphics.scenery.utils.extensions.times
 import graphics.scenery.volumes.*
 import graphics.scenery.volumes.vdi.VDIData
 import graphics.scenery.volumes.vdi.VDIDataIO
@@ -24,11 +25,13 @@ import net.imglib2.type.numeric.integer.UnsignedShortType
 import net.imglib2.type.numeric.real.FloatType
 import org.joml.*
 import org.lwjgl.system.MemoryUtil
+import org.scijava.ui.behaviour.ClickBehaviour
 import tpietzsch.shadergen.generate.SegmentTemplate
 import tpietzsch.shadergen.generate.SegmentType
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.lang.Math
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
@@ -58,16 +61,12 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
     val colors32bit = true
     val world_abs = false
     val dataset = "Stagbeetle_divided"
-//    val dataset = "Stagbeetle"
-    val num_parts = if(dataset.contains("divided")) {
-        2
-    } else {
-        1
-    }
+    val num_parts =  2
     val volumeDims = Vector3f(832f, 832f, 494f)
     val is16bit = true
     val volumeList = ArrayList<BufferedVolume>()
     val cam: Camera = DetachedHeadCamera(hmd)
+    var camTarget = Vector3f(0f)
     val numOctreeLayers = 8
 
     val closeAfter = 250000L
@@ -238,17 +237,11 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
         }
 
-        val origin = Box(Vector3f(0.1f))
-        origin.material().diffuse = Vector3f(1.0f, 0.0f, 0.0f)
-        scene.addChild(origin)
 
         with(cam) {
             spatial {
-//                position = Vector3f(3.345E+0f, -8.651E-1f, -2.857E+0f)
-            position = Vector3f(0.0f, 0.0f, 5.0f)
-//                rotation = Quaternionf(3.148E-2, -9.600E-1, -1.204E-1,  2.509E-1)
-//                position = Vector3f(5.436E+0f, -8.650E-1f, -7.923E-1f)
-//                rotation = Quaternionf(7.029E-2, -8.529E-1, -1.191E-1,  5.034E-1)
+                position = Vector3f(3.174E+0f, -1.326E+0f, -2.554E+0f)
+                rotation = Quaternionf(-1.276E-2,  9.791E-1,  6.503E-2, -1.921E-1)
             }
             perspectiveCamera(50.0f, windowWidth, windowHeight)
             cam.farPlaneDistance = 20.0f
@@ -328,6 +321,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
 //        parent.spatial().position = Vector3f(2.0f, 6.0f, 4.0f) - Vector3f(0.0f, 0.0f, volumeList.map { it.spatial().position.z }.sum()/2.0f)
         parent.spatial().position = Vector3f(0f)
+//        cam.spatial().position = Vector3f(0f)
 
         scene.addChild(parent)
 
@@ -337,6 +331,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
         parent.children.first().addChild(pivot)
         parent.spatial().updateWorld(true)
         cam.target = pivot.spatial().worldPosition(Vector3f(0.0f))
+        camTarget = pivot.spatial().worldPosition(Vector3f(0.0f))
+
+        logger.info("Setting target to: ${pivot.spatial().worldPosition(Vector3f(0.0f))}")
 
         val lights = (0 until 3).map {
             PointLight(radius = 15.0f)
@@ -355,20 +352,25 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             }
         }
 
-//        thread {
-//            while(true)
-//            {
-//                Thread.sleep(2000)
-//                println("${cam.spatial().position}")
-//                println("${cam.spatial().rotation}")
-//            }
-//        }
+        thread {
+            while(true)
+            {
+                Thread.sleep(2000)
+                println("${cam.spatial().position}")
+                println("${cam.spatial().rotation}")
+            }
+        }
         thread {
             Thread.sleep(closeAfter)
             renderer?.shouldClose = true
         }
 
     }
+//    override fun inputSetup() {
+//        super.inputSetup()
+//
+//
+//    }
 
     private fun manageVDIGeneration() {
         var subVDIDepthBuffer: ByteBuffer? = null
@@ -486,6 +488,23 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
     override fun inputSetup() {
         setupCameraModeSwitching()
+
+        inputHandler?.addBehaviour("rotate_camera", ClickBehaviour { _, _ ->
+            cam.targeted = true
+            val frameYaw = 10f / 180.0f * Math.PI.toFloat()
+            val framePitch = 0f
+
+            // first calculate the total rotation quaternion to be applied to the camera
+            val yawQ = Quaternionf().rotateXYZ(0.0f, frameYaw, 0.0f).normalize()
+            val pitchQ = Quaternionf().rotateXYZ(framePitch, 0.0f, 0.0f).normalize()
+
+            logger.info("cam target: ${cam.target}")
+
+            val distance = (camTarget - cam.spatial().position).length()
+            cam.spatial().rotation = pitchQ.mul(cam.spatial().rotation).mul(yawQ).normalize()
+            cam.spatial().position = camTarget + cam.forward * distance * (-1.0f)
+        })
+        inputHandler?.addKeyBinding("rotate_camera", "R")
     }
 
     companion object {
