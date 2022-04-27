@@ -332,10 +332,16 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
         scene.addChild(parent)
 
+        val middle_index = if(num_parts % 2 == 0) {
+            (num_parts / 2) - 1
+        } else {
+            (num_parts + 1) / 2 - 1
+        }
+
         val pivot = Box(Vector3f(20.0f))
         pivot.material().diffuse = Vector3f(0.0f, 1.0f, 0.0f)
         pivot.spatial().position = Vector3f(volumeDims.x/2.0f, volumeDims.y/2.0f, volumeDims.z/2.0f)
-        parent.children.first().addChild(pivot)
+        parent.children[middle_index].addChild(pivot)
         parent.spatial().updateWorld(true)
         cam.target = pivot.spatial().worldPosition(Vector3f(0.0f))
         camTarget = pivot.spatial().worldPosition(Vector3f(0.0f))
@@ -437,7 +443,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 //            val camera = volumeManager.getScene()?.activeObserver ?: throw UnsupportedOperationException("No camera found")
             val camera = cam
 
-            val model = volumeList.first().spatial().world
+            val model = volumeList.last().spatial().world
 
 //            val translated = Matrix4f(model).translate(Vector3f(-1f) * volumeList.first().spatial().worldPosition()).translate(volumeList.first().spatial().worldPosition())
 
