@@ -574,19 +574,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
         setupCameraModeSwitching()
 
         inputHandler?.addBehaviour("rotate_camera", ClickBehaviour { _, _ ->
-            cam.targeted = true
-            val frameYaw = 10f / 180.0f * Math.PI.toFloat()
-            val framePitch = 0f
-
-            // first calculate the total rotation quaternion to be applied to the camera
-            val yawQ = Quaternionf().rotateXYZ(0.0f, frameYaw, 0.0f).normalize()
-            val pitchQ = Quaternionf().rotateXYZ(framePitch, 0.0f, 0.0f).normalize()
-
-            logger.info("cam target: ${cam.target}")
-
-            val distance = (camTarget - cam.spatial().position).length()
-            cam.spatial().rotation = pitchQ.mul(cam.spatial().rotation).mul(yawQ).normalize()
-            cam.spatial().position = camTarget + cam.forward * distance * (-1.0f)
+            rotateCamera(10f)
         })
         inputHandler?.addKeyBinding("rotate_camera", "R")
     }
