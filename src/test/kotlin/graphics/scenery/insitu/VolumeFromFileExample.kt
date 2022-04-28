@@ -287,9 +287,14 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             } else if (dataset == "Simulation") {
                 addControlPoint(0.0f, 0.0f)
                 addControlPoint(0.2f, 0.0f)
-                addControlPoint(0.4f, 0.4f)
-                addControlPoint(0.5f, 0.45f)
-                addControlPoint(0.6f, 0.0f)
+                addControlPoint(0.4f, 0.0f)
+                addControlPoint(0.45f, 0.1f)
+                addControlPoint(0.5f, 0.10f)
+                addControlPoint(0.55f, 0.1f)
+                addControlPoint(0.85f, 0.5f)
+                addControlPoint(0.87f, 0.05f)
+                addControlPoint(0.9f, 0.05f)
+                addControlPoint(0.91f, 0.0f)
                 addControlPoint(1.0f, 0.0f)
             } else {
                 logger.info("Using a standard transfer function")
@@ -312,6 +317,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             volume.colormap = Colormap.get("hot")
             volume.origin = Origin.FrontBottomLeft
             val source = (volume.ds.sources[0].spimSource as TransformedSource).wrappedSource as? BufferSource<*>
+            //volume.converterSetups.first().setDisplayRange(10.0, 220.0)
             current_slices = source!!.depth.toFloat()
             logger.info("current slices: $current_slices")
             volume.pixelToWorldRatio = pixelToWorld
