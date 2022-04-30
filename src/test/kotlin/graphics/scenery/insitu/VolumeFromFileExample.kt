@@ -71,7 +71,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
     var camTarget = Vector3f(0f)
     val numOctreeLayers = 8
     val maxSupersegments = 20
-    var benchmarking = true
+    var benchmarking = false
     val viewNumber = 1
 
     val closeAfter = 250000L
@@ -240,6 +240,26 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
             scene.addChild(compute)
 
+        } else {
+            val volumeManager = VolumeManager(hub,
+                useCompute = true,
+                customSegments = hashMapOf(
+                    SegmentType.FragmentShader to SegmentTemplate(
+                        this.javaClass,
+                        "ComputeRaycast.comp",
+                        "intersectBoundingBox", "vis", "localNear", "localFar", "SampleVolume", "Convert", "Accumulate"),
+                ))
+            volumeManager.customTextures.add("OutputRender")
+
+            val outputBuffer = MemoryUtil.memCalloc(windowWidth*windowHeight*4)
+            val outputTexture = Texture.fromImage(Image(outputBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
+            volumeManager.material().textures["OutputRender"] = outputTexture
+
+            hub.add(volumeManager)
+
+            val plane = FullscreenObject()
+            scene.addChild(plane)
+            plane.material().textures["diffuse"] = volumeManager.material().textures["OutputRender"]!!
         }
 
 
