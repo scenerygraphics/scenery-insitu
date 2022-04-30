@@ -268,8 +268,14 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                 position = Vector3f(3.174E+0f, -1.326E+0f, -2.554E+0f)
                 rotation = Quaternionf(-1.276E-2,  9.791E-1,  6.503E-2, -1.921E-1)
 
-                position = Vector3f(4.004E+0f, -1.398E+0f, -2.170E+0f) //this is the actual 0 degree
-                rotation = Quaternionf(-1.838E-2,  9.587E-1,  6.367E-2, -2.767E-1)
+                position = Vector3f(-2.607E+0f, -5.973E-1f,  2.415E+0f) // V1 for Beechnut
+                rotation = Quaternionf(-9.418E-2, -7.363E-1, -1.048E-1, -6.618E-1)
+//
+//                position = Vector3f(4.908E+0f, -4.931E-1f, -2.563E+0f) //V1 for Simulation
+//                rotation = Quaternionf( 3.887E-2, -9.470E-1, -1.255E-1,  2.931E-1)
+//
+//                position = Vector3f( 4.622E+0f, -9.060E-1f, -1.047E+0f) //V1 for kingsnake
+//                rotation = Quaternionf( 5.288E-2, -9.096E-1, -1.222E-1,  3.936E-1)
             }
             perspectiveCamera(50.0f, windowWidth, windowHeight)
             cam.farPlaneDistance = 20.0f
@@ -311,9 +317,11 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                 addControlPoint(0.45f, 0.1f)
                 addControlPoint(0.5f, 0.10f)
                 addControlPoint(0.55f, 0.1f)
-                addControlPoint(0.85f, 0.5f)
-                addControlPoint(0.87f, 0.05f)
-                addControlPoint(0.9f, 0.05f)
+                addControlPoint(0.83f, 0.1f)
+                addControlPoint(0.86f, 0.4f)
+                addControlPoint(0.88f, 0.7f)
+//                addControlPoint(0.87f, 0.05f)
+                addControlPoint(0.9f, 0.00f)
                 addControlPoint(0.91f, 0.0f)
                 addControlPoint(1.0f, 0.0f)
             } else {
@@ -435,14 +443,14 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             Thread.sleep(200)
         }
 
-        val rotationInterval = 10f
+        val rotationInterval = 5f
         var totalRotation = 0f
 
-        for(i in 1..4) {
+        for(i in 1..9) {
             val path = "benchmarking/${dataset}/View${viewNumber}/volume_rendering/reference${windowWidth}_${windowHeight}_${totalRotation.toInt()}"
             // take screenshot and wait for async writing
             r.screenshot("$path.png")
-            Thread.sleep(1000L)
+            Thread.sleep(2000L)
             stats.clear("Renderer.fps")
 
             // collect data for a few secs
@@ -452,7 +460,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             val fps = stats.get("Renderer.fps")!!
             File("$path.csv").writeText("${fps.avg()};${fps.min()};${fps.max()};${fps.stddev()};${fps.data.size}")
 
-            rotateCamera(10f)
+            rotateCamera(rotationInterval)
             totalRotation = i * rotationInterval
         }
     }
