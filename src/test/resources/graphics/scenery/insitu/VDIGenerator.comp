@@ -38,7 +38,7 @@ layout(push_constant) uniform currentEye_t {
 
 #define SEPARATE_DEPTH 1
 #define WORLD_ABS 0
-#define INT_DEPTHS 1
+#define INT_DEPTHS 0
 
 #define USE_PRINTF 1
 
@@ -49,12 +49,12 @@ layout(push_constant) uniform currentEye_t {
 layout(local_size_x = 15, local_size_y = 15) in; //TODO: change to 16x16
 layout(set = 2, binding = 0) uniform sampler3D volumeCache;
 layout(set = 3, binding = 0, rgba32f) uniform image3D OutputSubVDIColor;
-layout(set = 4, binding = 0, rg16ui) uniform uimage3D OutputSubVDIDepth;
+layout(set = 4, binding = 0, r32f) uniform image3D OutputSubVDIDepth;
 layout (set = 8, binding = 0, r32ui) uniform uimage3D OctreeCells;
 
 #pragma scenery endverbatim
 
-ivec2 debug_pixel = ivec2(503, 637);
+ivec2 debug_pixel = ivec2(640, 360);
 
 // intersect ray with a box
 // http://www.siggraph.org/education/materials/HyperGraph/raytrace/rtinter3.htm
@@ -136,11 +136,11 @@ vec4 encode(float x, float y){
 
 #if INT_DEPTHS
 void writeSupersegment(int index, uint start, uint end, vec4 color) {
-    #if USE_PRINTF
-    if(gl_GlobalInvocationID.xy == debug_pixel) {
-        debugPrintfEXT("Writing supseg: %d. Start: %u, end: %u, color: (%f, %f, %f, %f)", index, start, end, color.rgba);
-    }
-    #endif
+//    #if USE_PRINTF
+//    if(gl_GlobalInvocationID.xy == debug_pixel) {
+//        debugPrintfEXT("Writing supseg: %d. Start: %u, end: %u, color: (%f, %f, %f, %f)", index, start, end, color.rgba);
+//    }
+//    #endif
 
 
     #if SEPARATE_DEPTH
@@ -150,6 +150,11 @@ void writeSupersegment(int index, uint start, uint end, vec4 color) {
 }
 #else
 void writeSupersegment(int index, float start, float end, vec4 color) {
+    #if USE_PRINTF
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("Writing supseg: %d. Start: %f, end: %f, color: (%f, %f, %f, %f)", index, start, end, color.rgba);
+    }
+    #endif
 
     #if SEPARATE_DEPTH
     imageStore(OutputSubVDIDepth, ivec3(2 * index, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(start, 0, 0, 0));
@@ -162,9 +167,9 @@ void writeSupersegment(int index, float start, float end, vec4 color) {
 void update_cell_count(ivec3 cell) {
     uint ret = imageAtomicAdd(OctreeCells, cell, 1);
 
-    if(gl_GlobalInvocationID.xy == debug_pixel) {
-        debugPrintfEXT("Updated the cell: (%d, %d, %d). Prev value was: %u", cell.xyz, ret);
-    }
+//    if(gl_GlobalInvocationID.xy == debug_pixel) {
+//        debugPrintfEXT("Updated the cell: (%d, %d, %d). Prev value was: %u", cell.xyz, ret);
+//    }
 }
 
 ivec3 num_cells;
@@ -177,9 +182,9 @@ int findZInterval_view(float z_view) {
     float interval_size = ((far_plane - near_plane) / num_cells.z);
     int interval_num = int(floor(dist_from_front / interval_size));
 
-        if(gl_GlobalInvocationID.xy == debug_pixel) {
-            debugPrintfEXT("for z_view: %f, dist_from_front: %f, interval size: %f, interval found is: %d", z_view, dist_from_front, interval_size, interval_num);
-        }
+//        if(gl_GlobalInvocationID.xy == debug_pixel) {
+//            debugPrintfEXT("for z_view: %f, dist_from_front: %f, interval size: %f, interval found is: %d", z_view, dist_from_front, interval_size, interval_num);
+//        }
     return interval_num;
 }
 
@@ -300,11 +305,11 @@ void main()
 //        :
         int ( trunc( ( tfar - tnear ) / nw + 1 ) );
 
-//        #if USE_PRINTF
-//        if(gl_GlobalInvocationID.xy == debug_pixel) {
-//            debugPrintfEXT("tnear: %f, tfar: %f, nw: %f. numSteps: %d.", tnear, tfar, nw, numSteps);
-//        }
-//        #endif
+        #if USE_PRINTF
+        if(gl_GlobalInvocationID.xy == debug_pixel) {
+            debugPrintfEXT("tnear: %f, tfar: %f, nw: %f. numSteps: %d.", tnear, tfar, nw, numSteps);
+        }
+        #endif
 
         float low_thresh = 0.0;
         float high_thresh = 1.732; //sq. root of 3
@@ -405,11 +410,11 @@ void main()
                 wprev = wpos;
             }
 
-//            #if USE_PRINTF //TODO: check if the iterations are actually taking place and benchmark against fixed threshold
-//            if(gl_GlobalInvocationID.xy == debug_pixel) {
-//                debugPrintfEXT("Iteration: %d of searching for thresh. Low: %f, high: %f, mid: %f. Num terminations: %d", iter, low_thresh, high_thresh, mid_thresh, num_terminations);
-//            }
-//            #endif
+            #if USE_PRINTF //TODO: check if the iterations are actually taking place and benchmark against fixed threshold
+            if(gl_GlobalInvocationID.xy == debug_pixel) {
+                debugPrintfEXT("Iteration: %d of searching for thresh. Low: %f, high: %f, mid: %f. Num terminations: %d", iter, low_thresh, high_thresh, mid_thresh, num_terminations);
+            }
+            #endif
 
             if(!supsegs_written) {
 
@@ -467,7 +472,12 @@ void main()
             for(int i = supersegmentNum; i < maxSupersegments; i++) {
 #if SEPARATE_DEPTH
                 imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                #if INT_DEPTHS
                 imageStore(OutputSubVDIDepth, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), uvec4(0));
+                #else
+                imageStore(OutputSubVDIDepth, ivec3(i*2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIDepth, ivec3(i*2+1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                #endif
 #endif
             }
         }
@@ -477,7 +487,12 @@ void main()
             for(int i = supersegmentNum; i < maxSupersegments; i++) {
 #if SEPARATE_DEPTH
                 imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                #if INT_DEPTHS
                 imageStore(OutputSubVDIDepth, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), uvec4(0));
+                #else
+                imageStore(OutputSubVDIDepth, ivec3(i*2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                imageStore(OutputSubVDIDepth, ivec3(i*2+1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+                #endif
 #endif
             }
         }
