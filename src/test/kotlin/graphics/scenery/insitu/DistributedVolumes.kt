@@ -4,6 +4,7 @@ import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.backends.Shaders
 import graphics.scenery.backends.vulkan.VulkanRenderer
+import graphics.scenery.backends.vulkan.VulkanTexture
 import graphics.scenery.compute.ComputeMetadata
 import graphics.scenery.compute.InvocationType
 import graphics.scenery.controls.TrackedStereoGlasses
@@ -18,10 +19,7 @@ import net.imglib2.type.numeric.integer.UnsignedByteType
 import net.imglib2.type.numeric.integer.UnsignedIntType
 import net.imglib2.type.numeric.integer.UnsignedShortType
 import net.imglib2.type.numeric.real.FloatType
-import org.joml.Quaternionf
-import org.joml.Vector2i
-import org.joml.Vector3f
-import org.joml.Vector3i
+import org.joml.*
 import org.lwjgl.system.MemoryUtil
 import org.scijava.ui.behaviour.ClickBehaviour
 import tpietzsch.shadergen.generate.SegmentTemplate
@@ -38,6 +36,11 @@ import kotlin.concurrent.thread
 import kotlin.streams.toList
 import kotlin.system.measureNanoTime
 
+class CompositorNode : RichNode() {
+    @ShaderProperty
+    var doComposite = false
+}
+
 class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth = 1280, windowHeight = 720, wantREPL = false) {
 //    lateinit var data: ArrayList<ByteBuffer?>
     var volumes: HashMap<Int, BufferedVolume?> = java.util.HashMap()
@@ -48,7 +51,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
-    val compositor = RichNode()
+    val compositor = CompositorNode()
     val generateVDIs = true
     val separateDepth = true
     val colors32bit = true
@@ -315,7 +318,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             raycastShader = "VDIGenerator.comp"
             accumulateShader = "AccumulateVDI.comp"
             compositeShader = "AlphaCompositor.comp"
-            val volumeManager = VolumeManager(hub,
+            volumeManager = VolumeManager(hub,
                 useCompute = true,
                 customSegments = hashMapOf(
                     SegmentType.FragmentShader to SegmentTemplate(
@@ -357,8 +360,10 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         compositor.metadata["ComputeMetadata"] = ComputeMetadata(
             workSizes = Vector3i(windowHeight, windowWidth/commSize, 1)
         )
-        compositor.visible = true
+        compositor.visible = false
         scene.addChild(compositor)
+
+        volumeManager.shaderProperties["doGeneration"] = true
     }
 
     override fun init() {
@@ -378,17 +383,6 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             scene.addChild(this)
         }
 
-//        val shell = Box(Vector3f(10.0f, 10.0f, 10.0f), insideNormals = true)
-//        shell.material {
-//            cullingMode = Material.CullingMode.None
-//            diffuse = Vector3f(0.2f, 0.2f, 0.2f)
-//            specular = Vector3f(0.0f)
-//            ambient = Vector3f(0.0f)
-//        }
-//        scene.addChild(shell)
-
-//        addVolume(0, intArrayOf(200, 200, 200), floatArrayOf(0f, 0f, -3.5f))
-
         val lights = (0 until 3).map {
             PointLight(radius = 15.0f)
         }
@@ -400,30 +394,10 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             scene.addChild(light)
         }
 
-//        while(!volumesCreated) {
-//            Thread.sleep(50)
-//        }
-
         logger.info("Exiting init function!")
         thread {
             if(generateVDIs) {
                 manageVDIGeneration()
-            }
-        }
-
-        (renderer as VulkanRenderer).postRenderLambdas.add {
-            if(runGeneration) {
-                vdisGenerated.incrementAndGet()
-                runGeneration = false
-            }
-            if(runCompositing) {
-                vdisComposited.incrementAndGet()
-                runCompositing = false
-                runGeneration = true
-            }
-
-            if(vdisDistributed.get() > vdisComposited.get()) {
-                runCompositing = true
             }
         }
     }
@@ -542,6 +516,22 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         renderer?.shouldClose = true
     }
 
+    fun fetchTexture(texture: Texture) : Int {
+        val ref = VulkanTexture.getReference(texture)
+        val buffer = texture.contents ?: return -1
+
+        if(ref != null) {
+            val start = System.nanoTime()
+            ref.copyTo(buffer)
+            val end = System.nanoTime()
+            logger.debug("The request textures of size ${texture.contents?.remaining()?.toFloat()?.div((1024f*1024f))} took: ${(end.toDouble()-start.toDouble())/1000000.0}")
+        } else {
+            logger.error("In fetchTexture: Texture not accessible")
+        }
+
+        return 0
+    }
+
     private fun manageVDIGeneration() {
         var subVDIDepthBuffer: ByteBuffer? = null
         var subVDIColorBuffer: ByteBuffer?
@@ -565,39 +555,70 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             }
         val compositedDepth = compositor.material().textures["CompositedVDIDepth"]!!
 
-        val c1 = AtomicInteger(0)
-        val c2 = AtomicInteger(0)
-        val c3 = AtomicInteger(0)
-        val c4 = AtomicInteger(0)
+        (renderer as VulkanRenderer).postRenderLambdas.add {
+            if(runGeneration) {
 
-        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (colorTexture to c1)
+                val col = fetchTexture(colorTexture)
+                val depth = if(separateDepth) {
+                    fetchTexture(depthTexture)
+                } else {
+                    0
+                }
 
-        if(separateDepth) {
-            (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (depthTexture to c2)
+                if(col < 0) {
+                    logger.error("Error fetching the color subVDI!!")
+                }
+                if(depth < 0) {
+                    logger.error("Error fetching the depth subVDI!!")
+                }
+
+                vdisGenerated.incrementAndGet()
+                runGeneration = false
+            }
+            if(runCompositing) {
+
+                val col = fetchTexture(compositedColor)
+                val depth = if(separateDepth) {
+                    fetchTexture(compositedDepth)
+                } else {
+                    0
+                }
+
+                if(col < 0) {
+                    logger.error("Error fetching the color compositedVDI!!")
+                }
+                if(depth < 0) {
+                    logger.error("Error fetching the depth compositedVDI!!")
+                }
+
+                vdisComposited.incrementAndGet()
+                runCompositing = false
+                runGeneration = true
+            }
+
+            if(vdisDistributed.get() > vdisComposited.get()) {
+                runCompositing = true
+            }
         }
 
-        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (compositedColor to c3)
+        (renderer as VulkanRenderer).postRenderLambdas.add {
+            compositor.doComposite = runCompositing
+            volumeManager.shaderProperties["doGeneration"] = runGeneration
+        }
 
-        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (compositedDepth to c4)
-
-        var prevC1 = c1.get()
-        var prevC2 = c2.get()
-
-        var prevC3 = c3.get()
-        var prevC4 = c4.get()
+        var generatedSoFar = 0
+        var compositedSoFar = 0
 
         dataset += "_${commSize}_${rank}"
 
         while(true) {
-            while((c1.get() == prevC1) || (c2.get() == prevC2)) {
+            while((vdisGenerated.get() <= generatedSoFar)) {
                 Thread.sleep(5)
             }
 
-            logger.warn("C1: Previous value was: $prevC1 and the new value is ${c1.get()}")
-            logger.warn("C2: Previous value was: $prevC2 and the new value is ${c2.get()}")
+            logger.warn("C1: vdis generated so far: $generatedSoFar and the new value of vdisgenerated: ${vdisGenerated.get()}")
 
-            prevC1 = c1.get()
-            prevC2 = c2.get()
+            generatedSoFar = vdisGenerated.get()
 
             subVDIColorBuffer = colorTexture.contents
             if(separateDepth) {
@@ -606,12 +627,6 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             compositedVDIColorBuffer = compositedColor.contents
             compositedVDIDepthBuffer = compositedDepth.contents
 
-//            if(saveFiles) {
-//                logger.info("Dumping to file")
-//                SystemHelpers.dumpToFile(subVDIColorBuffer!!, "$rank:textureSubCol-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
-////                SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "$rank:textureSubDepth-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
-//                logger.info("File dumped")
-//            }
 
             if(subVDIColorBuffer == null || subVDIDepthBuffer == null) {
                 logger.info("CALLING DISTRIBUTE EVEN THOUGH THE BUFFERS ARE NULL!!")
@@ -622,34 +637,28 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
             logger.info("Back in the management function")
 
-            while((c3.get() == prevC3) || (c4.get() == prevC4)) {
+            while(vdisComposited.get() <= compositedSoFar) {
                 Thread.sleep(5)
             }
-
-            logger.warn("C3: Previous value was: $prevC3 and the new value is ${c3.get()}")
-            logger.warn("C4: Previous value was: $prevC4 and the new value is ${c4.get()}")
-
-            prevC3 = c3.get()
-            prevC4 = c4.get()
+            compositedSoFar = vdisComposited.get()
 
             //fetch the composited VDI
 
-//            if(saveFiles) {
-//                logger.info("Dumping to file")
-//                SystemHelpers.dumpToFile(compositedVDIColorBuffer!!, "$rank:textureCompCol-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
-////                SystemHelpers.dumpToFile(compositedVDIDepthBuffer!!, "$rank:textureCompDepth-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
-//                logger.info("File dumped")
-//            }
+            if(compositedVDIColorBuffer == null || compositedVDIDepthBuffer == null) {
+                logger.info("CALLING GATHER EVEN THOUGH THE BUFFER(S) ARE NULL!!")
+            }
 
-            gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, windowHeight * windowWidth * maxOutputSupersegments * 4 * numLayers/ commSize, 0,
+            logger.info("Allocation b1 of capacity: ${compositedVDIColorBuffer!!.capacity()}")
+            val b1 = ByteBuffer.allocateDirect(compositedVDIColorBuffer!!.capacity())
+
+            logger.info("Allocation b2 of capacity: ${compositedVDIDepthBuffer!!.capacity()}")
+            val b2 = ByteBuffer.allocateDirect(compositedVDIDepthBuffer!!.capacity())
+
+            gatherCompositedVDIs(b1, b2, windowHeight * windowWidth * maxOutputSupersegments * 4 * numLayers/ commSize, 0,
                 rank, commSize, gatherColorPointer, gatherDepthPointer, mpiPointer) //3 * commSize because the supersegments here contain only 1 element
 
             logger.info("Back in the management function after gathering and streaming")
             Thread.sleep(2000)
-
-//            compositedVDIColorBuffer = null
-
-//            saveFiles = false
         }
     }
 
@@ -710,6 +719,8 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             compositor.material().textures["VDIsDepth"] = Texture(Vector3i(windowHeight, windowWidth, 1), 4, contents = vdiSetDepth, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
         }
         logger.info("Updated the textures to be composited")
+
+        vdisDistributed.incrementAndGet()
 
 //        compute.visible = true
     }
