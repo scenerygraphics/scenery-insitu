@@ -1,4 +1,10 @@
 #version 450
+#extension GL_EXT_debug_printf : enable
+#define USE_PRINTF 1
+
+//layout(set = 4, binding = 0) uniform ShaderProperties {
+//    bool doComposite;
+//};
 
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 layout (set = 0, binding = 0, rgba32f) uniform readonly image3D VDIsColor;
@@ -31,6 +37,19 @@ float DecodeFloatRGBA (vec4 v) {
 
 
 void main() {
+
+    ivec2 debug_pixel = ivec2(630, 360);
+
+    #if USE_PRINTF
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("Hello World!");
+    }
+    #endif
+
+//    if(!doComposite) {
+//        return;
+//    }
+
     ivec3 imageCoords  = imageSize(VDIsColor);
     int numInputSupersegments = imageCoords.r;
 
@@ -43,6 +62,12 @@ void main() {
 
     ivec3 opImageCoords  = imageSize(CompositedVDIColor);
     int numOutputSupersegments = opImageCoords.x;
+
+    #if USE_PRINTF
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("Op image coords are: (%d, %d, %d)", opImageCoords.xyz);
+    }
+    #endif
 
 //    int numProcesses = opImageCoords.g / opImageCoords.b; //TODO: generalize for non square images
     int numProcesses = 2;
@@ -72,29 +97,42 @@ void main() {
                 continue;
             }
 
-            float curStartDepth = imageLoad(VDIsDepth, ivec3(frontSupersegment[j], gl_GlobalInvocationID.x, j * opImageCoords.b + gl_GlobalInvocationID.y)).r;
+            float curStartDepth = imageLoad(VDIsDepth, ivec3(frontSupersegment[j] * 2, gl_GlobalInvocationID.y, j * opImageCoords.z + gl_GlobalInvocationID.x)).x;
+
+            #if USE_PRINTF
+            if(gl_GlobalInvocationID.xy == debug_pixel) {
+                debugPrintfEXT("For output supseg: %d, loaded start depth: %f from supseg: %d of process: %d", i, curStartDepth, frontSupersegment[j], j);
+                debugPrintfEXT("Indexes used for fetching were: y: %d and z: %d", gl_GlobalInvocationID.y, j * opImageCoords.z + gl_GlobalInvocationID.x);
+            }
+            #endif
 
             if(curStartDepth < lowDepth && curStartDepth != 0) { //todo: improve empty detection
                 lowDepth = curStartDepth;
                 lowIndex = j;
                 startDepth = curStartDepth;
-                endDepth = imageLoad(VDIsDepth, ivec3(frontSupersegment[j], gl_GlobalInvocationID.x, j * opImageCoords.b + gl_GlobalInvocationID.y)).g;
-                colour = imageLoad(VDIsColor, ivec3(frontSupersegment[j], gl_GlobalInvocationID.x, j * opImageCoords.b + gl_GlobalInvocationID.y)).rgba;
+                endDepth = imageLoad(VDIsDepth, ivec3(frontSupersegment[j] * 2 + 1, gl_GlobalInvocationID.y, j * opImageCoords.z + gl_GlobalInvocationID.x)).x;
+                colour = imageLoad(VDIsColor, ivec3(frontSupersegment[j], gl_GlobalInvocationID.y, j * opImageCoords.z + gl_GlobalInvocationID.x)).rgba;
             }
         }
 
-        imageStore(CompositedVDIDepth, ivec3(2 * i, gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(startDepth, 0, 0, 0));
-        imageStore(CompositedVDIDepth, ivec3(2 * i + 1, gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(endDepth, 0, 0, 0));
-        imageStore(CompositedVDIColor, ivec3(i, gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), colour);
+        #if USE_PRINTF
+        if(gl_GlobalInvocationID.xy == debug_pixel) {
+            debugPrintfEXT("The %d th supseg has: start: %f, end: %f", i, startDepth, endDepth);
+        }
+        #endif
+
+        imageStore(CompositedVDIDepth, ivec3(2 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(startDepth, 0, 0, 0));
+        imageStore(CompositedVDIDepth, ivec3(2 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(endDepth, 0, 0, 0));
+        imageStore(CompositedVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), colour);
         if(lowIndex != -1) {
             frontSupersegment[lowIndex]++;
         }
 
         if((numInputSupersegments * numProcesses) <= i) {
             //If this o/p supersegment could not be written to due to insufficient inputs, make it 0
-            imageStore(CompositedVDIDepth, ivec3(2 * i, gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(0));
-            imageStore(CompositedVDIDepth, ivec3(2 * i + 1, gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(0));
-            imageStore(CompositedVDIColor, ivec3(i, gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(0));
+            imageStore(CompositedVDIDepth, ivec3(2 * i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+            imageStore(CompositedVDIDepth, ivec3(2 * i + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+            imageStore(CompositedVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
         }
 
     }
