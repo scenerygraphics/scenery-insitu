@@ -18,10 +18,7 @@ import net.imglib2.type.numeric.integer.UnsignedByteType
 import net.imglib2.type.numeric.integer.UnsignedIntType
 import net.imglib2.type.numeric.integer.UnsignedShortType
 import net.imglib2.type.numeric.real.FloatType
-import org.joml.Quaternionf
-import org.joml.Vector2i
-import org.joml.Vector3f
-import org.joml.Vector3i
+import org.joml.*
 import org.lwjgl.system.MemoryUtil
 import org.scijava.ui.behaviour.ClickBehaviour
 import tpietzsch.shadergen.generate.SegmentTemplate
@@ -38,17 +35,45 @@ import kotlin.concurrent.thread
 import kotlin.streams.toList
 import kotlin.system.measureNanoTime
 
+class CustomNode : RichNode() {
+    @ShaderProperty
+    var ProjectionOriginal = Matrix4f()
+
+    @ShaderProperty
+    var invProjectionOriginal = Matrix4f()
+
+    @ShaderProperty
+    var ViewOriginal = Matrix4f()
+
+    @ShaderProperty
+    var invViewOriginal = Matrix4f()
+
+    @ShaderProperty
+    var nw = 0f
+}
+
 class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth = 1280, windowHeight = 720, wantREPL = false) {
-//    lateinit var data: ArrayList<ByteBuffer?>
+
+    private val vulkanProjectionFix =
+        Matrix4f(
+            1.0f,  0.0f, 0.0f, 0.0f,
+            0.0f, -1.0f, 0.0f, 0.0f,
+            0.0f,  0.0f, 0.5f, 0.0f,
+            0.0f,  0.0f, 0.5f, 1.0f)
+
+    fun Matrix4f.applyVulkanCoordinateSystem(): Matrix4f {
+        val m = Matrix4f(vulkanProjectionFix)
+        m.mul(this)
+
+        return m
+    }
+
     var volumes: HashMap<Int, BufferedVolume?> = java.util.HashMap()
-//    lateinit var positions: ArrayList<Vector3f> //origins
-//    lateinit var sizes: ArrayList<Array<Int>>
-//
 
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
-    val compositor = RichNode()
+    val compositor = CustomNode()
     val generateVDIs = true
     val separateDepth = true
     val colors32bit = true
@@ -56,7 +81,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     val cam: Camera = DetachedHeadCamera(hmd)
 
     val maxSupersegments = 20
-    var maxOutputSupersegments = 40
+    var maxOutputSupersegments = 20
     var numLayers = 0
 
     var commSize = 1
@@ -65,6 +90,9 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     val volumeDims = Vector3f(832f, 832f, 494f)
     var dataset = "DistributedStagbeetle"
     var cnt_distr = 0
+    var cnt_sub = 0
+    var isCluster = false
+    var basePath = ""
     var rendererConfigured = false
 
     var mpiPointer = 0L
@@ -84,27 +112,6 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     var runCompositing = false
 
     val colorMap = Colormap.get("hot")
-//    val pixelToWorld = 0.02f
-
-//    @Suppress("unused")
-//    fun updateData(grid: ByteBuffer, origin: IntArray, gridDims: IntArray) {
-//            data.add(grid)
-//            logger.info("Updated bytebuffer")
-//            positions.add(Vector3f(origin[0].toFloat(), origin[1].toFloat(), origin[2].toFloat()))
-//            logger.info("Updated origin")
-//            sizes.add(arrayOf(
-//                gridDims[i*6+0], gridDims[i*6+1], gridDims[i*6+2], // starting position of grid
-//                gridDims[i*6+3], gridDims[i*6+4], gridDims[i*6+5])) // end coordinate of grid
-//            logger.info("Updated grid dims")
-//            allGridDomains[partnerNo]?.add(arrayOf(
-//                domainDims[i*6+0], domainDims[i*6+1], domainDims[i*6+2], // starting position of domain
-//                domainDims[i*6+3], domainDims[i*6+4], domainDims[i*6+5])) // end coordinate of domain
-//            logger.info("Updated domaindims")
-//
-//        lock.lock()
-//        numUpdated++
-//        lock.unlock()
-//    }
 
     var dims = Vector3i(0)
 
@@ -150,15 +157,12 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         }
 
 
-//        volume.transferFunction = TransferFunction.ramp(0.1f, 0.5f)
         volume.transferFunction = tf
 
         scene.addChild(volume)
 
         volumes[volumeID] = volume
 
-//        val volumeBuffer = bufferFromPath(Paths.get(getDemoFilesPath() + "/volumes/box-iso/"))
-//        updateVolume(0, volumeBuffer)
 
         volumesCreated = true
     }
@@ -411,21 +415,21 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             }
         }
 
-        (renderer as VulkanRenderer).postRenderLambdas.add {
-            if(runGeneration) {
-                vdisGenerated.incrementAndGet()
-                runGeneration = false
-            }
-            if(runCompositing) {
-                vdisComposited.incrementAndGet()
-                runCompositing = false
-                runGeneration = true
-            }
-
-            if(vdisDistributed.get() > vdisComposited.get()) {
-                runCompositing = true
-            }
-        }
+//        (renderer as VulkanRenderer).postRenderLambdas.add {
+//            if(runGeneration) {
+//                vdisGenerated.incrementAndGet()
+//                runGeneration = false
+//            }
+//            if(runCompositing) {
+//                vdisComposited.incrementAndGet()
+//                runCompositing = false
+//                runGeneration = true
+//            }
+//
+//            if(vdisDistributed.get() > vdisComposited.get()) {
+//                runCompositing = true
+//            }
+//        }
     }
 
     private fun storeSubVDIs() {
@@ -509,7 +513,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                     )
 
                     val duration = measureNanoTime {
-                        val file = FileOutputStream(File("/home/aryaman/TestingData/${dataset}vdidump$cnt"))
+                        val file = FileOutputStream(File(basePath + "${dataset}vdidump$cnt"))
 //                    val comp = GZIPOutputStream(file, 65536)
                         VDIDataIO.write(vdiData, file)
                         logger.info("written the dump")
@@ -523,12 +527,12 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 var fileName = ""
                 fileName = "${dataset}VDI${cnt}_ndc"
                 if(separateDepth) {
-                    SystemHelpers.dumpToFile(subVDIColorBuffer!!, "/home/aryaman/TestingData/${fileName}_col")
-                    SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "/home/aryaman/TestingData/${fileName}_depth")
-                    SystemHelpers.dumpToFile(gridCellsBuff!!, "/home/aryaman/TestingData/${fileName}_octree")
+                    SystemHelpers.dumpToFile(subVDIColorBuffer!!, basePath + "${fileName}_col")
+                    SystemHelpers.dumpToFile(subVDIDepthBuffer!!, basePath + "${fileName}_depth")
+                    SystemHelpers.dumpToFile(gridCellsBuff!!, basePath + "${fileName}_octree")
                 } else {
                     SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)
-                    SystemHelpers.dumpToFile(gridCellsBuff!!, "/home/aryaman/TestingData/${fileName}_octree")
+                    SystemHelpers.dumpToFile(gridCellsBuff!!, basePath + "${fileName}_octree")
                 }
                 logger.info("Wrote VDI $cnt")
                 logger.info("commsize: $commSize and rank: $rank")
@@ -543,16 +547,39 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     }
 
     private fun manageVDIGeneration() {
-        var subVDIDepthBuffer: ByteBuffer? = null
-        var subVDIColorBuffer: ByteBuffer?
-        var bufferToSend: ByteBuffer? = null
-
-        var compositedVDIDepthBuffer: ByteBuffer?
-        var compositedVDIColorBuffer: ByteBuffer?
 
         while(renderer?.firstImageReady == false) {
             Thread.sleep(50)
         }
+
+        while(!rendererConfigured) {
+            Thread.sleep(50)
+        }
+
+        basePath = if(isCluster) {
+            "/scratch/ws/1/argupta-distributed_vdis/vdi_dumps/"
+        } else {
+            "/home/aryaman/TestingData/"
+        }
+
+        val model = volumes[0]?.spatial()?.world
+
+        val vdiData = VDIData(
+            VDIMetadata(
+                projection = cam.spatial().projection,
+                view = cam.spatial().getTransformation(),
+                volumeDimensions = volumeDims,
+                model = model!!,
+                nw = volumes[0]?.volumeManager?.shaderProperties?.get("nw") as Float,
+                windowDimensions = Vector2i(cam.width, cam.height)
+            )
+        )
+
+        compositor.nw = vdiData.metadata.nw
+        compositor.ViewOriginal = vdiData.metadata.view
+        compositor.invViewOriginal = Matrix4f(vdiData.metadata.view).invert()
+        compositor.ProjectionOriginal = Matrix4f(vdiData.metadata.projection).applyVulkanCoordinateSystem()
+        compositor.invProjectionOriginal = Matrix4f(vdiData.metadata.projection).applyVulkanCoordinateSystem().invert()
 
         val colorTexture = volumeManager.material().textures["OutputSubVDIColor"]!!
         val depthTexture = volumeManager.material().textures["OutputSubVDIDepth"]!!
@@ -589,6 +616,14 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         dataset += "_${commSize}_${rank}"
 
         while(true) {
+
+            var subVDIDepthBuffer: ByteBuffer? = null
+            var subVDIColorBuffer: ByteBuffer?
+            var bufferToSend: ByteBuffer? = null
+
+            var compositedVDIDepthBuffer: ByteBuffer?
+            var compositedVDIColorBuffer: ByteBuffer?
+
             while((c1.get() == prevC1) || (c2.get() == prevC2)) {
                 Thread.sleep(5)
             }
@@ -606,21 +641,43 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             compositedVDIColorBuffer = compositedColor.contents
             compositedVDIDepthBuffer = compositedDepth.contents
 
-//            if(saveFiles) {
-//                logger.info("Dumping to file")
-//                SystemHelpers.dumpToFile(subVDIColorBuffer!!, "$rank:textureSubCol-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
-////                SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "$rank:textureSubDepth-${SystemHelpers.formatDateTime(delimiter = "_")}.raw")
-//                logger.info("File dumped")
-//            }
+//            vdiData.metadata.projection = cam.spatial().projection //TODO: uncomment and debug to allow changing of viewpoint
+//            vdiData.metadata.view = cam.spatial().getTransformation()
+//
+//            compositor.ViewOriginal = vdiData.metadata.view
+//            compositor.invViewOriginal = Matrix4f(vdiData.metadata.view).invert()
+//            compositor.ProjectionOriginal = Matrix4f(vdiData.metadata.projection).applyVulkanCoordinateSystem()
+//            compositor.invProjectionOriginal = Matrix4f(vdiData.metadata.projection).applyVulkanCoordinateSystem().invert()
+
+            val duration = measureNanoTime {
+                val file = FileOutputStream(File(basePath + "${dataset}vdidump$cnt_sub"))
+//                    val comp = GZIPOutputStream(file, 65536)
+                VDIDataIO.write(vdiData, file)
+                logger.info("written the dump")
+                file.close()
+            }
+
+            logger.info("Dumping to file in the composite function")
+            SystemHelpers.dumpToFile(subVDIColorBuffer!!, basePath + "${dataset}SubVDI${cnt_sub}_ndc_col")
+            SystemHelpers.dumpToFile(subVDIDepthBuffer!!, basePath + "${dataset}SubVDI${cnt_sub}_ndc_depth")
+            logger.info("File dumped")
+            cnt_sub++
 
             if(subVDIColorBuffer == null || subVDIDepthBuffer == null) {
                 logger.info("CALLING DISTRIBUTE EVEN THOUGH THE BUFFERS ARE NULL!!")
             }
 
+            logger.info("For distributed the color buffer isdirect: ${subVDIColorBuffer.isDirect()} and depthbuffer: ${subVDIDepthBuffer.isDirect()}")
+
             distributeVDIs(subVDIColorBuffer!!, subVDIDepthBuffer!!, windowHeight * windowWidth * maxSupersegments * 4 / commSize, commSize, allToAllColorPointer,
             allToAllDepthPointer, mpiPointer)
 
             logger.info("Back in the management function")
+
+            Thread.sleep(5000)
+
+            subVDIColorBuffer.clear()
+            subVDIDepthBuffer.clear()
 
             while((c3.get() == prevC3) || (c4.get() == prevC4)) {
                 Thread.sleep(5)
@@ -641,8 +698,15 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 //                logger.info("File dumped")
 //            }
 
+            logger.info("For gather the color buffer isdirect: ${compositedVDIColorBuffer!!.isDirect()} and depthbuffer: ${compositedVDIDepthBuffer!!.isDirect()}")
+
             gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, windowHeight * windowWidth * maxOutputSupersegments * 4 * numLayers/ commSize, 0,
                 rank, commSize, gatherColorPointer, gatherDepthPointer, mpiPointer) //3 * commSize because the supersegments here contain only 1 element
+
+            Thread.sleep(5000)
+
+            compositedVDIColorBuffer.clear()
+            compositedVDIDepthBuffer.clear()
 
             logger.info("Back in the management function after gathering and streaming")
             Thread.sleep(2000)
@@ -683,7 +747,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         )
 
         val duration = measureNanoTime {
-            val file = FileOutputStream(File("/home/aryaman/TestingData/${dataset}vdidump$cnt_distr"))
+            val file = FileOutputStream(File(basePath + "${dataset}vdidump$cnt_distr"))
 //                    val comp = GZIPOutputStream(file, 65536)
             VDIDataIO.write(vdiData, file)
             logger.info("written the dump")
@@ -691,8 +755,8 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         }
 
         logger.info("Dumping to file in the composite function")
-        SystemHelpers.dumpToFile(vdiSetColour, "/home/aryaman/TestingData/${dataset}SubVDI${cnt_distr}_ndc_col")
-        SystemHelpers.dumpToFile(vdiSetDepth, "/home/aryaman/TestingData/${dataset}SubVDI${cnt_distr}_ndc_depth")
+        SystemHelpers.dumpToFile(vdiSetColour, basePath + "${dataset}SetOfVDI${cnt_distr}_ndc_col")
+        SystemHelpers.dumpToFile(vdiSetDepth, basePath + "${dataset}SetOfVDI${cnt_distr}_ndc_depth")
         logger.info("File dumped")
         cnt_distr++
 //        }
