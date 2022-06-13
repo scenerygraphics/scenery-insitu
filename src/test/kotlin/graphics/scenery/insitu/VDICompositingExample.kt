@@ -12,11 +12,14 @@ import graphics.scenery.volumes.vdi.VDIData
 import graphics.scenery.volumes.vdi.VDIDataIO
 import graphics.scenery.volumes.vdi.VDIMetadata
 import net.imglib2.type.numeric.real.FloatType
+import org.joml.Matrix4f
 import org.joml.Vector2i
 import org.joml.Vector3f
 import org.joml.Vector3i
 import org.lwjgl.system.MemoryUtil
+import org.scijava.ui.behaviour.ClickBehaviour
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
@@ -25,7 +28,23 @@ import kotlin.system.measureNanoTime
 
 class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
 
-    val compute = RichNode()
+    private val vulkanProjectionFix =
+        Matrix4f(
+            1.0f,  0.0f, 0.0f, 0.0f,
+            0.0f, -1.0f, 0.0f, 0.0f,
+            0.0f,  0.0f, 0.5f, 0.0f,
+            0.0f,  0.0f, 0.5f, 1.0f)
+
+    fun Matrix4f.applyVulkanCoordinateSystem(): Matrix4f {
+        val m = Matrix4f(vulkanProjectionFix)
+        m.mul(this)
+
+        return m
+    }
+
+    val closeAfter = 25000L
+
+    val compute = CompositorNode()
     var dataset = "DistributedStagbeetle"
 
     override fun init() {
@@ -38,8 +57,8 @@ class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
         var depthBuff = ByteArray(windowHeight*windowWidth*2*maxSupersegments)
 
 
-        val commSize = 2
-        val rank = 1
+        val commSize = 1
+        val rank = 0
 
         dataset += "_${commSize}_${rank}"
 
@@ -47,8 +66,12 @@ class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
 //        val basePath = "/home/aryaman/Repositories/scenery-insitu/"
         val basePath = "/home/aryaman/TestingData/"
 
-        buff = File(basePath + "${dataset}SetOfVDI4_ndc_col").readBytes()
-        depthBuff = File(basePath + "${dataset}SetOfVDI4_ndc_depth").readBytes()
+        val file = FileInputStream(File(basePath + "${dataset}vdidump4"))
+
+        val vdiData = VDIDataIO.read(file)
+
+        buff = File(basePath + "${dataset}SetOfVDI1_ndc_col").readBytes()
+        depthBuff = File(basePath + "${dataset}SetOfVDI1_ndc_depth").readBytes()
 
         var colBuffer: ByteBuffer
         var depthBuffer: ByteBuffer
@@ -63,7 +86,7 @@ class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
         depthBuffer.put(depthBuff).flip()
 
 
-        val maxOutputSupersegments = 40
+        val maxOutputSupersegments = 20
 
         compute.name = "compositor node"
 
@@ -83,6 +106,14 @@ class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
         compute.metadata["ComputeMetadata"] = ComputeMetadata(
                 workSizes = Vector3i(windowWidth/commSize, windowHeight, 1)
         )
+
+        compute.nw = vdiData.metadata.nw
+        compute.ViewOriginal = vdiData.metadata.view
+        compute.invViewOriginal = Matrix4f(vdiData.metadata.view).invert()
+        compute.ProjectionOriginal = Matrix4f(vdiData.metadata.projection).applyVulkanCoordinateSystem()
+        compute.invProjectionOriginal = Matrix4f(vdiData.metadata.projection).applyVulkanCoordinateSystem().invert()
+        compute.doComposite = true
+        compute.numProcesses = commSize
 
         compute.material().textures["VDIsColor"] = Texture(Vector3i(maxSupersegments, windowHeight, windowWidth), 4, contents = colBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
             type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
@@ -111,6 +142,11 @@ class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
 
         thread {
             storeCompositedVDIs()
+        }
+
+        thread {
+            Thread.sleep(closeAfter)
+            renderer?.shouldClose = true
         }
 
     }
@@ -211,7 +247,21 @@ class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
 //            }
 //
 //        })
-        inputHandler?.addKeyBinding("save_texture", "E")
+
+        inputHandler?.addBehaviour("toggle_compositing", ClickBehaviour { _, _ ->
+            toggleCompositing()
+        })
+        inputHandler?.addKeyBinding("toggle_compositing", "R")
+    }
+
+    fun toggleCompositing () {
+        if(compute.doComposite) {
+            logger.info("Setting doComposite to FALSE")
+            compute.doComposite = false
+        } else {
+            logger.info("Setting to TRUE")
+            compute.doComposite = true
+        }
     }
 
     companion object {
