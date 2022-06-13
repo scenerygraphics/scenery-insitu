@@ -321,6 +321,12 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
                 addControlPoint(0.9f, 0.00f)
                 addControlPoint(0.91f, 0.0f)
                 addControlPoint(1.0f, 0.0f)
+            } else if (dataset == "Microscopy") {
+                addControlPoint(0.0f, 0.0f)
+                addControlPoint(0.5f, 0.0f)
+                addControlPoint(0.65f, 0.0f)
+                addControlPoint(0.80f, 0.2f)
+                addControlPoint(0.85f, 0.0f)
             } else {
                 logger.info("Using a standard transfer function")
                 TransferFunction.ramp(0.1f, 0.5f)
@@ -440,11 +446,13 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             Thread.sleep(200)
         }
 
+        Thread.sleep(5000)
+
         val rotationInterval = 5f
         var totalRotation = 0f
 
         for(i in 1..9) {
-            val path = "benchmarking/${dataset}/View${viewNumber}/volume_rendering/reference${windowWidth}_${windowHeight}_${totalRotation.toInt()}"
+            val path = "benchmarking/${dataset}/View${viewNumber}/volume_rendering/reference_comp${windowWidth}_${windowHeight}_${totalRotation.toInt()}"
             // take screenshot and wait for async writing
             r.screenshot("$path.png")
             Thread.sleep(2000L)
@@ -458,6 +466,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             File("$path.csv").writeText("${fps.avg()};${fps.min()};${fps.max()};${fps.stddev()};${fps.data.size}")
 
             rotateCamera(rotationInterval)
+            Thread.sleep(1000) // wait for rotation to take place
             totalRotation = i * rotationInterval
         }
     }
