@@ -12,6 +12,8 @@ layout(set = 4, binding = 0) uniform ShaderProperties {
     mat4 ViewOriginal;
     mat4 invViewOriginal;
     float nw;
+    bool doComposite;
+    int numProcesses;
 };
 
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
@@ -114,9 +116,18 @@ void main() {
 
     #if USE_PRINTF
     if(gl_GlobalInvocationID.xy == debug_pixel) {
-        debugPrintfEXT("Hello World!");
+        debugPrintfEXT("Hello World! This is the new shader!");
     }
     #endif
+
+    if(!doComposite) {
+        #if USE_PRINTF
+        if(gl_GlobalInvocationID.xy == debug_pixel) {
+            debugPrintfEXT("VDICompositor: skipping this pass!");
+        }
+        #endif
+        return;
+    }
 
     mat4 pv_orig = ProjectionOriginal * ViewOriginal;
 
@@ -145,7 +156,6 @@ void main() {
     #endif
 
 //    int numProcesses = opImageCoords.g / opImageCoords.b; //TODO: generalize for non square images
-    int numProcesses = 2;
 
     float startDepth;
     float endDepth;
@@ -201,6 +211,12 @@ void main() {
         while (!samplesComplete) {
             // Looping across all input supersegments (= samples)
 
+            #if USE_PRINTF
+            if(gl_GlobalInvocationID.xy == debug_pixel) {
+                debugPrintfEXT("Looking for the next supseg");
+            }
+            #endif
+
             determineNextSupseg(numProcesses, startDepth, endDepth, colour);
 
             if (endDepth == 0.) {
@@ -233,9 +249,23 @@ void main() {
 
                 vec4 accumulated_adjusted;
                 accumulated_adjusted.rgb = supseg_accumulated.rgb / supseg_accumulated.a;
-                accumulated_adjusted.a = adjustOpacity(accumulated_adjusted.a, 1.0/distance(sample_end_w, supseg_start_w));
+                #if USE_PRINTF
+                if (gl_GlobalInvocationID.xy == debug_pixel) {
+                    debugPrintfEXT("before, the a was: %f", supseg_accumulated.a);
+                }
+                #endif
+                accumulated_adjusted.a = adjustOpacity(supseg_accumulated.a, 1.0/distance(sample_end_w, supseg_start_w));
 
                 float diff = diffPremultiplied(supersegmentAdjusted, accumulated_adjusted);
+
+                #if USE_PRINTF
+                if (gl_GlobalInvocationID.xy == debug_pixel) {
+                    debugPrintfEXT("Diff: %f, threshold: %f", diff, newSupSegThresh);
+//                    if(isnan(diff)) {
+                        debugPrintfEXT("supsegAdjusted: (%f, %f, %f, %f), acc_adj: (%f, %f, %f, %f). Dist for adjusting: %f", supersegmentAdjusted.xyzw, accumulated_adjusted.xyzw, distance(sample_end_w, supseg_start_w));
+//                    }
+                }
+                #endif
 
                 bool newSupSeg = false;
                 if (diff >= newSupSegThresh) {
