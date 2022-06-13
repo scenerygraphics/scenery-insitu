@@ -44,6 +44,8 @@ class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
 
     val closeAfter = 25000L
 
+    val separateDepth = true
+
     val compute = CompositorNode()
     var dataset = "DistributedStagbeetle"
 
