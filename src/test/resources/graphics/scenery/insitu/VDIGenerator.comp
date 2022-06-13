@@ -12,6 +12,8 @@ uniform vec3 cachePadOffset;
 uniform vec3 cacheSize; // TODO: get from texture!?
 uniform mat4 transform;
 
+uniform bool doGeneration;
+
 #pragma scenery verbatim
 layout(set = 0, binding = 0) uniform VRParameters {
     mat4 projectionMatrices[2];
@@ -40,7 +42,7 @@ layout(push_constant) uniform currentEye_t {
 #define WORLD_ABS 0
 #define INT_DEPTHS 0
 
-#define USE_PRINTF 1
+#define USE_PRINTF 0
 
 #if USE_PRINTF
 #extension GL_EXT_debug_printf : enable
@@ -54,7 +56,7 @@ layout (set = 8, binding = 0, r32ui) uniform uimage3D OctreeCells;
 
 #pragma scenery endverbatim
 
-ivec2 debug_pixel = ivec2(640, 360);
+ivec2 debug_pixel = ivec2(630, 360);
 
 // intersect ray with a box
 // http://www.siggraph.org/education/materials/HyperGraph/raytrace/rtinter3.htm
@@ -197,15 +199,9 @@ bool thresh_found = false;
 
 void main()
 {
-
-//    imageStore(OutputSubVDIColor, ivec3(0, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(1, 0, 0, 1));
-//    imageStore(OutputSubVDIColor, ivec3(1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0.5));
-//    imageStore(OutputSubVDIColor, ivec3(2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(1));
-//
-//    if(true && 1>0) {
-//        return;
-//
-//    }
+    if(!doGeneration) {
+        return;
+    }
 
 //    #if USE_PRINTF
 //    if(gl_GlobalInvocationID.xy == debug_pixel) {
