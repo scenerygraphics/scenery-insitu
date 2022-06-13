@@ -95,6 +95,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
     var commSize = 1
     var rank = 0
+    var nodeRank = 0
     var pixelToWorld = 0.001f
     val volumeDims = Vector3f(832f, 832f, 494f)
     var dataset = "DistributedStagbeetle"
@@ -381,6 +382,10 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     }
 
     override fun init() {
+
+        logger.info("setting renderer device id to: $nodeRank")
+        System.setProperty("scenery.Renderer.DeviceId", nodeRank.toString())
+
         renderer = hub.add(Renderer.createRenderer(hub, applicationName, scene, windowWidth, windowHeight))
 
         setupVolumeManager()
