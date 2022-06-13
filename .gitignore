@@ -3,6 +3,16 @@ bin/
 build/
 target/
 
+# VDI Test files
+Stagbeetle*
+Backpack*
+Kingsnake*
+octree*
+vdi*
+Beechnut*
+VDI*
+*.raw
+
 # Eclipse projects & settings
 .project
 .classpath
