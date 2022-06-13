@@ -54,6 +54,9 @@ class CompositorNode : RichNode() {
 
     @ShaderProperty
     var doComposite = false
+
+    @ShaderProperty
+    var numProcesses = 0
 }
 
 class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth = 1280, windowHeight = 720, wantREPL = false) {
@@ -83,6 +86,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     val separateDepth = true
     val colors32bit = true
     val saveFiles = false
+    val benchmarking = true
     val cam: Camera = DetachedHeadCamera(hmd)
 
     val maxSupersegments = 20
@@ -113,7 +117,9 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     var vdisDistributed = AtomicInteger(0)
     var vdisComposited = AtomicInteger(0)
 
+    @Volatile
     var runGeneration = true
+    @Volatile
     var runCompositing = false
 
     val colorMap = Colormap.get("hot")
@@ -305,6 +311,8 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
             volumeManager.customTextures.add("OctreeCells")
             volumeManager.material().textures["OctreeCells"] = gridCells
+            volumeManager.customUniforms.add("doGeneration")
+            volumeManager.shaderProperties["doGeneration"] = true
 
             hub.add(volumeManager)
 
@@ -333,6 +341,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                         "intersectBoundingBox", "vis", "localNear", "localFar", "SampleVolume", "Convert", "Accumulate"),
                 ))
             volumeManager.customTextures.add("OutputRender") //TODO: attach depth texture required for compositing
+            volumeManager.shaderProperties["doGeneration"] = true
 
             val outputBuffer = MemoryUtil.memCalloc(windowWidth*windowHeight*4)
             val outputTexture = Texture.fromImage(
@@ -364,12 +373,11 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             compositor.material().textures["AlphaComposited"] = alphaComposited
         }
         compositor.metadata["ComputeMetadata"] = ComputeMetadata(
-            workSizes = Vector3i(windowHeight, windowWidth/commSize, 1)
+            workSizes = Vector3i(windowWidth/commSize, windowHeight, 1)
         )
-        compositor.visible = false
+        compositor.visible = true
         scene.addChild(compositor)
 
-        volumeManager.shaderProperties["doGeneration"] = true
     }
 
     override fun init() {
@@ -499,18 +507,19 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 }
 
                 logger.info("total serialization duration: ${total_duration}")
-
-                var fileName = ""
-                fileName = "${dataset}VDI${cnt}_ndc"
-                if(separateDepth) {
-                    SystemHelpers.dumpToFile(subVDIColorBuffer!!, basePath + "${fileName}_col")
-                    SystemHelpers.dumpToFile(subVDIDepthBuffer!!, basePath + "${fileName}_depth")
-                    SystemHelpers.dumpToFile(gridCellsBuff!!, basePath + "${fileName}_octree")
-                } else {
-                    SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)
-                    SystemHelpers.dumpToFile(gridCellsBuff!!, basePath + "${fileName}_octree")
+                if(!benchmarking) {
+                    var fileName = ""
+                    fileName = "${dataset}VDI${cnt}_ndc"
+                    if(separateDepth) {
+                        SystemHelpers.dumpToFile(subVDIColorBuffer!!, basePath + "${fileName}_col")
+                        SystemHelpers.dumpToFile(subVDIDepthBuffer!!, basePath + "${fileName}_depth")
+                        SystemHelpers.dumpToFile(gridCellsBuff!!, basePath + "${fileName}_octree")
+                    } else {
+                        SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)
+                        SystemHelpers.dumpToFile(gridCellsBuff!!, basePath + "${fileName}_octree")
+                    }
+                    logger.info("Wrote VDI $cnt")
                 }
-                logger.info("Wrote VDI $cnt")
                 logger.info("commsize: $commSize and rank: $rank")
             }
             cnt++
@@ -572,6 +581,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         compositor.invViewOriginal = Matrix4f(vdiData.metadata.view).invert()
         compositor.ProjectionOriginal = Matrix4f(vdiData.metadata.projection).applyVulkanCoordinateSystem()
         compositor.invProjectionOriginal = Matrix4f(vdiData.metadata.projection).applyVulkanCoordinateSystem().invert()
+        compositor.numProcesses = commSize
 
         val colorTexture = volumeManager.material().textures["OutputSubVDIColor"]!!
         val depthTexture = volumeManager.material().textures["OutputSubVDIDepth"]!!
@@ -631,8 +641,11 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         }
 
         (renderer as VulkanRenderer).postRenderLambdas.add {
+            if(runCompositing) {
+                logger.info("SETTING DO_COMPOSITE TO TRUE!")
+            }
             compositor.doComposite = runCompositing
-            volumeManager.shaderProperties["doGeneration"] = runGeneration
+            volumes[0]?.volumeManager?.shaderProperties?.set("doGeneration", runGeneration)
         }
 
         var generatedSoFar = 0
@@ -679,27 +692,31 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 file.close()
             }
 
-            logger.info("Dumping sub VDI files")
-            SystemHelpers.dumpToFile(subVDIColorBuffer!!, basePath + "${dataset}SubVDI${cnt_sub}_ndc_col")
-            SystemHelpers.dumpToFile(subVDIDepthBuffer!!, basePath + "${dataset}SubVDI${cnt_sub}_ndc_depth")
-            logger.info("File dumped")
-            cnt_sub++
+            if(!benchmarking) {
+                logger.info("Dumping sub VDI files")
+                SystemHelpers.dumpToFile(subVDIColorBuffer!!, basePath + "${dataset}SubVDI${cnt_sub}_ndc_col")
+                SystemHelpers.dumpToFile(subVDIDepthBuffer!!, basePath + "${dataset}SubVDI${cnt_sub}_ndc_depth")
+                logger.info("File dumped")
+            }
 
             if(subVDIColorBuffer == null || subVDIDepthBuffer == null) {
                 logger.info("CALLING DISTRIBUTE EVEN THOUGH THE BUFFERS ARE NULL!!")
             }
 
-            logger.info("For distributed the color buffer isdirect: ${subVDIColorBuffer.isDirect()} and depthbuffer: ${subVDIDepthBuffer.isDirect()}")
+            logger.info("For distributed the color buffer isdirect: ${subVDIColorBuffer!!.isDirect()} and depthbuffer: ${subVDIDepthBuffer!!.isDirect()}")
 
             distributeVDIs(subVDIColorBuffer!!, subVDIDepthBuffer!!, windowHeight * windowWidth * maxSupersegments * 4 / commSize, commSize, allToAllColorPointer,
             allToAllDepthPointer, mpiPointer)
 
             logger.info("Back in the management function")
 
-            Thread.sleep(5000)
+            if(!benchmarking) {
+                Thread.sleep(5000)
 
-            subVDIColorBuffer.clear()
-            subVDIDepthBuffer.clear()
+                subVDIColorBuffer.clear()
+                subVDIDepthBuffer.clear()
+            }
+
 
             while(vdisComposited.get() <= compositedSoFar) {
                 Thread.sleep(5)
@@ -712,18 +729,28 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 logger.info("CALLING GATHER EVEN THOUGH THE BUFFER(S) ARE NULL!!")
             }
 
+            if(!benchmarking) {
+                logger.info("Dumping sub VDI files")
+                SystemHelpers.dumpToFile(compositedVDIColorBuffer!!, basePath + "${dataset}CompositedVDI${cnt_sub}_ndc_col")
+                SystemHelpers.dumpToFile(compositedVDIDepthBuffer!!, basePath + "${dataset}CompositedVDI${cnt_sub}_ndc_depth")
+                logger.info("File dumped")
+                cnt_sub++
+            }
+
             logger.info("For gather the color buffer isdirect: ${compositedVDIColorBuffer!!.isDirect()} and depthbuffer: ${compositedVDIDepthBuffer!!.isDirect()}")
 
             gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, windowHeight * windowWidth * maxOutputSupersegments * 4 * numLayers/ commSize, 0,
                 rank, commSize, gatherColorPointer, gatherDepthPointer, mpiPointer) //3 * commSize because the supersegments here contain only 1 element
 
-            Thread.sleep(5000)
+            if(!benchmarking) {
+                Thread.sleep(5000)
 
-            compositedVDIColorBuffer.clear()
-            compositedVDIDepthBuffer.clear()
+                compositedVDIColorBuffer.clear()
+                compositedVDIDepthBuffer.clear()
 
-            logger.info("Back in the management function after gathering and streaming")
-            Thread.sleep(2000)
+                logger.info("Back in the management function after gathering and streaming")
+                Thread.sleep(2000)
+            }
         }
     }
 
@@ -764,11 +791,13 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             file.close()
         }
 
-        logger.info("Dumping to file in the composite function")
-        SystemHelpers.dumpToFile(vdiSetColour, basePath + "${dataset}SetOfVDI${cnt_distr}_ndc_col")
-        SystemHelpers.dumpToFile(vdiSetDepth, basePath + "${dataset}SetOfVDI${cnt_distr}_ndc_depth")
-        logger.info("File dumped")
-        cnt_distr++
+        if(!benchmarking) {
+            logger.info("Dumping to file in the composite function")
+            SystemHelpers.dumpToFile(vdiSetColour, basePath + "${dataset}SetOfVDI${cnt_distr}_ndc_col")
+            SystemHelpers.dumpToFile(vdiSetDepth, basePath + "${dataset}SetOfVDI${cnt_distr}_ndc_depth")
+            logger.info("File dumped")
+            cnt_distr++
+        }
 //        }
 
         if(generateVDIs) {
