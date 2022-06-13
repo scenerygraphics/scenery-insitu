@@ -11,7 +11,6 @@ import graphics.scenery.compute.ComputeMetadata
 import graphics.scenery.compute.InvocationType
 import graphics.scenery.textures.Texture
 import graphics.scenery.utils.Image
-import graphics.scenery.utils.Statistics
 import graphics.scenery.utils.SystemHelpers
 import graphics.scenery.utils.extensions.minus
 import graphics.scenery.utils.extensions.plus
@@ -20,7 +19,6 @@ import graphics.scenery.volumes.*
 import graphics.scenery.volumes.vdi.VDIData
 import graphics.scenery.volumes.vdi.VDIDataIO
 import graphics.scenery.volumes.vdi.VDIMetadata
-import kotlinx.coroutines.delay
 import net.imglib2.type.numeric.integer.UnsignedByteType
 import net.imglib2.type.numeric.integer.UnsignedIntType
 import net.imglib2.type.numeric.integer.UnsignedShortType
@@ -41,8 +39,6 @@ import java.nio.file.Paths
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
-import kotlin.math.log
-import kotlin.math.pow
 import kotlin.streams.toList
 import kotlin.system.measureNanoTime
 
@@ -54,16 +50,16 @@ import kotlin.system.measureNanoTime
 
 data class Timer(var start: Long, var end: Long)
 
-class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
+class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL = false) {
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
-    val generateVDIs = false
+    val generateVDIs = true
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
-    val dataset = "Stagbeetle_divided"
-    val num_parts =  2
+    val dataset = "Stagbeetle"
+    val num_parts =  1
     val volumeDims = Vector3f(832f, 832f, 494f)
     val is16bit = true
     val volumeList = ArrayList<BufferedVolume>()
@@ -183,8 +179,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
                 MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*numLayers)
             }
             val outputSubDepthBuffer = if(separateDepth) {
-//                MemoryUtil.memCalloc(windowHeight*windowWidth*2*maxSupersegments*2 * 2)
-                MemoryUtil.memCalloc(windowHeight*windowWidth*2*maxSupersegments*2)
+                MemoryUtil.memCalloc(windowHeight*windowWidth*2*maxSupersegments*2 * 2)
+//                MemoryUtil.memCalloc(windowHeight*windowWidth*2*maxSupersegments*2)
             } else {
                 MemoryUtil.memCalloc(0)
             }
@@ -213,8 +209,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
             if(separateDepth) {
                 outputSubVDIDepth = Texture.fromImage(
-                    Image(outputSubDepthBuffer, maxSupersegments, windowHeight, windowWidth),  usage = hashSetOf(
-                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = UnsignedShortType(), channels = 2, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+                    Image(outputSubDepthBuffer, 2 * maxSupersegments, windowHeight, windowWidth),  usage = hashSetOf(
+                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
 //                    Image(outputSubDepthBuffer, 2*maxSupersegments, windowHeight, windowWidth),  usage = hashSetOf(
 //                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
                 volumeManager.customTextures.add("OutputSubVDIDepth")
@@ -241,7 +237,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             scene.addChild(compute)
 
         } else {
-            val volumeManager = VolumeManager(hub,
+            volumeManager = VolumeManager(hub,
                 useCompute = true,
                 customSegments = hashMapOf(
                     SegmentType.FragmentShader to SegmentTemplate(
@@ -267,9 +263,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             spatial {
                 position = Vector3f(3.174E+0f, -1.326E+0f, -2.554E+0f)
                 rotation = Quaternionf(-1.276E-2,  9.791E-1,  6.503E-2, -1.921E-1)
-
-                position = Vector3f(-2.607E+0f, -5.973E-1f,  2.415E+0f) // V1 for Beechnut
-                rotation = Quaternionf(-9.418E-2, -7.363E-1, -1.048E-1, -6.618E-1)
+//
+//                position = Vector3f(-2.607E+0f, -5.973E-1f,  2.415E+0f) // V1 for Beechnut
+//                rotation = Quaternionf(-9.418E-2, -7.363E-1, -1.048E-1, -6.618E-1)
 //
 //                position = Vector3f(4.908E+0f, -4.931E-1f, -2.563E+0f) //V1 for Simulation
 //                rotation = Quaternionf( 3.887E-2, -9.470E-1, -1.255E-1,  2.931E-1)
@@ -293,14 +289,15 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
         scene.addChild(shell)
         shell.visible = false
 
-        val datasetPath = Paths.get("/home/aryaman/Datasets/Volume/${dataset}")
+//        val datasetPath = Paths.get("/home/aryaman/Datasets/Volume/${dataset}")
+        val datasetPath = Paths.get("/scratch/ws/1/argupta-distributed_vdis/Datasets/${dataset}")
 
         val tf = TransferFunction()
         with(tf) {
             if(dataset == "Stagbeetle" || dataset == "Stagbeetle_divided") {
                 addControlPoint(0.0f, 0.0f)
                 addControlPoint(0.005f, 0.0f)
-                addControlPoint(0.01f, 0.1f)
+                addControlPoint(0.01f, 0.3f)
             } else if (dataset == "Kingsnake") {
                 addControlPoint(0.0f, 0.0f)
                 addControlPoint(0.4f, 0.0f)
@@ -495,16 +492,16 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
         }
 
         val subVDIColor = volumeManager.material().textures["OutputSubVDIColor"]!!
-        val subvdi = AtomicInteger(0)
+        val colorCnt = AtomicInteger(0)
 
-        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (subVDIColor to subvdi)
+        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (subVDIColor to colorCnt)
 
-        val subvdiCnt = AtomicInteger(0)
+        val depthCnt = AtomicInteger(0)
         var subVDIDepth: Texture? = null
 
         if(separateDepth) {
             subVDIDepth = volumeManager.material().textures["OutputSubVDIDepth"]!!
-            (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (subVDIDepth to subvdiCnt)
+            (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (subVDIDepth to depthCnt)
         }
 
         val gridCells = volumeManager.material().textures["OctreeCells"]!!
@@ -512,7 +509,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
         (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (gridCells to gridTexturesCnt)
 
-        var prevAtomic = subvdi.get()
+        var prevColor = colorCnt.get()
+        var prevDepth = depthCnt.get()
 
         var cnt = 0
 
@@ -521,10 +519,11 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
         while (true) {
             tGeneration.start = System.nanoTime()
-            while(subvdi.get() == prevAtomic) {
+            while(colorCnt.get() == prevColor || depthCnt.get() == prevDepth) {
                 Thread.sleep(5)
             }
-            prevAtomic = subvdi.get()
+            prevColor = colorCnt.get()
+            prevDepth = depthCnt.get()
             subVDIColorBuffer = subVDIColor.contents
             if(separateDepth) {
                 subVDIDepthBuffer = subVDIDepth!!.contents
@@ -533,7 +532,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
 
             tGeneration.end = System.nanoTime()
 
-            val timeTaken = tGeneration.end - tGeneration.start
+            val timeTaken = (tGeneration.end - tGeneration.start)/10e9
 
             logger.info("Time taken for generation (only correct if VDIs were not being written to disk): ${timeTaken}")
 
@@ -549,7 +548,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1832, 1016) {
             logger.info("The model matrix added to the vdi is: $model.")
 //            logger.info(" After translation: $translated")
 
-            if(cnt < 20) {
+            if(cnt < 0) {
 
                 logger.info(volumeManager.shaderProperties.keys.joinToString())
 //                val vdiData = VDIData(subVDIDepthBuffer!!, subVDIColorBuffer!!, gridCellsBuff!!, VDIMetadata(
