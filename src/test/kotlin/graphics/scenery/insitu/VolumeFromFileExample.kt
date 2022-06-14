@@ -222,6 +222,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             volumeManager.customTextures.add("OctreeCells")
             volumeManager.material().textures["OctreeCells"] = gridCells
 
+            volumeManager.customUniforms.add("doGeneration")
+            volumeManager.shaderProperties["doGeneration"] = true
+
             hub.add(volumeManager)
 
             val compute = RichNode()
@@ -289,8 +292,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
         scene.addChild(shell)
         shell.visible = false
 
-//        val datasetPath = Paths.get("/home/aryaman/Datasets/Volume/${dataset}")
-        val datasetPath = Paths.get("/scratch/ws/1/argupta-distributed_vdis/Datasets/${dataset}")
+        val datasetPath = Paths.get("/home/aryaman/Datasets/Volume/${dataset}")
+//        val datasetPath = Paths.get("/scratch/ws/1/argupta-distributed_vdis/Datasets/${dataset}")
 
         val tf = TransferFunction()
         with(tf) {
@@ -557,7 +560,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             logger.info("The model matrix added to the vdi is: $model.")
 //            logger.info(" After translation: $translated")
 
-            if(cnt < 0) {
+            if(cnt < 20) {
 
                 logger.info(volumeManager.shaderProperties.keys.joinToString())
 //                val vdiData = VDIData(subVDIDepthBuffer!!, subVDIColorBuffer!!, gridCellsBuff!!, VDIMetadata(
