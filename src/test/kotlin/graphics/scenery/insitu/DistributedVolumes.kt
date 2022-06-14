@@ -85,8 +85,11 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     val generateVDIs = true
     val separateDepth = true
     val colors32bit = true
-    val saveFiles = false
+    val saveFinal = false
     val benchmarking = true
+    var cnt_distr = 0
+    var cnt_sub = 0
+    var vdisGathered = 0
     val cam: Camera = DetachedHeadCamera(hmd)
 
     val maxSupersegments = 20
@@ -99,8 +102,6 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     var pixelToWorld = 0.001f
     val volumeDims = Vector3f(832f, 832f, 494f)
     var dataset = "DistributedStagbeetle"
-    var cnt_distr = 0
-    var cnt_sub = 0
     var isCluster = false
     var basePath = ""
     var rendererConfigured = false
@@ -689,14 +690,6 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 //            compositor.ProjectionOriginal = Matrix4f(vdiData.metadata.projection).applyVulkanCoordinateSystem()
 //            compositor.invProjectionOriginal = Matrix4f(vdiData.metadata.projection).applyVulkanCoordinateSystem().invert()
 
-            val duration = measureNanoTime {
-                val file = FileOutputStream(File(basePath + "${dataset}vdidump$cnt_sub"))
-//                    val comp = GZIPOutputStream(file, 65536)
-                VDIDataIO.write(vdiData, file)
-                logger.info("written the dump")
-                file.close()
-            }
-
             if(!benchmarking) {
                 logger.info("Dumping sub VDI files")
                 SystemHelpers.dumpToFile(subVDIColorBuffer!!, basePath + "${dataset}SubVDI${cnt_sub}_ndc_col")
@@ -746,6 +739,15 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
             gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, windowHeight * windowWidth * maxOutputSupersegments * 4 * numLayers/ commSize, 0,
                 rank, commSize, gatherColorPointer, gatherDepthPointer, mpiPointer) //3 * commSize because the supersegments here contain only 1 element
+
+            if(saveFinal && (rank == 0)) {
+                val file = FileOutputStream(File(basePath + "${dataset}vdidump$vdisGathered"))
+                VDIDataIO.write(vdiData, file)
+                logger.info("written the dump $vdisGathered")
+                file.close()
+            }
+
+            vdisGathered++
 
             if(!benchmarking) {
                 Thread.sleep(5000)
