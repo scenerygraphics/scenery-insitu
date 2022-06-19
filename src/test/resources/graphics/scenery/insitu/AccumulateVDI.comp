@@ -54,7 +54,21 @@ if (vis && step > localNear && step < localFar)
             supersegmentAdjusted.a = adjustOpacity(curV.a, 1.0/segLen);
             //        supersegmentAdjusted.a = curV.a;
             //        supersegmentAdjusted = x;
+
+            vec4 withSample; // the supersegment with the sample accumulated
+            withSample.rgb = curV.rgb + (1 - curV.a) * newColor * w;
+            withSample.a = curV.a + (1 - curV.a) * w;
+
+            vec4 next_jump_pos = mix(wfront, wback, nw * (steps_in_supseg + 1));
+            float segLen_withSample = length(next_jump_pos - wfront);
+
+            vec4 withSample_adjusted;
+            withSample_adjusted.rgb = withSample.rgb / withSample.a;
+            withSample_adjusted.a = adjustOpacity(withSample.a, 1.0/segLen_withSample);
+
             float diff = diffPremultiplied(supersegmentAdjusted, x);
+//            float diff = diffPremultiplied(supersegmentAdjusted, vec4(newColor, w));
+//            float diff = diffPremultiplied(supersegmentAdjusted, withSample_adjusted);
 
             bool newSupSeg = false;
             if(diff >= newSupSegThresh) {
@@ -63,6 +77,12 @@ if (vis && step > localNear && step < localFar)
                 if(gl_GlobalInvocationID.xy == debug_pixel && thresh_found) {
                     debugPrintfEXT("Termination criteria reached for %dth time, color of supseg was: (%f, %f, %f, %f)", num_terminations, supersegmentAdjusted.rgba);
                     debugPrintfEXT("Length used for opacity correction: %f and steps in supseg: %d", segLen, steps_in_supseg);
+                    debugPrintfEXT("Sample value was: (%f, %f, %f, %f) and after adjusting: (%f, %f, %f, %f)", x.rgba, vec4(newColor, w));
+
+                    float inv = 1.0/segLen;
+                    float p = pow((1.0 - curV.a), inv);
+                    debugPrintfEXT("Opacity before adjusting was: %f and inv: %f and p: %f", curV.a, inv, p);
+
                 }
                 #endif
             }
@@ -80,7 +100,7 @@ if (vis && step > localNear && step < localFar)
                 vec4 jump_pos_trunc = mix(wfront, wback, nw * steps_trunc_trans); //TODO: jump length of single step can be precalculated and scaled to num steps in supseg
 
                 float segLen_trunc = length(jump_pos - wfront);
-                supersegmentAdjusted.rgb = curV.rgb / curV.a;
+                supersegmentAdjusted.rgb = curV.rgb / curV.a; //TODO: this perhaps does not need to be recalculated here
                 supersegmentAdjusted.a = adjustOpacity(curV.a, 1.0/segLen_trunc);
 
                 #if WORLD_ABS
@@ -171,7 +191,7 @@ if (vis && step > localNear && step < localFar)
                 #endif
             #endif
             supseg_start_w = wpos;
-            curV = vec4( 0 );
+            curV = vec4( 0 ); //TODO: should this be x instead?
         }
 
 //        if(!transparentSample) {
