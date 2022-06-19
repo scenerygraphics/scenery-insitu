@@ -49,7 +49,7 @@ float adjustOpacity(float a, float modifiedStepLength) {
     return 1.0 - pow((1.0 - a), modifiedStepLength);
 }
 
-ivec2 debug_pixel = ivec2(586, 553);
+ivec2 debug_pixel = ivec2(24, 428);
 
 int frontSupersegment[50]; // which supersegment of this pixel are we currently looking at, for each process
 int numInputSupersegments;
@@ -257,14 +257,6 @@ void main() {
             // Looping across all input supersegments (= samples)
             transparentSample = false;
             num_samples++;
-            if(num_samples > 35) {
-                #if USE_PRINTF
-                if(gl_GlobalInvocationID.xy == debug_pixel) {
-                    debugPrintfEXT("Breaking because more than 35 samples");
-                }
-                #endif
-                break;
-            }
 
 //            #if USE_PRINTF
 //            if(gl_GlobalInvocationID.xy == debug_pixel) {
@@ -299,6 +291,8 @@ void main() {
             float length_in_sample = distance(sample_start_w, sample_end_w);
 
             float adj_alpha = adjustOpacity(colour.a, length_in_sample);
+
+            adj_alpha = max(adj_alpha, 0.000001);
 
             if (supersegmentIsOpen) {
 
