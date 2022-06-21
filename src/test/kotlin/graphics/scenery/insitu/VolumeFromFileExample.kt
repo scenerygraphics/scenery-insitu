@@ -7,6 +7,7 @@ import graphics.scenery.controls.TrackedStereoGlasses
 import graphics.scenery.attribute.material.Material
 import graphics.scenery.backends.Shaders
 import graphics.scenery.backends.vulkan.VulkanRenderer
+import graphics.scenery.backends.vulkan.VulkanTexture
 import graphics.scenery.compute.ComputeMetadata
 import graphics.scenery.compute.InvocationType
 import graphics.scenery.textures.Texture
@@ -58,10 +59,10 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
-    val dataset = "Stagbeetle"
+    val dataset = "Kingsnake"
     val num_parts =  1
-    val volumeDims = Vector3f(832f, 832f, 494f)
-    val is16bit = true
+    val volumeDims = Vector3f(1024f, 1024f, 795f)
+    val is16bit = false
     val volumeList = ArrayList<BufferedVolume>()
     val cam: Camera = DetachedHeadCamera(hmd)
     var camTarget = Vector3f(0f)
@@ -149,7 +150,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
         if(generateVDIs) {
             benchmarking = false
             raycastShader = "VDIGenerator.comp"
+//            raycastShader = "LochmannGenerator.comp"
             accumulateShader = "AccumulateVDI.comp"
+//            accumulateShader = "AccumulateLochmann.comp"
             compositeShader = "VDICompositor.comp"
             val maxOutputSupersegments = 40
             val numLayers = if(separateDepth) {
@@ -190,9 +193,12 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
 //            val numGridCells = Vector3f(256f, 256f, 256f)
             val lowestLevel = MemoryUtil.memCalloc(numGridCells.x.toInt() * numGridCells.y.toInt() * numGridCells.z.toInt() * 4)
 
+            val thresholdBuffer = MemoryUtil.memCalloc(windowWidth * windowHeight * 4)
+
             val outputSubVDIColor: Texture
             val outputSubVDIDepth: Texture
             val gridCells: Texture
+            val thresholds: Texture
 
             outputSubVDIColor = if(colors32bit) {
                 Texture.fromImage(
@@ -221,6 +227,11 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
                 usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
             volumeManager.customTextures.add("OctreeCells")
             volumeManager.material().textures["OctreeCells"] = gridCells
+
+            thresholds = Texture.fromImage(Image(thresholdBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+                type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+            volumeManager.customTextures.add("Thresholds")
+            volumeManager.material().textures["Thresholds"] = thresholds
 
             volumeManager.customUniforms.add("doGeneration")
             volumeManager.shaderProperties["doGeneration"] = true
@@ -273,8 +284,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
 //                position = Vector3f(4.908E+0f, -4.931E-1f, -2.563E+0f) //V1 for Simulation
 //                rotation = Quaternionf( 3.887E-2, -9.470E-1, -1.255E-1,  2.931E-1)
 //
-//                position = Vector3f( 4.622E+0f, -9.060E-1f, -1.047E+0f) //V1 for kingsnake
-//                rotation = Quaternionf( 5.288E-2, -9.096E-1, -1.222E-1,  3.936E-1)
+                position = Vector3f( 4.622E+0f, -9.060E-1f, -1.047E+0f) //V1 for kingsnake
+                rotation = Quaternionf( 5.288E-2, -9.096E-1, -1.222E-1,  3.936E-1)
             }
             perspectiveCamera(50.0f, windowWidth, windowHeight)
             cam.farPlaneDistance = 20.0f
@@ -493,10 +504,27 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
         logger.info("camera forward: ${cam.forward}")
     }
 
+    fun fetchTexture(texture: Texture) : Int {
+        val ref = VulkanTexture.getReference(texture)
+        val buffer = texture.contents ?: return -1
+
+        if(ref != null) {
+            val start = System.nanoTime()
+            texture.contents = ref.copyTo(buffer, true)
+            val end = System.nanoTime()
+            logger.info("The request textures of size ${texture.contents?.remaining()?.toFloat()?.div((1024f*1024f))} took: ${(end.toDouble()-start.toDouble())/1000000.0}")
+        } else {
+            logger.error("In fetchTexture: Texture not accessible")
+        }
+
+        return 0
+    }
+
     private fun manageVDIGeneration() {
         var subVDIDepthBuffer: ByteBuffer? = null
         var subVDIColorBuffer: ByteBuffer?
         var gridCellsBuff: ByteBuffer?
+        var thresholdBuff: ByteBuffer?
 
         while(renderer?.firstImageReady == false) {
 //        while(renderer?.firstImageReady == false || volumeManager.shaderProperties.isEmpty()) {
@@ -521,6 +549,11 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
 
         (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (gridCells to gridTexturesCnt)
 
+        val thresholds = volumeManager.material().textures["Thresholds"]!!
+        val thresholdCnt = AtomicInteger(0)
+
+        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (thresholds to thresholdCnt)
+
         var prevColor = colorCnt.get()
         var prevDepth = depthCnt.get()
 
@@ -541,6 +574,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
                 subVDIDepthBuffer = subVDIDepth!!.contents
             }
             gridCellsBuff = gridCells.contents
+            thresholdBuff = thresholds.contents
 
             tGeneration.end = System.nanoTime()
 
@@ -599,6 +633,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
                     SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col")
                     SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth")
                     SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
+                    SystemHelpers.dumpToFile(thresholdBuff!!, "${fileName}_thresholds")
                 } else {
                     SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)
                     SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")

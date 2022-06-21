@@ -42,7 +42,7 @@ layout(push_constant) uniform currentEye_t {
 #define WORLD_ABS 0
 #define INT_DEPTHS 0
 
-#define USE_PRINTF 0
+#define USE_PRINTF 1
 
 #if USE_PRINTF
 #extension GL_EXT_debug_printf : enable
@@ -53,10 +53,11 @@ layout(set = 2, binding = 0) uniform sampler3D volumeCache;
 layout(set = 3, binding = 0, rgba32f) uniform image3D OutputSubVDIColor;
 layout(set = 4, binding = 0, r32f) uniform image3D OutputSubVDIDepth;
 layout (set = 8, binding = 0, r32ui) uniform uimage3D OctreeCells;
+layout (set = 9, binding = 0, r32f) uniform image2D Thresholds;
 
 #pragma scenery endverbatim
 
-ivec2 debug_pixel = ivec2(630, 360);
+ivec2 debug_pixel = ivec2(769, 331);
 
 // intersect ray with a box
 // http://www.siggraph.org/education/materials/HyperGraph/raytrace/rtinter3.htm
@@ -162,9 +163,17 @@ void writeSupersegment(int index, float start, float end, vec4 color) {
     imageStore(OutputSubVDIDepth, ivec3(2 * index, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(start, 0, 0, 0));
     imageStore(OutputSubVDIDepth, ivec3(2 * index + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(end, 0, 0, 0));
     imageStore(OutputSubVDIColor, ivec3(index, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), color);
+//    imageStore(OutputSubVDIColor, ivec3(index * 4, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(color.r));
+//    imageStore(OutputSubVDIColor, ivec3(index * 4 + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(color.g));
+//    imageStore(OutputSubVDIColor, ivec3(index * 4 + 2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(color.b));
+//    imageStore(OutputSubVDIColor, ivec3(index * 4 + 3, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(color.a));
     #endif
 }
 #endif
+
+void writeThreshold(float threshold) {
+    imageStore(Thresholds, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(threshold, 0, 0, 0));
+}
 
 void update_cell_count(ivec3 cell) {
     uint ret = imageAtomicAdd(OctreeCells, cell, 1);
@@ -299,7 +308,8 @@ void main()
 //        ( fwnw > 0.00001 )
 //        ? int ( log( ( tfar * fwnw + nw ) / ( tnear * fwnw + nw ) ) / log ( 1 + fwnw ) )
 //        :
-        int ( trunc( ( tfar - tnear ) / nw + 1 ) );
+//        int ( trunc( ( tfar - tnear ) / nw + 1 ) );
+        int ( trunc( ( tfar - tnear ) / nw ) );
 
         #if USE_PRINTF
         if(gl_GlobalInvocationID.xy == debug_pixel) {
@@ -321,11 +331,16 @@ void main()
         int iter = 0;
         float mid_thresh = 0.0001; //start off with a very low thresh to eliminate those rays that contain primarily homogenous regions already
         bool first_iteration = true;
+
+        thresh_found = true;
+        mid_thresh = 0.027160939;
+
         while(!thresh_found || !supsegs_written) {
             iter++;
             if(iter > 50) break;
             if(thresh_found) {
                 supsegs_written = true;
+                writeThreshold(mid_thresh);
             }
             newSupSegThresh = mid_thresh;
 
@@ -464,10 +479,18 @@ void main()
         }
         #endif
 
+        if(supersegmentNum == 0) {
+            writeThreshold(-1.);
+        }
+
         if(supersegmentNum < maxSupersegments) {
             for(int i = supersegmentNum; i < maxSupersegments; i++) {
 #if SEPARATE_DEPTH
                 imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+//                imageStore(OutputSubVDIColor, ivec3(i * 4, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+//                imageStore(OutputSubVDIColor, ivec3(i * 4 + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+//                imageStore(OutputSubVDIColor, ivec3(i*4+2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+//                imageStore(OutputSubVDIColor, ivec3(i*4+3, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
                 #if INT_DEPTHS
                 imageStore(OutputSubVDIDepth, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), uvec4(0));
                 #else
@@ -479,10 +502,15 @@ void main()
         }
     } else {
         FragColor = vec4(0, 0, 0, 0);
+        writeThreshold(-1.);
         if(supersegmentNum < maxSupersegments) {
             for(int i = supersegmentNum; i < maxSupersegments; i++) {
 #if SEPARATE_DEPTH
                 imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+//                imageStore(OutputSubVDIColor, ivec3(i*4, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+//                imageStore(OutputSubVDIColor, ivec3(i*4+1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+//                imageStore(OutputSubVDIColor, ivec3(i*4+2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
+//                imageStore(OutputSubVDIColor, ivec3(i*4+3, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
                 #if INT_DEPTHS
                 imageStore(OutputSubVDIDepth, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), uvec4(0));
                 #else
