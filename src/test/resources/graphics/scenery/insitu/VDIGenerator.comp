@@ -57,7 +57,7 @@ layout (set = 9, binding = 0, r32f) uniform image2D Thresholds;
 
 #pragma scenery endverbatim
 
-ivec2 debug_pixel = ivec2(769, 331);
+ivec2 debug_pixel = ivec2(624, 390);
 
 // intersect ray with a box
 // http://www.siggraph.org/education/materials/HyperGraph/raytrace/rtinter3.htm
@@ -137,6 +137,55 @@ vec4 encode(float x, float y){
     return rgba - 1./256.;
 }
 
+vec4 supsegs_accumulated = vec4(0);
+int windowWidthG = 0;
+int windowHeightG = 0;
+mat4 pvG;
+mat4 ipvG;
+
+
+void accumulateSupseg(vec4 color, float depthHere, float depthEnd) {
+
+    vec3 newColor = color.rgb;
+    float newAlpha = color.a;
+
+    float ndc_x = (float(gl_GlobalInvocationID.x) / float(windowWidthG)) * 2.0 - 1.0;
+    float ndc_y = (float(gl_GlobalInvocationID.y) / float(windowHeightG)) * 2.0 - 1.0;
+
+    vec4 supseg_start_w = ipvG * vec4(ndc_x, ndc_y, depthHere, 1);
+    supseg_start_w *= 1. / supseg_start_w.w;
+
+    vec4 supseg_end_w = ipvG * vec4(ndc_x, ndc_y, depthEnd, 1);
+    supseg_end_w *= 1. / supseg_end_w.w;
+
+    float length_in_supseg = distance(supseg_start_w, supseg_end_w);
+
+    //        #if USE_PRINTF
+    //        if(gl_GlobalInvocationID.xy == debug_pixel) {
+    //            debugPrintfEXT("NDC start point: (%f, %f, %f, %f) and NDC end point: (%f, %f, %f, %f).", vec4(ndc_x, ndc_y, depthHere, 1), vec4(ndc_x, ndc_y, depthEnd, 1));
+    //            debugPrintfEXT("World start point: (%f, %f, %f, %f) and end point: (%f, %f, %f, %f). Length: %f", supseg_start_w.xyzw, supseg_end_w.xyzw, length_in_supseg);
+    //        }
+    //        #endif
+
+    float adj_alpha = adjustOpacity(newAlpha, length_in_supseg);
+
+    //        #if USE_PRINTF
+    //        if(gl_GlobalInvocationID.xy == debug_pixel) {
+    //            debugPrintfEXT("Supseg: %d. Color is: (%f, %f, %f). Opacity: %f and adj opacity: %f. Supseg length: %f", i, newColor.rgb, newAlpha, adj_alpha, distance(supseg_start_w, supseg_end_w));
+    //        }
+    //        #endif
+
+    supsegs_accumulated.rgb = supsegs_accumulated.rgb + (1.0f - supsegs_accumulated.a) * newColor * adj_alpha;
+    supsegs_accumulated.a = supsegs_accumulated.a + (1.0f - supsegs_accumulated.a) * adj_alpha;
+
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("Supersegment accumulated so far: (%f, %f, %f, %f)", supsegs_accumulated.rgba);
+    }
+
+}
+
+
+
 #if INT_DEPTHS
 void writeSupersegment(int index, uint start, uint end, vec4 color) {
 //    #if USE_PRINTF
@@ -157,6 +206,9 @@ void writeSupersegment(int index, float start, float end, vec4 color) {
     if(gl_GlobalInvocationID.xy == debug_pixel) {
         debugPrintfEXT("Writing supseg: %d. Start: %f, end: %f, color: (%f, %f, %f, %f)", index, start, end, color.rgba);
     }
+    if(isnan(color.r) || isnan(color.a) || isnan(start) || isnan(end) || isnan(index)) {
+        debugPrintfEXT("Error! Wrong supersegment written by: (%d, %d)", gl_GlobalInvocationID.xy);
+    }
     #endif
 
     #if SEPARATE_DEPTH
@@ -168,6 +220,8 @@ void writeSupersegment(int index, float start, float end, vec4 color) {
 //    imageStore(OutputSubVDIColor, ivec3(index * 4 + 2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(color.b));
 //    imageStore(OutputSubVDIColor, ivec3(index * 4 + 3, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(color.a));
     #endif
+
+//    accumulateSupseg(color, start, end);
 }
 #endif
 
@@ -234,6 +288,12 @@ void main()
 
     mat4 ipv = InverseViewMatrices[0] * InverseProjectionMatrix;
     mat4 pv = ProjectionMatrix * ViewMatrices[0];
+
+    ipvG = ipv;
+    pvG = pv;
+    windowWidthG = windowWidth;
+    windowHeightG = windowHeight;
+
     // frag coord in NDC
     // TODO: Re-introduce dithering
     //	vec2 fragCoord = (vrParameters.stereoEnabled ^ 1) * gl_FragCoord.xy + vrParameters.stereoEnabled * vec2((gl_FragCoord.x/2.0 + currentEye.eye * gl_FragCoord.x/2.0), gl_FragCoord.y);
@@ -390,7 +450,7 @@ void main()
 //                }
 //                #endif
 
-                if(supersegmentNum == maxSupersegments - 1) {
+                if(supersegmentNum == (maxSupersegments - 1)) {
                     lastSupersegment = true;
                 }
 
