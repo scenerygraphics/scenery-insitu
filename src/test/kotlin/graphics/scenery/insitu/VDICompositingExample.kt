@@ -47,7 +47,7 @@ class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
     val separateDepth = true
 
     val compute = CompositorNode()
-    var dataset = "DistributedStagbeetle"
+    var dataset = "Beechnut"
 
     override fun init() {
         renderer = hub.add(SceneryElement.Renderer,
@@ -59,21 +59,22 @@ class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
         var depthBuff = ByteArray(windowHeight*windowWidth*2*maxSupersegments)
 
 
-        val commSize = 1
-        val rank = 0
+        val commSize = 4
+        val rank = 2
 
         dataset += "_${commSize}_${rank}"
 
 //        val basePath = "/home/aryaman/Repositories/DistributedVis/cmake-build-debug/"
 //        val basePath = "/home/aryaman/Repositories/scenery-insitu/"
-        val basePath = "/home/aryaman/TestingData/"
+//        val basePath = "/home/aryaman/TestingData/"
+        val basePath = "/home/aryaman/TestingData/FromCluster/"
 
         val file = FileInputStream(File(basePath + "${dataset}vdidump4"))
 
         val vdiData = VDIDataIO.read(file)
 
-        buff = File(basePath + "${dataset}SetOfVDI1_ndc_col").readBytes()
-        depthBuff = File(basePath + "${dataset}SetOfVDI1_ndc_depth").readBytes()
+        buff = File(basePath + "${dataset}SetOfVDI4_ndc_col").readBytes()
+        depthBuff = File(basePath + "${dataset}SetOfVDI4_ndc_depth").readBytes()
 
         var colBuffer: ByteBuffer
         var depthBuffer: ByteBuffer
