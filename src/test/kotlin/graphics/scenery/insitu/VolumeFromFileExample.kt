@@ -55,7 +55,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
-    val generateVDIs = true
+    val generateVDIs = false
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
@@ -67,7 +67,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
     val cam: Camera = DetachedHeadCamera(hmd)
     var camTarget = Vector3f(0f)
     val numOctreeLayers = 8
-    val maxSupersegments = 20
+    val maxSupersegments = 30
     var benchmarking = false
     val viewNumber = 1
 
@@ -286,6 +286,15 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
 //
                 position = Vector3f( 4.622E+0f, -9.060E-1f, -1.047E+0f) //V1 for kingsnake
                 rotation = Quaternionf( 5.288E-2, -9.096E-1, -1.222E-1,  3.936E-1)
+
+//                position = Vector3f( 3.183E+0f, -5.973E-1f, -1.475E+0f) //V2 for Beechnut
+//                rotation = Quaternionf( 1.974E-2, -9.803E-1, -1.395E-1,  1.386E-1)
+//
+//                position = Vector3f( 4.458E+0f, -9.057E-1f,  4.193E+0f) //V2 for Kingsnake
+//                rotation = Quaternionf( 1.238E-1, -3.649E-1,-4.902E-2,  9.215E-1)
+
+//                position = Vector3f( 6.284E+0f, -4.932E-1f,  4.787E+0f) //V2 for Simulation
+//                rotation = Quaternionf( 1.162E-1, -4.624E-1, -6.126E-2,  8.769E-1)
             }
             perspectiveCamera(50.0f, windowWidth, windowHeight)
             cam.farPlaneDistance = 20.0f
@@ -306,7 +315,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
         val datasetPath = Paths.get("/home/aryaman/Datasets/Volume/${dataset}")
 //        val datasetPath = Paths.get("/scratch/ws/1/argupta-distributed_vdis/Datasets/${dataset}")
 
-        val tf = TransferFunction()
+        val tf = TransferFunction.ramp(0.25f, 0.02f, 0.7f)
         with(tf) {
             if(dataset == "Stagbeetle" || dataset == "Stagbeetle_divided") {
                 addControlPoint(0.0f, 0.0f)
@@ -341,6 +350,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
                 addControlPoint(0.65f, 0.0f)
                 addControlPoint(0.80f, 0.2f)
                 addControlPoint(0.85f, 0.0f)
+            } else if (dataset == "Rotstrat") {
+                TransferFunction.ramp(0.0025f, 0.005f, 0.7f)
             } else {
                 logger.info("Using a standard transfer function")
                 TransferFunction.ramp(0.1f, 0.5f)
@@ -360,6 +371,11 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             val volume = fromPathRaw(Paths.get("$datasetPath/Part$i"), is16bit)
             volume.name = "volume"
             volume.colormap = Colormap.get("hot")
+            if(dataset == "Rotstrat") {
+                volume.colormap = Colormap.get("jet")
+                volume.converterSetups[0].setDisplayRange(25000.0, 50000.0)
+            }
+
             volume.origin = Origin.FrontBottomLeft
             val source = (volume.ds.sources[0].spimSource as TransformedSource).wrappedSource as? BufferSource<*>
             //volume.converterSetups.first().setDisplayRange(10.0, 220.0)
