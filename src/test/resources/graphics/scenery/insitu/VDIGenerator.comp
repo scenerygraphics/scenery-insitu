@@ -395,7 +395,11 @@ void main()
         bool first_iteration = true;
 
 //        thresh_found = true;
-//        mid_thresh = 0.027160939;
+//        mid_thresh = 0.027160939; //Kingsnake median
+//        mid_thresh = 0.0948132798075676; //Kingsnake 75th
+//        mid_thresh = 0.1759960949420929; //Kingsnake 75th
+//        mid_thresh = 0.06775235; //Beechnut median
+//        mid_thresh = 0.2165875; //Simulation median
 
         while(!thresh_found || !supsegs_written) {
             iter++;
