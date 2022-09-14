@@ -1,6 +1,7 @@
 package graphics.scenery.insitu
 
 import bdv.tools.transformation.TransformedSource
+import com.esotericsoftware.kryo.io.ByteBufferOutputStream
 import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.controls.TrackedStereoGlasses
@@ -24,15 +25,28 @@ import net.imglib2.type.numeric.integer.UnsignedByteType
 import net.imglib2.type.numeric.integer.UnsignedIntType
 import net.imglib2.type.numeric.integer.UnsignedShortType
 import net.imglib2.type.numeric.real.FloatType
+import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream
+import org.apache.commons.compress.compressors.lz4.FramedLZ4CompressorOutputStream
+import org.apache.commons.compress.compressors.lzma.LZMACompressorOutputStream
+import org.apache.commons.compress.compressors.snappy.FramedSnappyCompressorOutputStream
+import org.apache.commons.compress.compressors.snappy.SnappyCompressorOutputStream
 import org.joml.*
 import org.lwjgl.system.MemoryUtil
 import org.scijava.ui.behaviour.ClickBehaviour
+import org.xerial.snappy.Snappy
+import org.xerial.snappy.SnappyFramedOutputStream
+import org.zeromq.SocketType
+import org.zeromq.ZContext
+import org.zeromq.ZMQ
+import org.zeromq.ZMQException
 import tpietzsch.shadergen.generate.SegmentTemplate
 import tpietzsch.shadergen.generate.SegmentType
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.lang.Math
+import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
@@ -55,7 +69,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
-    val generateVDIs = false
+    val generateVDIs = true
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
@@ -437,6 +451,39 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
         }
 
         thread {
+            while (!sceneInitialized()) {
+                Thread.sleep(200)
+            }
+            while (true) {
+                val dummyVolume = scene.find("DummyVolume") as? DummyVolume
+                val clientCam = scene.find("ClientCamera") as? DetachedHeadCamera
+                if (dummyVolume != null && clientCam != null) {
+                    volumeList.first().networkCallback += {  //TODO: needs to be repeated for all volume slices
+                        if (volumeList.first().transferFunction != dummyVolume.transferFunction) {
+                            volumeList.first().transferFunction = dummyVolume.transferFunction
+                        }
+                        /*
+                    if(volume.colormap != dummyVolume.colormap) {
+                        volume.colormap = dummyVolume.colormap
+                    }
+                    if(volume.slicingMode != dummyVolume.slicingMode) {
+                        volume.slicingMode = dummyVolume.slicingMode
+                    }*/
+                    }
+                    cam.update += {
+                        cam.spatial().position = clientCam.spatial().position
+                        cam.spatial().rotation = clientCam.spatial().rotation
+                    }
+                    break;
+                }
+            }
+
+            settings.set("VideoEncoder.StreamVideo", true)
+            settings.set("VideoEncoder.StreamingAddress", "udp://${InetAddress.getLocalHost().hostAddress}:3337")
+            renderer?.recordMovie()
+        }
+
+        thread {
             if (generateVDIs) {
                 manageVDIGeneration()
             }
@@ -536,6 +583,22 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
         return 0
     }
 
+    private fun createPublisher() : ZMQ.Socket {
+        val context: ZContext = ZContext(4)
+        var publisher: ZMQ.Socket = context.createSocket(SocketType.PUB)
+
+        val address: String = "tcp://0.0.0.0:6655"
+        val port = try {
+            publisher.bind(address)
+            address.substringAfterLast(":").toInt()
+        } catch (e: ZMQException) {
+            logger.warn("Binding failed, trying random port: $e")
+            publisher.bindToRandomPort(address.substringBeforeLast(":"))
+        }
+
+        return publisher
+    }
+
     private fun manageVDIGeneration() {
         var subVDIDepthBuffer: ByteBuffer? = null
         var subVDIColorBuffer: ByteBuffer?
@@ -577,6 +640,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
 
         val tGeneration = Timer(0, 0)
 
+        val publisher = createPublisher()
 
         while (true) {
             tGeneration.start = System.nanoTime()
@@ -598,7 +662,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
 
             logger.info("Time taken for generation (only correct if VDIs were not being written to disk): ${timeTaken}")
 
+            val payLoad = "VDI $cnt has been generated".toByteArray(Charsets.US_ASCII)
 
+            publisher.send(payLoad)
 
 //            val camera = volumeManager.getScene()?.activeObserver ?: throw UnsupportedOperationException("No camera found")
             val camera = cam
@@ -610,7 +676,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             logger.info("The model matrix added to the vdi is: $model.")
 //            logger.info(" After translation: $translated")
 
-            if(cnt < 20) {
+            if(cnt < 0) {
 
                 logger.info(volumeManager.shaderProperties.keys.joinToString())
 //                val vdiData = VDIData(subVDIDepthBuffer!!, subVDIColorBuffer!!, gridCellsBuff!!, VDIMetadata(
@@ -647,6 +713,42 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
                 }
                 if(separateDepth) {
                     SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col")
+
+                    val compressionTime = measureNanoTime {
+                        val color = ByteArray(subVDIColorBuffer!!.remaining())
+                        subVDIColorBuffer.get(color)
+                        subVDIColorBuffer.flip()
+
+                        val depth = ByteArray(subVDIDepthBuffer!!.remaining())
+                        subVDIDepthBuffer.get(depth)
+                        subVDIDepthBuffer.flip()
+
+                        val colFile = FileOutputStream(File("${fileName}_col_compressed"))
+                        val depthFile = FileOutputStream(File("${fileName}_depth_compressed"))
+
+//                    val colorOut = ByteArrayOutputStream(color.size)
+//                    colorOut.write(color)
+//                    colFile.write(color)
+//                    val fColor = FramedLZ4CompressorOutputStream(colFile)
+//                        val fColor = GzipCompressorOutputStream(colFile)
+                        val fColor = FramedSnappyCompressorOutputStream(colFile)
+                        fColor.write(color)
+
+//                    val depthOut = ByteArrayOutputStream(depth.size)
+//                    depthOut.write(depth)
+//                        depthFile.write(depth)
+//                        val fDepth = GzipCompressorOutputStream(depthFile)
+                        val fDepth = FramedSnappyCompressorOutputStream(depthFile)
+                        fDepth.write(depth)
+
+                        fColor.close()
+                        fDepth.close()
+                        colFile.close()
+                        depthFile.close()
+
+                    }
+
+
                     SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth")
                     SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
                     SystemHelpers.dumpToFile(thresholdBuff!!, "${fileName}_thresholds")
