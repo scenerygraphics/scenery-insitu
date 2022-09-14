@@ -89,9 +89,9 @@ class InVisRenderer : SceneryBase("InVisRenderer"){
         val subscriber = hub.get<NodeSubscriber>(SceneryElement.NodeSubscriber)
 
         publishedNodes.forEachIndexed { index, node ->
-            publisher?.nodes?.put(13337 + index, node)
+//            publisher?.nodes?.put(13337 + index, node)
 
-            subscriber?.nodes?.put(13337 + index, node)
+//            subscriber?.nodes?.put(13337 + index, node)
         }
 
         fixedRateTimer(initialDelay = 5, period = 5) {

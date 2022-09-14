@@ -88,9 +88,9 @@ class Head : SceneryBase("InVis Head") {
         val subscriber = hub.get<NodeSubscriber>(SceneryElement.NodeSubscriber)
 
         publishedNodes.forEachIndexed { index, node ->
-            publisher?.nodes?.put(13337 + index, node)
+//            publisher?.nodes?.put(13337 + index, node)
 
-            subscriber?.nodes?.put(13337 + index, node)
+//            subscriber?.nodes?.put(13337 + index, node)
         }
     }
 
