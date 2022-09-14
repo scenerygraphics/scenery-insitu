@@ -24,6 +24,8 @@ dependencies {
 
     implementation("org.jetbrains.kotlin:kotlin-scripting-jsr223:1.5.31")
     implementation("com.esotericsoftware:kryo:5.2.0")
+    implementation("org.xerial.snappy:snappy-java:1.1.8.4")
+    implementation("org.lz4:lz4-java:1.8.0")
 
 
 //    implementation("graphics.scenery:scenery:8ed735b") {
@@ -34,7 +36,8 @@ dependencies {
 //        isTransitive = true
 //    }
 
-    implementation("org.zeromq:jeromq:0.4.3")
+//    implementation("org.zeromq:jeromq:0.4.3")
+    implementation("org.zeromq:jeromq:0.5.2")
     implementation("org.msgpack:msgpack-core:0.9.0")
     implementation("org.msgpack:jackson-dataformat-msgpack:0.9.0")
     implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.13.0")
