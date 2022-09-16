@@ -69,7 +69,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
-    val generateVDIs = true
+    val generateVDIs = false
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
@@ -84,6 +84,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
     val maxSupersegments = 30
     var benchmarking = false
     val viewNumber = 1
+    var ambientOcclusion = true
 
     val closeAfter = 250000L
 
@@ -279,6 +280,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             val outputTexture = Texture.fromImage(Image(outputBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
             volumeManager.material().textures["OutputRender"] = outputTexture
 
+            volumeManager.customUniforms.add("ambientOcclusion")
+            volumeManager.shaderProperties["ambientOcclusion"] = ambientOcclusion
+
             hub.add(volumeManager)
 
             val plane = FullscreenObject()
@@ -450,38 +454,39 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             scene.addChild(light)
         }
 
-        thread {
-            while (!sceneInitialized()) {
-                Thread.sleep(200)
-            }
-            while (true) {
-                val dummyVolume = scene.find("DummyVolume") as? DummyVolume
-                val clientCam = scene.find("ClientCamera") as? DetachedHeadCamera
-                if (dummyVolume != null && clientCam != null) {
-                    volumeList.first().networkCallback += {  //TODO: needs to be repeated for all volume slices
-                        if (volumeList.first().transferFunction != dummyVolume.transferFunction) {
-                            volumeList.first().transferFunction = dummyVolume.transferFunction
-                        }
-                        /*
-                    if(volume.colormap != dummyVolume.colormap) {
-                        volume.colormap = dummyVolume.colormap
-                    }
-                    if(volume.slicingMode != dummyVolume.slicingMode) {
-                        volume.slicingMode = dummyVolume.slicingMode
-                    }*/
-                    }
-                    cam.update += {
-                        cam.spatial().position = clientCam.spatial().position
-                        cam.spatial().rotation = clientCam.spatial().rotation
-                    }
-                    break;
-                }
-            }
-
-            settings.set("VideoEncoder.StreamVideo", true)
-            settings.set("VideoEncoder.StreamingAddress", "udp://${InetAddress.getLocalHost().hostAddress}:3337")
-            renderer?.recordMovie()
-        }
+//        thread {
+//            while (!sceneInitialized()) {
+//                Thread.sleep(200)
+//            }
+//            while (true) {
+//                val dummyVolume = scene.find("DummyVolume") as? DummyVolume
+//                val clientCam = scene.find("ClientCamera") as? DetachedHeadCamera
+//                if (dummyVolume != null && clientCam != null) {
+//                    volumeList.first().networkCallback += {  //TODO: needs to be repeated for all volume slices
+//                        if (volumeList.first().transferFunction != dummyVolume.transferFunction) {
+//                            volumeList.first().transferFunction = dummyVolume.transferFunction
+//                        }
+//                        /*
+//                    if(volume.colormap != dummyVolume.colormap) {
+//                        volume.colormap = dummyVolume.colormap
+//                    }
+//                    if(volume.slicingMode != dummyVolume.slicingMode) {
+//                        volume.slicingMode = dummyVolume.slicingMode
+//                    }*/
+//                    }
+//                    cam.update += {
+//                        cam.spatial().position = clientCam.spatial().position
+//                        cam.spatial().rotation = clientCam.spatial().rotation
+//                    }
+//                    break;
+//                }
+//            }
+//
+//            settings.set("VideoEncoder.StreamVideo", true)
+//            settings.set("VideoEncoder.StreamingAddress", "udp://${InetAddress.getLocalHost().hostAddress}:3337")
+////            settings.set("VideoEncoder.StreamingAddress", "udp://10.1.224.71:3337")
+//            renderer?.recordMovie()
+//        }
 
         thread {
             if (generateVDIs) {
@@ -769,6 +774,13 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             rotateCamera(10f)
         })
         inputHandler?.addKeyBinding("rotate_camera", "R")
+
+        inputHandler?.addBehaviour("toggleAO", ClickBehaviour { _, _ ->
+            logger.info("toggling AO to ${!ambientOcclusion}")
+            volumeList[0].volumeManager.shaderProperties.set("ambientOcclusion", !ambientOcclusion)
+            ambientOcclusion = !ambientOcclusion
+        })
+        inputHandler?.addKeyBinding("toggleAO", "O")
     }
 
     companion object {

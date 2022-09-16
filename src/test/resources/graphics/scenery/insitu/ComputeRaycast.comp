@@ -12,6 +12,8 @@ uniform vec3 cachePadOffset;
 uniform vec3 cacheSize; // TODO: get from texture!?
 uniform mat4 transform;
 
+uniform bool ambientOcclusion;
+
 #pragma scenery verbatim
 layout(set = 0, binding = 0) uniform VRParameters {
     mat4 projectionMatrices[2];
@@ -48,7 +50,7 @@ layout(set = 3, binding = 0, rgba8) uniform image2D OutputRender;
 
 #pragma scenery endverbatim
 
-ivec2 debug_pixel = ivec2(578, 327);
+ivec2 debug_pixel = ivec2(585, 366);
 ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
 
 // intersect ray with a box
@@ -139,6 +141,22 @@ void main()
 
         // -------------------------------------------------------
 
+    // calculate directions for local ambient occlusion
+
+    const int numAORays = 8;
+
+    vec3 dirs[numAORays];
+
+    dirs[0] = vec3(0.33, 0.33, 0.33);
+    dirs[1] = vec3(-0.33, 0.33, 0.33);
+    dirs[2] = vec3(0.33, -0.33, 0.33);
+    dirs[3] = vec3(0.33, 0.33, -0.33);
+    dirs[4] = vec3(-0.33, -0.33, 0.33);
+    dirs[5] = vec3(-0.33, 0.33, -0.33);
+    dirs[6] = vec3(0.33, -0.33, -0.33);
+    dirs[7] = vec3(-0.33, -0.33, -0.33);
+
+    float minVoxelSize = nw * distance(wfront, wback);
 
     float minOpacity = 0.0; //If alpha is less than this, the sample is considered transparent and not included in generated supersegments
     //    float minOpacity = 0.00196078431; //If alpha is less than this, the sample is considered transparent and not included in generated supersegments
