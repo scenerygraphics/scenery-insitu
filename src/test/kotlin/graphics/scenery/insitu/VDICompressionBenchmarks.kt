@@ -10,8 +10,9 @@ import org.apache.commons.compress.compressors.snappy.FramedSnappyCompressorOutp
 import org.apache.commons.compress.compressors.snappy.SnappyCompressorOutputStream
 import org.lwjgl.system.MemoryUtil
 import org.lwjgl.system.MemoryUtil.memAlloc
-import org.lwjgl.system.MemoryUtil.memFree
 import org.lwjgl.util.lz4.LZ4.*
+import org.lwjgl.util.lz4.LZ4Frame.LZ4F_getErrorName
+import org.lwjgl.util.lz4.LZ4Frame.LZ4F_isError
 import org.lwjgl.util.lz4.LZ4HC.LZ4HC_CLEVEL_DEFAULT
 import org.lwjgl.util.lz4.LZ4HC.LZ4_compress_HC
 import org.lwjgl.util.zstd.Zstd.*
@@ -26,7 +27,11 @@ import kotlin.system.measureNanoTime
 
 class VDICompressionBenchmarks {
 
-
+    enum class CompressionTool {
+        ZSTD,
+        LZ4,
+        Snappy
+    }
 
     companion object {
 
@@ -113,18 +118,39 @@ class VDICompressionBenchmarks {
             println("LZ4 LWJGL HC! color size: ${colorSize.toFloat()/(1024*1024)} and depth size: ${depthSize.toFloat()/(1024*1024)}")
         }
 
+//        @JvmStatic
+//        fun compressZSTD_(color: ByteBuffer, depth: ByteBuffer, compressedColor: ByteBuffer, compressedDepth: ByteBuffer) {
+//            val colorSize = ZSTD_compress(color, compressedColor, ZSTD_CLEVEL_DEFAULT) //TODO: min_CLevel produces faster compression
+//            compressedColor.limit(colorSize.toInt())
+//            compressedColor = compressedColor.slice()
+//
+//            val depthSize = ZSTD_compress(depth, compressedDepth, ZSTD_CLEVEL_DEFAULT)
+//            compressedDepth.limit(depthSize.toInt())
+//            compressedDepth = compressedDepth.slice()
+//
+//            println("ZSTD LWJGL! color size: ${colorSize.toFloat()/(1024f*1024f)} and depth size: ${depthSize.toFloat()/(1024f*1024f)}")
+//            println("color buffer size: ${compressedColor.remaining().toFloat()/(1024f*1024f)} and depth buffer size: ${compressedDepth.remaining().toFloat()/(1024f*1024f)}")
+//        }
+
         @JvmStatic
-        fun compressZSTD(color: ByteBuffer, depth: ByteBuffer, compressedColor: ByteBuffer, compressedDepth: ByteBuffer) {
-            val colorSize = ZSTD_compress(color, compressedColor, ZSTD_CLEVEL_DEFAULT) //TODO: min_CLevel produces faster compression
-            compressedColor.limit(colorSize.toInt())
-            compressedColor = compressedColor.slice()
+        fun compressZSTD(compressed: ByteBuffer, uncompressed: ByteBuffer, level: Int): Long {
+            return checkZSTD(ZSTD_compress(compressed, uncompressed, level))
+        }
 
-            val depthSize = ZSTD_compress(depth, compressedDepth, ZSTD_CLEVEL_DEFAULT)
-            compressedDepth.limit(depthSize.toInt())
-            compressedDepth = compressedDepth.slice()
+        @JvmStatic
+        fun decompressZSTD(decompressed: ByteBuffer, compressed: ByteBuffer): Long {
+            checkZSTD(ZSTD_findDecompressedSize(compressed))
+            return ZSTD_decompress(decompressed, compressed)
+        }
 
-            println("ZSTD LWJGL! color size: ${colorSize.toFloat()/(1024f*1024f)} and depth size: ${depthSize.toFloat()/(1024f*1024f)}")
-            println("color buffer size: ${compressedColor.remaining().toFloat()/(1024f*1024f)} and depth buffer size: ${compressedDepth.remaining().toFloat()/(1024f*1024f)}")
+        @JvmStatic
+        fun compressLZ4(compressed: ByteBuffer, uncompressed: ByteBuffer, level: Int): Long {
+            return checkLZ4F(LZ4_compress_fast(uncompressed, compressed, level).toLong())
+        }
+
+        @JvmStatic
+        fun decompressLZ4(decompressed: ByteBuffer, compressed: ByteBuffer): Long {
+            return checkLZ4F(LZ4_decompress_safe(compressed, decompressed).toLong())
         }
 
         @JvmStatic
@@ -261,48 +287,136 @@ class VDICompressionBenchmarks {
             return errorCode
         }
 
-        private fun verifyDecompressed(color: ByteBuffer, depth: ByteBuffer, compressedColor: ByteBuffer, compressedDepth: ByteBuffer) {
-            val decompressedColor = memAlloc(color.remaining() + 1024)
-            val decompressedDepth = memAlloc(color.remaining() + 1024)
-            try {
-                checkZSTD(ZSTD_findDecompressedSize(compressedColor))
-                val decompressedSize = ZSTD_decompress(decompressedColor, compressedColor)
-                checkZSTD(decompressedSize)
-                check(
-                    decompressedSize == color.remaining().toLong()
-                ) {
-                    String.format(
-                        "Decompressed size %d != uncompressed size %d",
-                        decompressedSize,
-                        color.remaining()
-                    )
-                }
-                for (i in 0 until color.remaining()) {
-                    check(decompressedColor[i] == color[i]) { "Color Decompressed != uncompressed at: $i" }
-                }
-            } finally {
-                memFree(decompressedColor)
+        private fun checkLZ4F(errorCode: Long): Long {
+            check(!LZ4F_isError(errorCode)) { "LZ4 error: " + errorCode + " | " + LZ4F_getErrorName(errorCode) }
+            return errorCode
+        }
+
+        private fun verifyDecompressed(uncompressed: ByteBuffer, decompressed: ByteBuffer) {
+            val decompressedSize = decompressed.remaining().toLong()
+            check(
+                decompressedSize == uncompressed.remaining().toLong()
+            ) {
+                String.format(
+                    "Decompressed size %d != uncompressed size %d",
+                    decompressedSize,
+                    uncompressed.remaining()
+                )
+            }
+            println("uncompressed size: ${uncompressed.remaining()} and decompressed size: $decompressedSize")
+            for (i in 0 until uncompressed.remaining()) {
+                check(decompressed[i] == uncompressed[i]) { "Decompressed != uncompressed at: $i" }
+//                if (i % 1000000 == 0) {
+//                    println("Byte: $i Decompressed: ${decompressed[i]} uncompressed: ${uncompressed[i]}")
+//                }
+            }
+        }
+
+        @JvmStatic
+        fun compress(compressed: ByteBuffer, uncompressed: ByteBuffer, level: Int, compressionTool: CompressionTool): Long {
+            return if(compressionTool == CompressionTool.ZSTD) {
+                compressZSTD(compressed, uncompressed, level)
+            } else if(compressionTool == CompressionTool.LZ4) {
+                compressLZ4(compressed, uncompressed, level)
+            } else {
+                -1
+            }
+        }
+
+        @JvmStatic
+        fun decompress(decompressed: ByteBuffer, compressed: ByteBuffer, compressionTool: CompressionTool): Long {
+            return if(compressionTool == CompressionTool.ZSTD) {
+                decompressZSTD(decompressed, compressed)
+            } else if(compressionTool == CompressionTool.LZ4) {
+                decompressLZ4(decompressed, compressed)
+            } else {
+                -1
+            }
+        }
+
+        @JvmStatic
+        fun runBenchmark(color: ByteBuffer, depth: ByteBuffer, level: Int, compressionTool: CompressionTool, iterations: Int = 100) {
+            var compressedColor:  ByteBuffer? = null
+            var compressedDepth: ByteBuffer? = null
+            if(compressionTool ==  CompressionTool.ZSTD) {
+                compressedColor =  memAlloc(ZSTD_COMPRESSBOUND(color.remaining().toLong()).toInt());
+                compressedDepth = memAlloc(ZSTD_COMPRESSBOUND(depth.remaining().toLong()).toInt())
+            } else if(compressionTool == CompressionTool.LZ4) {
+                compressedColor = memAlloc(LZ4_compressBound(color.remaining()))
+                compressedDepth = memAlloc(LZ4_compressBound(depth.remaining()))
             }
 
-            try {
-                checkZSTD(ZSTD_findDecompressedSize(compressedDepth))
-                val decompressedSize = ZSTD_decompress(decompressedDepth, compressedDepth)
-                checkZSTD(decompressedSize)
-                check(
-                    decompressedSize == depth.remaining().toLong()
-                ) {
-                    String.format(
-                        "Decompressed size %d != uncompressed size %d",
-                        decompressedSize,
-                        depth.remaining()
-                    )
+            var decompressedColor = memAlloc(color.capacity() + 1024)
+            var decompressedDepth = memAlloc(depth.capacity() + 1024)
+
+            //first verify
+            var colorCompressedSize = compress(compressedColor!!, color, level, compressionTool)
+            compressedColor.limit(colorCompressedSize.toInt())
+//            compressedColor = compressedColor.slice()
+
+            var depthCompressedSize = compress(compressedDepth!!, depth, level, compressionTool)
+            compressedDepth.limit(depthCompressedSize.toInt())
+//            compressedDepth = compressedDepth.slice()
+
+            var colorDecompressedSize =  decompress(decompressedColor, compressedColor.slice(), compressionTool)
+            decompressedColor.limit(colorDecompressedSize.toInt())
+
+            var depthDecompressedSize =  decompress(decompressedDepth, compressedDepth.slice(), compressionTool)
+            decompressedDepth.limit(depthDecompressedSize.toInt())
+
+            println("Compressed color buffer size: ${colorCompressedSize.toFloat() / (1024f * 1024f)} MB")
+            println("Verifying color compression")
+//            verifyDecompressed(color, decompressedColor)
+            compressedColor.limit(compressedColor.capacity())
+
+            println("Compressed depth buffer size: ${depthCompressedSize.toFloat() / (1024f * 1024f)} MB")
+            println("Verifying depth compression")
+//            verifyDecompressed(depth, decompressedDepth)
+            compressedDepth.limit(compressedDepth.capacity())
+
+            var totalCompressionTime = 0.0
+            var totalDecompressionTime = 0.0
+
+            //start the benchmarks
+            for (i in 1..100) {
+//                compressedColor!!.limit(compressedColor.capacity())
+//                compressedColor = compressedColor.slice()
+                compressedColor!!.position(0)
+//                compressedDepth!!.limit(compressedDepth.capacity())
+//                compressedDepth = compressedDepth.slice()
+                compressedDepth!!.position(0)
+
+//                println("Iteration: $i color buf has: ${compressedColor!!.remaining()} depth buf has: ${compressedDepth!!.remaining()}")
+//                println("Color requirement: ${ZSTD_COMPRESSBOUND(color.remaining().toLong())}")
+
+                val compressionTime = measureNanoTime {
+                    colorCompressedSize = compress(compressedColor!!, color, level, compressionTool)
+                    compressedColor.limit(colorCompressedSize.toInt())
+
+                    depthCompressedSize = compress(compressedDepth!!, depth, level, compressionTool)
+                    compressedDepth.limit(depthCompressedSize.toInt())
                 }
-                for (i in 0 until color.remaining()) {
-                    check(decompressedDepth[i] == depth[i]) { "Depth Decompressed != uncompressed at: $i" }
+
+                val decompressionTime = measureNanoTime {
+                    colorDecompressedSize =  decompress(decompressedColor, compressedColor.slice(), compressionTool)
+
+                    depthDecompressedSize =  decompress(decompressedDepth, compressedDepth.slice(), compressionTool)
                 }
-            } finally {
-                memFree(decompressedDepth)
+
+                compressedColor.limit(compressedColor.capacity())
+                compressedDepth.limit(compressedDepth.capacity())
+
+                if(i % 10 == 0) {
+                    println("Compression time: ${compressionTime/1e9} and decompression time: ${decompressionTime/1e9}")
+                    println("Compressed size: Color: ${colorCompressedSize.toFloat() / (1024f * 1024f)} MB and Depth: ${depthCompressedSize.toFloat() / (1024f * 1024f)} MB")
+                }
+                totalCompressionTime += compressionTime/1e9
+                totalDecompressionTime += decompressionTime/1e9
             }
+
+            println("Average compression time: ${totalCompressionTime / iterations.toDouble()}")
+            println("Average decompression time: ${totalDecompressionTime / iterations.toDouble()}")
+            println("Average overall: ${(totalDecompressionTime + totalCompressionTime) / iterations.toDouble()}")
         }
 
         @JvmStatic
@@ -361,36 +475,7 @@ class VDICompressionBenchmarks {
             val iterations = 100
             var cnt = 0
 
-            var compressedColor =  memAlloc(ZSTD_COMPRESSBOUND(colBuffer.remaining().toLong()).toInt());
-            var compressedDepth = memAlloc(ZSTD_COMPRESSBOUND(depthBuffer.capacity().toLong()).toInt())
-
-            val totalTime = measureNanoTime {
-                while (cnt < iterations) {
-                    cnt++
-
-                    val compTime = measureNanoTime {
-//                        compressSnappy(colBuffer, depthBuffer, 6)
-//                        compressSnappy(buff, depthBuff)
-//                        compressSnappyRaw(colBuffer, depthBuffer)
-                        compressZSTD(colBuffer, depthBuffer, compressedColor, compressedDepth)
-//                        compressLZ4_LWJGL_HC(colBuffer, depthBuffer)
-//                        compressLZ4(buff, depthBuff)
-//                        compressLZ4Apache(buff, depthBuff)
-//                        compressSnappyApacheFramed(buff, depthBuff)
-//                        compressSnappyApache(buff, depthBuff)
-//                        compressLZ4Apache(colBuffer, depthBuffer)
-//                        compressLZMA(buff, depthBuff)
-//                        compressGzip(buff, depthBuff)
-                    }
-
-
-                    if(cnt % 1 == 0) {
-                        println("iteration: $cnt the compression took: ${compTime/1e9}")
-                    }
-                }
-            }
-
-            println("Overall average = ${totalTime/(1e9 * iterations)}")
+            runBenchmark(colBuffer, depthBuffer, 10, CompressionTool.LZ4)
 
         }
     }
