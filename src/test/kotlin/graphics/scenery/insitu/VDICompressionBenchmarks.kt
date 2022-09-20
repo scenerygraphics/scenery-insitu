@@ -36,33 +36,6 @@ class VDICompressionBenchmarks {
     companion object {
 
         @JvmStatic
-        fun compressSnappy(color: ByteBuffer, depth: ByteBuffer, maxSizeRatio: Int = 1) {
-            val compressedColors: ByteBuffer? = ByteBuffer.allocateDirect(color.capacity() / maxSizeRatio)
-            Snappy.compress(color, compressedColors)
-
-            val compressedDepths: ByteBuffer? = ByteBuffer.allocateDirect(depth.capacity() / maxSizeRatio)
-            Snappy.compress(depth, compressedDepths)
-        }
-
-        @JvmStatic
-        fun compressSnappy(color: ByteArray, depth: ByteArray) {
-            val compressedColor = Snappy.compress(color)
-            val compressedDepth = Snappy.compress(depth)
-
-            println("Snappy! color size: ${compressedColor.size/(1024*1024)} and depth size: ${compressedDepth.size/(1024*1024)}")
-        }
-
-        @JvmStatic
-        fun compressSnappyRaw(color: ByteBuffer, depth: ByteBuffer) {
-            val compressedColor = MemoryUtil.memAlloc(color.remaining())
-            val compressedDepth = MemoryUtil.memAlloc(color.remaining())
-            Snappy.compress(color, compressedColor)
-            Snappy.compress(depth, compressedDepth)
-
-            println("Snappy! color size: ${compressedColor.remaining()/(1024*1024)} and depth size: ${compressedDepth.remaining()/(1024*1024)}")
-        }
-
-        @JvmStatic
         fun compressLZ4(color: ByteArray, depth: ByteArray) {
             val factory: LZ4Factory = LZ4Factory.fastestInstance()
 
@@ -131,6 +104,16 @@ class VDICompressionBenchmarks {
 //            println("ZSTD LWJGL! color size: ${colorSize.toFloat()/(1024f*1024f)} and depth size: ${depthSize.toFloat()/(1024f*1024f)}")
 //            println("color buffer size: ${compressedColor.remaining().toFloat()/(1024f*1024f)} and depth buffer size: ${compressedDepth.remaining().toFloat()/(1024f*1024f)}")
 //        }
+
+        @JvmStatic
+        fun compressSnappy(compressed: ByteBuffer, uncompressed: ByteBuffer): Long {
+            return Snappy.compress(uncompressed, compressed).toLong()
+        }
+
+        @JvmStatic
+        fun decompressSnappy(decompressed: ByteBuffer, compressed: ByteBuffer): Long {
+            return Snappy.uncompress(compressed, decompressed).toLong()
+        }
 
         @JvmStatic
         fun compressZSTD(compressed: ByteBuffer, uncompressed: ByteBuffer, level: Int): Long {
@@ -314,10 +297,12 @@ class VDICompressionBenchmarks {
 
         @JvmStatic
         fun compress(compressed: ByteBuffer, uncompressed: ByteBuffer, level: Int, compressionTool: CompressionTool): Long {
-            return if(compressionTool == CompressionTool.ZSTD) {
+            return if (compressionTool == CompressionTool.ZSTD) {
                 compressZSTD(compressed, uncompressed, level)
-            } else if(compressionTool == CompressionTool.LZ4) {
+            } else if (compressionTool == CompressionTool.LZ4) {
                 compressLZ4(compressed, uncompressed, level)
+            } else if (compressionTool == CompressionTool.Snappy) {
+                compressSnappy(compressed, uncompressed)
             } else {
                 -1
             }
@@ -329,6 +314,8 @@ class VDICompressionBenchmarks {
                 decompressZSTD(decompressed, compressed)
             } else if(compressionTool == CompressionTool.LZ4) {
                 decompressLZ4(decompressed, compressed)
+            } else if (compressionTool == CompressionTool.Snappy) {
+                decompressSnappy(decompressed, compressed)
             } else {
                 -1
             }
@@ -344,6 +331,9 @@ class VDICompressionBenchmarks {
             } else if(compressionTool == CompressionTool.LZ4) {
                 compressedColor = memAlloc(LZ4_compressBound(color.remaining()))
                 compressedDepth = memAlloc(LZ4_compressBound(depth.remaining()))
+            } else if (compressionTool == CompressionTool.Snappy) {
+                compressedColor = memAlloc(Snappy.maxCompressedLength(color.remaining()))
+                compressedDepth = memAlloc(Snappy.maxCompressedLength(depth.remaining()))
             }
 
             var decompressedColor = memAlloc(color.capacity() + 1024)
@@ -366,12 +356,12 @@ class VDICompressionBenchmarks {
 
             println("Compressed color buffer size: ${colorCompressedSize.toFloat() / (1024f * 1024f)} MB")
             println("Verifying color compression")
-//            verifyDecompressed(color, decompressedColor)
+            verifyDecompressed(color, decompressedColor)
             compressedColor.limit(compressedColor.capacity())
 
             println("Compressed depth buffer size: ${depthCompressedSize.toFloat() / (1024f * 1024f)} MB")
             println("Verifying depth compression")
-//            verifyDecompressed(depth, decompressedDepth)
+            verifyDecompressed(depth, decompressedDepth)
             compressedDepth.limit(compressedDepth.capacity())
 
             var totalCompressionTime = 0.0
@@ -475,7 +465,7 @@ class VDICompressionBenchmarks {
             val iterations = 100
             var cnt = 0
 
-            runBenchmark(colBuffer, depthBuffer, 10, CompressionTool.LZ4)
+            runBenchmark(colBuffer, depthBuffer, 0, CompressionTool.Snappy)
 
         }
     }
