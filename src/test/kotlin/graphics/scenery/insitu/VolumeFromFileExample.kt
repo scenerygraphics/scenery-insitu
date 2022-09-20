@@ -32,6 +32,7 @@ import org.apache.commons.compress.compressors.snappy.FramedSnappyCompressorOutp
 import org.apache.commons.compress.compressors.snappy.SnappyCompressorOutputStream
 import org.joml.*
 import org.lwjgl.system.MemoryUtil
+import org.lwjgl.util.lz4.LZ4
 import org.scijava.ui.behaviour.ClickBehaviour
 import org.xerial.snappy.Snappy
 import org.xerial.snappy.SnappyFramedOutputStream
@@ -69,7 +70,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
-    val generateVDIs = false
+    val generateVDIs = true
+    val storeVDIs = false
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
@@ -281,7 +283,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             volumeManager.material().textures["OutputRender"] = outputTexture
 
             volumeManager.customUniforms.add("ambientOcclusion")
-            volumeManager.shaderProperties["ambientOcclusion"] = ambientOcclusion
+            volumeManager.shaderProperties["ambientOcclusion"] = false
 
             hub.add(volumeManager)
 
@@ -647,6 +649,11 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
 
         val publisher = createPublisher()
 
+        var compressedColor:  ByteBuffer? = null
+        var compressedDepth: ByteBuffer? = null
+
+        val compressor = VDICompressor()
+
         while (true) {
             tGeneration.start = System.nanoTime()
             while(colorCnt.get() == prevColor || depthCnt.get() == prevDepth) {
@@ -667,10 +674,6 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
 
             logger.info("Time taken for generation (only correct if VDIs were not being written to disk): ${timeTaken}")
 
-            val payLoad = "VDI $cnt has been generated".toByteArray(Charsets.US_ASCII)
-
-            publisher.send(payLoad)
-
 //            val camera = volumeManager.getScene()?.activeObserver ?: throw UnsupportedOperationException("No camera found")
             val camera = cam
 
@@ -681,7 +684,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             logger.info("The model matrix added to the vdi is: $model.")
 //            logger.info(" After translation: $translated")
 
-            if(cnt < 0) {
+            if(cnt < 20) {
 
                 logger.info(volumeManager.shaderProperties.keys.joinToString())
 //                val vdiData = VDIData(subVDIDepthBuffer!!, subVDIColorBuffer!!, gridCellsBuff!!, VDIMetadata(
@@ -717,46 +720,37 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
                     fileName = "${dataset}VDI${cnt}_ndc"
                 }
                 if(separateDepth) {
-                    SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col")
 
                     val compressionTime = measureNanoTime {
-                        val color = ByteArray(subVDIColorBuffer!!.remaining())
-                        subVDIColorBuffer.get(color)
-                        subVDIColorBuffer.flip()
+                        if(compressedColor == null) {
+                            compressedColor = MemoryUtil.memAlloc(LZ4.LZ4_compressBound(subVDIColorBuffer!!.remaining()))
+                        }
+                        if(compressedDepth == null) {
+                            compressedDepth = MemoryUtil.memAlloc(LZ4.LZ4_compressBound(subVDIDepthBuffer!!.remaining()))
+                        }
 
-                        val depth = ByteArray(subVDIDepthBuffer!!.remaining())
-                        subVDIDepthBuffer.get(depth)
-                        subVDIDepthBuffer.flip()
-
-                        val colFile = FileOutputStream(File("${fileName}_col_compressed"))
-                        val depthFile = FileOutputStream(File("${fileName}_depth_compressed"))
-
-//                    val colorOut = ByteArrayOutputStream(color.size)
-//                    colorOut.write(color)
-//                    colFile.write(color)
-//                    val fColor = FramedLZ4CompressorOutputStream(colFile)
-//                        val fColor = GzipCompressorOutputStream(colFile)
-                        val fColor = FramedSnappyCompressorOutputStream(colFile)
-                        fColor.write(color)
-
-//                    val depthOut = ByteArrayOutputStream(depth.size)
-//                    depthOut.write(depth)
-//                        depthFile.write(depth)
-//                        val fDepth = GzipCompressorOutputStream(depthFile)
-                        val fDepth = FramedSnappyCompressorOutputStream(depthFile)
-                        fDepth.write(depth)
-
-                        fColor.close()
-                        fDepth.close()
-                        colFile.close()
-                        depthFile.close()
+                        val compressedColorLength = compressor.compress(compressedColor!!, subVDIColorBuffer!!, 3, VDICompressor.CompressionTool.LZ4)
+                        val compressedDepthLength = compressor.compress(compressedDepth!!, subVDIDepthBuffer!!, 3, VDICompressor.CompressionTool.LZ4)
 
                     }
 
+                    logger.info("Time taken in compressing VDI: ${compressionTime/1e9}")
 
-                    SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth")
-                    SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
-                    SystemHelpers.dumpToFile(thresholdBuff!!, "${fileName}_thresholds")
+                    val colorBytesQueued = publisher.sendByteBuffer(compressedColor!!, ZMQ.SNDMORE)
+
+                    val depthBytesQueued = publisher.sendByteBuffer(compressedDepth!!, 0)
+
+                    if(colorBytesQueued != subVDIColorBuffer!!.remaining() || depthBytesQueued != subVDIDepthBuffer!!.remaining()) {
+                        logger.warn("ZMQ error in queueing VDIs to send")
+                    }
+
+                    if(storeVDIs) {
+                        SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col")
+                        SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth")
+                        SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
+//                      SystemHelpers.dumpToFile(thresholdBuff!!, "${fileName}_thresholds")
+                    }
+
                 } else {
                     SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)
                     SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
