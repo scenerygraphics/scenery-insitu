@@ -732,17 +732,25 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
                         val compressedColorLength = compressor.compress(compressedColor!!, subVDIColorBuffer!!, 3, VDICompressor.CompressionTool.LZ4)
                         val compressedDepthLength = compressor.compress(compressedDepth!!, subVDIDepthBuffer!!, 3, VDICompressor.CompressionTool.LZ4)
 
+                        compressedColor!!.limit(compressedColorLength.toInt())
+                        compressedDepth!!.limit(compressedDepthLength.toInt())
+
                     }
 
                     logger.info("Time taken in compressing VDI: ${compressionTime/1e9}")
 
-                    val colorBytesQueued = publisher.sendByteBuffer(compressedColor!!, ZMQ.SNDMORE)
+                    val colorBytesQueued = publisher.sendByteBuffer(compressedColor!!.slice(), ZMQ.SNDMORE)
 
-                    val depthBytesQueued = publisher.sendByteBuffer(compressedDepth!!, 0)
+                    val depthBytesQueued = publisher.sendByteBuffer(compressedDepth!!.slice(), 0)
 
-                    if(colorBytesQueued != subVDIColorBuffer!!.remaining() || depthBytesQueued != subVDIDepthBuffer!!.remaining()) {
+                    compressedColor!!.limit(compressedColor!!.capacity())
+                    compressedDepth!!.limit(compressedDepth!!.capacity())
+
+                    if(colorBytesQueued == -1 || depthBytesQueued != -1) {
                         logger.warn("ZMQ error in queueing VDIs to send")
                     }
+
+                    logger.info("Color bytes queued: $colorBytesQueued and depth: $depthBytesQueued")
 
                     if(storeVDIs) {
                         SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col")
