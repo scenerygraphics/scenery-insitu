@@ -18,6 +18,7 @@ import graphics.scenery.utils.extensions.minus
 import graphics.scenery.utils.extensions.plus
 import graphics.scenery.utils.extensions.times
 import graphics.scenery.volumes.*
+import graphics.scenery.volumes.vdi.VDICompressor
 import graphics.scenery.volumes.vdi.VDIData
 import graphics.scenery.volumes.vdi.VDIDataIO
 import graphics.scenery.volumes.vdi.VDIMetadata
@@ -72,6 +73,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
     lateinit var volumeManager: VolumeManager
     val generateVDIs = true
     val storeVDIs = false
+    val transmitVDIs = true
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
@@ -653,6 +655,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
         var compressedDepth: ByteBuffer? = null
 
         val compressor = VDICompressor()
+        val compressionTool = VDICompressor.CompressionTool.LZ4
 
         while (true) {
             tGeneration.start = System.nanoTime()
@@ -684,86 +687,92 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             logger.info("The model matrix added to the vdi is: $model.")
 //            logger.info(" After translation: $translated")
 
-            if(cnt < 20) {
+            val vdiData = VDIData(
+                VDIMetadata(
+                    projection = camera.spatial().projection,
+                    view = camera.spatial().getTransformation(),
+                    volumeDimensions = volumeDims,
+                    model = model,
+                    nw = volumeList.first().volumeManager.shaderProperties["nw"] as Float,
+                    windowDimensions = Vector2i(camera.width, camera.height)
+                )
+            )
 
-                logger.info(volumeManager.shaderProperties.keys.joinToString())
-//                val vdiData = VDIData(subVDIDepthBuffer!!, subVDIColorBuffer!!, gridCellsBuff!!, VDIMetadata(
-
-                val total_duration = measureNanoTime {
-                    val vdiData = VDIData(
-                        VDIMetadata(
-                            projection = camera.spatial().projection,
-                            view = camera.spatial().getTransformation(),
-                            volumeDimensions = volumeDims,
-                            model = model,
-                            nw = volumeList.first().volumeManager.shaderProperties["nw"] as Float,
-                            windowDimensions = Vector2i(camera.width, camera.height)
-                        )
-                    )
-
-                    val duration = measureNanoTime {
-                        val file = FileOutputStream(File("${dataset}vdidump$cnt"))
-//                    val comp = GZIPOutputStream(file, 65536)
-                        VDIDataIO.write(vdiData, file)
-                        logger.info("written the dump")
-                        file.close()
+            if(transmitVDIs) {
+                val compressionTime = measureNanoTime {
+                    if(compressedColor == null) {
+                        compressedColor = MemoryUtil.memAlloc(compressor.returnCompressBound(subVDIColorBuffer!!.remaining().toLong(), compressionTool))
                     }
-                    logger.info("time taken (uncompressed): ${duration}")
-                }
+                    val compressedColorLength = compressor.compress(compressedColor!!, subVDIColorBuffer!!, 3, compressionTool)
+                    compressedColor!!.limit(compressedColorLength.toInt())
 
-                logger.info("total serialization duration: ${total_duration}")
-
-                var fileName = ""
-                if(world_abs) {
-                    fileName = "${dataset}VDI${cnt}_world_new"
-                } else {
-                    fileName = "${dataset}VDI${cnt}_ndc"
-                }
-                if(separateDepth) {
-
-                    val compressionTime = measureNanoTime {
-                        if(compressedColor == null) {
-                            compressedColor = MemoryUtil.memAlloc(LZ4.LZ4_compressBound(subVDIColorBuffer!!.remaining()))
-                        }
+                    if(separateDepth) {
                         if(compressedDepth == null) {
-                            compressedDepth = MemoryUtil.memAlloc(LZ4.LZ4_compressBound(subVDIDepthBuffer!!.remaining()))
+                            compressedDepth = MemoryUtil.memAlloc(compressor.returnCompressBound(subVDIDepthBuffer!!.remaining().toLong(), compressionTool))
                         }
-
-                        val compressedColorLength = compressor.compress(compressedColor!!, subVDIColorBuffer!!, 3, VDICompressor.CompressionTool.LZ4)
-                        val compressedDepthLength = compressor.compress(compressedDepth!!, subVDIDepthBuffer!!, 3, VDICompressor.CompressionTool.LZ4)
-
-                        compressedColor!!.limit(compressedColorLength.toInt())
+                        val compressedDepthLength = compressor.compress(compressedDepth!!, subVDIDepthBuffer!!, 3, compressionTool)
                         compressedDepth!!.limit(compressedDepthLength.toInt())
-
                     }
+                }
 
-                    logger.info("Time taken in compressing VDI: ${compressionTime/1e9}")
+                logger.info("Time taken in compressing VDI: ${compressionTime/1e9}")
+
+                val publishTime = measureNanoTime {
+                    val metadataOut = ByteArrayOutputStream()
+                    VDIDataIO.write(vdiData, metadataOut)
+
+                    val metadataBytes = metadataOut.toByteArray()
+
+                    val check = publisher.send(metadataBytes)
+
+                    if(!check) {
+                        logger.warn("ZMQ error in queueing metadata")
+                    }
 
                     val colorBytesQueued = publisher.sendByteBuffer(compressedColor!!.slice(), ZMQ.SNDMORE)
-
-                    val depthBytesQueued = publisher.sendByteBuffer(compressedDepth!!.slice(), 0)
-
                     compressedColor!!.limit(compressedColor!!.capacity())
-                    compressedDepth!!.limit(compressedDepth!!.capacity())
 
-                    if(colorBytesQueued == -1 || depthBytesQueued != -1) {
-                        logger.warn("ZMQ error in queueing VDIs to send")
+                    if(separateDepth) {
+                        val depthBytesQueued = publisher.sendByteBuffer(compressedDepth!!.slice(), 0)
+
+                        compressedDepth!!.limit(compressedDepth!!.capacity())
+
+                        if((colorBytesQueued == -1) || (depthBytesQueued == -1)) {
+                            logger.warn("ZMQ error in queueing VDIs to send")
+                        }
+
+                        logger.info("Color bytes queued: $colorBytesQueued and depth: $depthBytesQueued")
                     }
-
-                    logger.info("Color bytes queued: $colorBytesQueued and depth: $depthBytesQueued")
-
-                    if(storeVDIs) {
-                        SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col")
-                        SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth")
-                        SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
-//                      SystemHelpers.dumpToFile(thresholdBuff!!, "${fileName}_thresholds")
-                    }
-
-                } else {
-                    SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)
-                    SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
                 }
-                logger.info("Wrote VDI $cnt")
+
+                logger.info("Whole publishing process took: ${publishTime/1e9}")
+            }
+
+            if(storeVDIs) {
+                if(cnt < 20) {
+                    val file = FileOutputStream(File("${dataset}vdidump$cnt"))
+    //                    val comp = GZIPOutputStream(file, 65536)
+                    VDIDataIO.write(vdiData, file)
+                    logger.info("written the dump")
+                    file.close()
+
+                    var fileName = ""
+                    if(world_abs) {
+                        fileName = "${dataset}VDI${cnt}_world_new"
+                    } else {
+                        fileName = "${dataset}VDI${cnt}_ndc"
+                    }
+                    if(separateDepth) {
+                            SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col")
+                            SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth")
+                            SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
+    //                      SystemHelpers.dumpToFile(thresholdBuff!!, "${fileName}_thresholds")
+                    } else {
+                        SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)
+                        SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
+                    }
+                    logger.info("Wrote VDI $cnt")
+                }
             }
             cnt++
         }
