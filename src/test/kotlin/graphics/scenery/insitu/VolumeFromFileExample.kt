@@ -746,7 +746,6 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
                     metadataBytes.copyInto(message, vdiDataSize.size)
 
                     compressedColor!!.slice().get(message, vdiDataSize.size + metadataBytes.size, compressedColor!!.remaining())
-                    compressedColor!!.flip()
 
                     if(separateDepth) {
                         compressedDepth!!.slice().get(message, vdiDataSize.size + metadataBytes.size + compressedColor!!.remaining(), compressedDepth!!.remaining())
