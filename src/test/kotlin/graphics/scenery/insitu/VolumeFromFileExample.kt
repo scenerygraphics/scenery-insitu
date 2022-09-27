@@ -731,7 +731,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
 
                     logger.info("Size of VDI data is: ${metadataBytes.size}")
 
-                    var messageLength = metadataBytes.size + compressedColor!!.remaining()
+                    val vdiDataSize = metadataBytes.size.toString().toByteArray(Charsets.US_ASCII)
+
+                    var messageLength = vdiDataSize.size + metadataBytes.size + compressedColor!!.remaining()
 
                     if(separateDepth) {
                         messageLength += compressedDepth!!.remaining()
@@ -739,7 +741,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
 
                     val message = ByteArray(messageLength)
 
-                    metadataBytes.copyInto(message)
+                    vdiDataSize.copyInto(message)
+
+                    metadataBytes.copyInto(message, vdiDataSize.size)
 
                     compressedColor!!.slice().get(message, metadataBytes.size, compressedColor!!.remaining())
                     compressedColor!!.flip()
