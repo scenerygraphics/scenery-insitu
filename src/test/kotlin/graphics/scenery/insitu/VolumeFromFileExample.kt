@@ -18,10 +18,7 @@ import graphics.scenery.utils.extensions.minus
 import graphics.scenery.utils.extensions.plus
 import graphics.scenery.utils.extensions.times
 import graphics.scenery.volumes.*
-import graphics.scenery.volumes.vdi.VDICompressor
-import graphics.scenery.volumes.vdi.VDIData
-import graphics.scenery.volumes.vdi.VDIDataIO
-import graphics.scenery.volumes.vdi.VDIMetadata
+import graphics.scenery.volumes.vdi.*
 import net.imglib2.type.numeric.integer.UnsignedByteType
 import net.imglib2.type.numeric.integer.UnsignedIntType
 import net.imglib2.type.numeric.integer.UnsignedShortType
@@ -67,13 +64,13 @@ import kotlin.system.measureNanoTime
 
 data class Timer(var start: Long, var end: Long)
 
-class VolumeFromFileExample: SceneryBase("Volume Rendering", 1920, 1080, wantREPL = false) {
+class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL = false) {
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
     val generateVDIs = true
-    val storeVDIs = true
-    val transmitVDIs = false
+    val storeVDIs = false
+    val transmitVDIs = true
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
@@ -595,6 +592,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1920, 1080, wantREP
     private fun createPublisher() : ZMQ.Socket {
         val context: ZContext = ZContext(4)
         var publisher: ZMQ.Socket = context.createSocket(SocketType.PUB)
+        publisher.isConflate = true
 
         val address: String = "tcp://0.0.0.0:6655"
         val port = try {
@@ -682,7 +680,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1920, 1080, wantREP
             val model = volumeList.first().spatial().world
 
             val vdiData = VDIData(
+                VDIBufferSizes(),
                 VDIMetadata(
+                    index = cnt,
                     projection = camera.spatial().projection,
                     view = camera.spatial().getTransformation(),
                     volumeDimensions = volumeDims,
@@ -708,12 +708,16 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1920, 1080, wantREP
                     val compressedColorLength = compressor.compress(compressedColor!!, subVDIColorBuffer!!, 3, compressionTool)
                     compressedColor!!.limit(compressedColorLength.toInt())
 
+                    vdiData.bufferSizes.colorSize = compressedColorLength
+
                     if(separateDepth) {
                         if(compressedDepth == null) {
                             compressedDepth = MemoryUtil.memAlloc(compressor.returnCompressBound(depthSize.toLong(), compressionTool))
                         }
                         val compressedDepthLength = compressor.compress(compressedDepth!!, subVDIDepthBuffer!!, 3, compressionTool)
                         compressedDepth!!.limit(compressedDepthLength.toInt())
+
+                        vdiData.bufferSizes.depthSize = compressedDepthLength
                     }
                 }
 
@@ -725,26 +729,36 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1920, 1080, wantREP
 
                     val metadataBytes = metadataOut.toByteArray()
 
-                    val check = publisher.send(metadataBytes)
+                    logger.info("Size of VDI data is: ${metadataBytes.size}")
 
-                    if(!check) {
-                        logger.warn("ZMQ error in queueing metadata")
-                    }
-
-                    val colorBytesQueued = publisher.sendByteBuffer(compressedColor!!.slice(), ZMQ.SNDMORE)
-                    compressedColor!!.limit(compressedColor!!.capacity())
+                    var messageLength = metadataBytes.size + compressedColor!!.remaining()
 
                     if(separateDepth) {
-                        val depthBytesQueued = publisher.sendByteBuffer(compressedDepth!!.slice(), 0)
+                        messageLength += compressedDepth!!.remaining()
+                    }
+
+                    val message = ByteArray(messageLength)
+
+                    metadataBytes.copyInto(message)
+
+                    compressedColor!!.slice().get(message, metadataBytes.size, compressedColor!!.remaining())
+                    compressedColor!!.flip()
+
+                    if(separateDepth) {
+                        compressedDepth!!.slice().get(message, metadataBytes.size + compressedColor!!.remaining(), compressedDepth!!.remaining())
 
                         compressedDepth!!.limit(compressedDepth!!.capacity())
 
-                        if((colorBytesQueued == -1) || (depthBytesQueued == -1)) {
-                            logger.warn("ZMQ error in queueing VDIs to send")
-                        }
-
-                        logger.info("Color bytes queued: $colorBytesQueued and depth: $depthBytesQueued")
                     }
+
+                    compressedColor!!.limit(compressedColor!!.capacity())
+
+                    val sent = publisher.send(message)
+
+                    if(!sent) {
+                        logger.warn("There was a ZeroMQ error in queuing the message to send")
+                    }
+
                 }
 
                 logger.info("Whole publishing process took: ${publishTime/1e9}")
