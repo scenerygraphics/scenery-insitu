@@ -2,6 +2,8 @@ package graphics.scenery.insitu
 
 import bdv.tools.transformation.TransformedSource
 import com.esotericsoftware.kryo.io.ByteBufferOutputStream
+import com.fasterxml.jackson.core.type.TypeReference
+import com.fasterxml.jackson.databind.ObjectMapper
 import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.controls.TrackedStereoGlasses
@@ -31,6 +33,7 @@ import org.apache.commons.compress.compressors.snappy.SnappyCompressorOutputStre
 import org.joml.*
 import org.lwjgl.system.MemoryUtil
 import org.lwjgl.util.lz4.LZ4
+import org.msgpack.jackson.dataformat.MessagePackFactory
 import org.scijava.ui.behaviour.ClickBehaviour
 import org.xerial.snappy.Snappy
 import org.xerial.snappy.SnappyFramedOutputStream
@@ -67,8 +70,10 @@ data class Timer(var start: Long, var end: Long)
 class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL = false) {
     var hmd: TrackedStereoGlasses? = null
 
+    val context: ZContext = ZContext(4)
+
     lateinit var volumeManager: VolumeManager
-    val generateVDIs = true
+    val generateVDIs = false
     val storeVDIs = false
     val transmitVDIs = true
     val separateDepth = true
@@ -590,7 +595,6 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
     }
 
     private fun createPublisher() : ZMQ.Socket {
-        val context: ZContext = ZContext(4)
         var publisher: ZMQ.Socket = context.createSocket(SocketType.PUB)
         publisher.isConflate = true
 
@@ -604,6 +608,16 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
         }
 
         return publisher
+    }
+
+    private fun stringToQuaternion(inputString: String): Quaternionf {
+        val elements = inputString.removeSurrounding("[", "]").split(",").map { it.toFloat() }
+        return Quaternionf(elements[0], elements[1], elements[2], elements[3])
+    }
+
+    private fun stringToVector3f(inputString: String): Vector3f {
+        val mElements = inputString.removeSurrounding("[", "]").split(",").map { it.toFloat() }
+        return Vector3f(mElements[0], mElements[1], mElements[2])
     }
 
     private fun manageVDIGeneration() {
@@ -648,6 +662,19 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
         val tGeneration = Timer(0, 0)
 
         val publisher = createPublisher()
+
+        val subscriber: ZMQ.Socket = context.createSocket(SocketType.SUB)
+        subscriber.isConflate = true
+//        val address = "tcp://localhost:6655"
+        val address = "tcp://10.1.31.61:6655"
+        try {
+            subscriber.connect(address)
+        } catch (e: ZMQException) {
+            logger.warn("ZMQ Binding failed.")
+        }
+        subscriber.subscribe(ZMQ.SUBSCRIPTION_ALL)
+
+        val objectMapper = ObjectMapper(MessagePackFactory())
 
         var compressedColor:  ByteBuffer? = null
         var compressedDepth: ByteBuffer? = null
@@ -765,6 +792,16 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
                 }
 
                 logger.info("Whole publishing process took: ${publishTime/1e9}")
+
+                val payload = subscriber.recv(ZMQ.DONTWAIT)
+
+                if(payload != null) {
+                    val deserialized: List<Any> = objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
+
+                    cam.spatial().rotation = stringToQuaternion(deserialized[0].toString())
+                    cam.spatial().position = stringToVector3f(deserialized[1].toString())
+                }
+
             }
 
             if(storeVDIs) {
