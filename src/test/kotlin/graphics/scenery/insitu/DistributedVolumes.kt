@@ -15,6 +15,7 @@ import graphics.scenery.utils.extensions.minus
 import graphics.scenery.utils.extensions.plus
 import graphics.scenery.utils.extensions.times
 import graphics.scenery.volumes.*
+import graphics.scenery.volumes.vdi.VDIBufferSizes
 import graphics.scenery.volumes.vdi.VDIData
 import graphics.scenery.volumes.vdi.VDIDataIO
 import graphics.scenery.volumes.vdi.VDIMetadata
@@ -552,6 +553,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         val model = volumes[0]?.spatial()?.world
 
         val vdiData = VDIData(
+            VDIBufferSizes(),
             VDIMetadata(
                 projection = cam.spatial().projection,
                 view = cam.spatial().getTransformation(),
@@ -704,6 +706,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
          val model = volumes[0]?.spatial()?.world
 
         val vdiData = VDIData(
+            VDIBufferSizes(),
             VDIMetadata(
                 projection = cam.spatial().projection,
                 view = cam.spatial().getTransformation(),
