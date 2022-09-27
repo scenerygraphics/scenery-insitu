@@ -67,13 +67,13 @@ import kotlin.system.measureNanoTime
 
 data class Timer(var start: Long, var end: Long)
 
-class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL = false) {
+class VolumeFromFileExample: SceneryBase("Volume Rendering", 1920, 1080, wantREPL = false) {
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
     val generateVDIs = true
-    val storeVDIs = false
-    val transmitVDIs = true
+    val storeVDIs = true
+    val transmitVDIs = false
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
@@ -673,19 +673,13 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
 
             tGeneration.end = System.nanoTime()
 
-            val timeTaken = (tGeneration.end - tGeneration.start)/10e9
+            val timeTaken = (tGeneration.end - tGeneration.start)/1e9
 
             logger.info("Time taken for generation (only correct if VDIs were not being written to disk): ${timeTaken}")
 
-//            val camera = volumeManager.getScene()?.activeObserver ?: throw UnsupportedOperationException("No camera found")
             val camera = cam
 
             val model = volumeList.first().spatial().world
-
-//            val translated = Matrix4f(model).translate(Vector3f(-1f) * volumeList.first().spatial().worldPosition()).translate(volumeList.first().spatial().worldPosition())
-
-            logger.info("The model matrix added to the vdi is: $model.")
-//            logger.info(" After translation: $translated")
 
             val vdiData = VDIData(
                 VDIMetadata(
@@ -699,16 +693,24 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             )
 
             if(transmitVDIs) {
+
+                val colorSize = windowHeight * windowWidth * maxSupersegments * 4 * 4
+                val depthSize = windowWidth * windowHeight * maxSupersegments * 4 * 2
+
+                if(subVDIColorBuffer!!.remaining() != colorSize || subVDIDepthBuffer!!.remaining() != depthSize) {
+                    logger.warn("Skipping transmission this frame due to inconsistency in buffer size")
+                }
+
                 val compressionTime = measureNanoTime {
                     if(compressedColor == null) {
-                        compressedColor = MemoryUtil.memAlloc(compressor.returnCompressBound(subVDIColorBuffer!!.remaining().toLong(), compressionTool))
+                        compressedColor = MemoryUtil.memAlloc(compressor.returnCompressBound(colorSize.toLong(), compressionTool))
                     }
                     val compressedColorLength = compressor.compress(compressedColor!!, subVDIColorBuffer!!, 3, compressionTool)
                     compressedColor!!.limit(compressedColorLength.toInt())
 
                     if(separateDepth) {
                         if(compressedDepth == null) {
-                            compressedDepth = MemoryUtil.memAlloc(compressor.returnCompressBound(subVDIDepthBuffer!!.remaining().toLong(), compressionTool))
+                            compressedDepth = MemoryUtil.memAlloc(compressor.returnCompressBound(depthSize.toLong(), compressionTool))
                         }
                         val compressedDepthLength = compressor.compress(compressedDepth!!, subVDIDepthBuffer!!, 3, compressionTool)
                         compressedDepth!!.limit(compressedDepthLength.toInt())
