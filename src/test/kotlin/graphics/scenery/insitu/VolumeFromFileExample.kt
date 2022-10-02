@@ -73,16 +73,52 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
     val context: ZContext = ZContext(4)
 
     lateinit var volumeManager: VolumeManager
-    val generateVDIs = false
-    val storeVDIs = false
-    val transmitVDIs = true
+    val generateVDIs = System.getProperty("VolumeBenchmark.GenerateVDI")?.toBoolean() ?: false
+    val storeVDIs = System.getProperty("VolumeBenchmark.StoreVDIs")?.toBoolean()?: true
+    val transmitVDIs = System.getProperty("VolumeBenchmark.TransmitVDIs")?.toBoolean()?: false
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
-    val dataset = "Kingsnake"
-    val num_parts =  1
-    val volumeDims = Vector3f(1024f, 1024f, 795f)
-    val is16bit = false
+    val dataset = System.getProperty("VolumeBenchmark.Dataset")?.toString()?: "Kingsnake"
+
+    val num_parts = when (dataset) {
+        "Kingsnake" -> {
+            1
+        }
+        "Beechnut" -> {
+            3
+        }
+        "Simulation" -> {
+            5
+        }
+        else -> {
+            1
+        }
+    }
+
+    val volumeDims = when (dataset) {
+        "Kingsnake" -> {
+            Vector3f(1024f, 1024f, 795f)
+        }
+        "Beechnut" -> {
+            Vector3f(1024f, 1024f, 1546f)
+        }
+        "Simulation" -> {
+            Vector3f(2048f, 2048f, 1920f)
+        }
+        else -> {
+            Vector3f(256f, 256f, 109f)
+        }
+    }
+
+    val is16bit = if(dataset == "Kingsnake" || dataset == "Simulation") {
+        false
+    } else if (dataset == "Beechnut") {
+        true
+    } else {
+        true
+    }
+
     val volumeList = ArrayList<BufferedVolume>()
     val cam: Camera = DetachedHeadCamera(hmd)
     var camTarget = Vector3f(0f)
@@ -378,7 +414,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
                 TransferFunction.ramp(0.0025f, 0.005f, 0.7f)
             } else {
                 logger.info("Using a standard transfer function")
-                TransferFunction.ramp(0.1f, 0.5f)
+                addControlPoint(0.0f, 0.0f)
+                addControlPoint(1.0f, 1.0f)
+
             }
         }
 
@@ -559,7 +597,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
         }
     }
 
-    private fun rotateCamera(degrees: Float) {
+    fun rotateCamera(degrees: Float) {
         cam.targeted = true
         val frameYaw = degrees / 180.0f * Math.PI.toFloat()
         val framePitch = 0f
@@ -848,6 +886,19 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             ambientOcclusion = !ambientOcclusion
         })
         inputHandler?.addKeyBinding("toggleAO", "O")
+
+        inputHandler?.addBehaviour("downsample", ClickBehaviour { _, _ ->
+            logger.info("Current display width: ${settings.get<Int>("Renderer.displayWidth")}")
+            logger.info("Current display height: ${settings.get<Int>("Renderer.displayHeight")}")
+
+            logger.info("Doing down sampling")
+
+            settings.set("Renderer.displayWidth", 64)
+            settings.set("Renderer.displayHeight", 54)
+//            settings.set("Renderer.SupersamplingFactor", 0.1)
+        })
+        inputHandler?.addKeyBinding("downsample", "L")
+
     }
 
     companion object {
