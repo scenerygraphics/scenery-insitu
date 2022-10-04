@@ -1,6 +1,5 @@
 package graphics.scenery.insitu.benchmark
 
-import graphics.scenery.SceneryBase
 import graphics.scenery.SceneryElement
 import graphics.scenery.backends.Renderer
 import graphics.scenery.insitu.VolumeFromFileExample
@@ -11,7 +10,7 @@ import kotlin.concurrent.thread
 
 class BenchmarkRunner {
 
-    val benchmarkDatasets = listOf<String>("Kingsnake", "Beechnut", "Simulation", "BonePlug", "Rotstrat")
+    val benchmarkDatasets = listOf<String>("Kingsnake", "Beechnut", "Simulation")
     val benchmarkViewpoints = listOf(0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50)
 
     fun runVolumeRendering() {
@@ -67,7 +66,7 @@ class BenchmarkRunner {
         }
     }
 
-    fun generateVDIs() {
+    fun storeVDIs() {
         benchmarkDatasets.forEach { dataset ->
             System.setProperty("VolumeBenchmark.Dataset", dataset)
             System.setProperty("VolumeBenchmark.GenerateVDI", "true")
@@ -76,7 +75,6 @@ class BenchmarkRunner {
 
             val instance = VolumeFromFileExample()
 
-            val stats = instance.hub.get<Statistics>()!!
             thread {
                 while (instance.hub.get(SceneryElement.Renderer) == null) {
                     Thread.sleep(50)
@@ -88,7 +86,14 @@ class BenchmarkRunner {
                     Thread.sleep(50)
                 }
 
-                Thread.sleep(10000) //wait for VDIs to generate
+                while(instance.VDIsGenerated.get() < 1) {
+                    //wait for VDI to be generated and stored
+                    Thread.sleep(50)
+                }
+
+                Thread.sleep(1000)
+
+                println("VDI generated, so exiting")
 
                 renderer.shouldClose = true
 
@@ -104,7 +109,7 @@ class BenchmarkRunner {
 
         @JvmStatic
         fun main(args: Array<String>) {
-            BenchmarkRunner().runVolumeRendering()
+            BenchmarkRunner().storeVDIs()
         }
     }
 }

@@ -81,6 +81,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
     val world_abs = false
     val dataset = System.getProperty("VolumeBenchmark.Dataset")?.toString()?: "Kingsnake"
 
+    val VDIsGenerated = AtomicInteger(0)
+
     val num_parts = when (dataset) {
         "Kingsnake" -> {
             1
@@ -335,17 +337,22 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
 
         with(cam) {
             spatial {
-                position = Vector3f(3.174E+0f, -1.326E+0f, -2.554E+0f)
-                rotation = Quaternionf(-1.276E-2,  9.791E-1,  6.503E-2, -1.921E-1)
-//
-//                position = Vector3f(-2.607E+0f, -5.973E-1f,  2.415E+0f) // V1 for Beechnut
-//                rotation = Quaternionf(-9.418E-2, -7.363E-1, -1.048E-1, -6.618E-1)
-//
-//                position = Vector3f(4.908E+0f, -4.931E-1f, -2.563E+0f) //V1 for Simulation
-//                rotation = Quaternionf( 3.887E-2, -9.470E-1, -1.255E-1,  2.931E-1)
-//
-                position = Vector3f( 4.622E+0f, -9.060E-1f, -1.047E+0f) //V1 for kingsnake
-                rotation = Quaternionf( 5.288E-2, -9.096E-1, -1.222E-1,  3.936E-1)
+                if(dataset == "Kingsnake") {
+                    position = Vector3f( 4.622E+0f, -9.060E-1f, -1.047E+0f) //V1 for kingsnake
+                    rotation = Quaternionf( 5.288E-2, -9.096E-1, -1.222E-1,  3.936E-1)
+                } else if (dataset == "Beechnut") {
+                    position = Vector3f(-2.607E+0f, -5.973E-1f,  2.415E+0f) // V1 for Beechnut
+                    rotation = Quaternionf(-9.418E-2, -7.363E-1, -1.048E-1, -6.618E-1)
+                } else if (dataset == "Simulation") {
+                    position = Vector3f(4.908E+0f, -4.931E-1f, -2.563E+0f) //V1 for Simulation
+                    rotation = Quaternionf( 3.887E-2, -9.470E-1, -1.255E-1,  2.931E-1)
+                } else if (dataset == "BonePlug") {
+                    position = Vector3f( 1.897E+0f, -5.994E-1f, -1.899E+0f) //V1 for Boneplug
+                    rotation = Quaternionf( 5.867E-5,  9.998E-1,  1.919E-2,  4.404E-3)
+                } else if (dataset == "Rotstrat") {
+                    position = Vector3f(4.908E+0f, -4.931E-1f, -2.563E+0f) //V1 for Simulation
+                    rotation = Quaternionf( 3.887E-2, -9.470E-1, -1.255E-1,  2.931E-1)
+                }
 
 //                position = Vector3f( 3.183E+0f, -5.973E-1f, -1.475E+0f) //V2 for Beechnut
 //                rotation = Quaternionf( 1.974E-2, -9.803E-1, -1.395E-1,  1.386E-1)
@@ -843,7 +850,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             }
 
             if(storeVDIs) {
-                if(cnt < 20) {
+                if(cnt == 4) { //store the 4th VDI
                     val file = FileOutputStream(File("${dataset}vdidump$cnt"))
     //                    val comp = GZIPOutputStream(file, 65536)
                     VDIDataIO.write(vdiData, file)
@@ -866,6 +873,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
                         SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
                     }
                     logger.info("Wrote VDI $cnt")
+                    VDIsGenerated.incrementAndGet()
                 }
             }
             cnt++
