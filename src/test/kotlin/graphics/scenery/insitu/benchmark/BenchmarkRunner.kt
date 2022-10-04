@@ -52,7 +52,7 @@ class BenchmarkRunner {
 
                     bw.append("$fps")
 
-                    renderer.screenshot("Reference_${dataset}_${viewpoint}.png")
+                    renderer.screenshot("benchmarking/downsampling/Reference_${dataset}_${viewpoint}.png")
 
                 }
                 bw.flush()
@@ -109,7 +109,7 @@ class BenchmarkRunner {
 
         @JvmStatic
         fun main(args: Array<String>) {
-            BenchmarkRunner().storeVDIs()
+            BenchmarkRunner().runVolumeRendering()
         }
     }
 }
