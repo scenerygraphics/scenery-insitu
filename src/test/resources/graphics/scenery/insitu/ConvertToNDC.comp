@@ -1,0 +1,239 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+#define SEPARATE_DEPTH 1
+#define INT_DEPTHS 0
+#define USE_PRINTF 1
+
+layout(set = 5, binding = 0) uniform ShaderProperties {
+    mat4 ProjectionOriginal;
+    mat4 invProjectionOriginal;
+    mat4 ViewOriginal;
+    mat4 invViewOriginal;
+};
+
+layout (local_size_x = 16, local_size_y = 16) in;
+layout (set = 0, binding = 0, rgba32f) uniform readonly image3D InputVDI;
+layout (set = 1, binding = 0, rgba8) uniform image2D OutputViewport;
+#if SEPARATE_DEPTH
+#if INT_DEPTHS
+layout (set = 2, binding = 0, rg16ui) uniform readonly uimage3D DepthVDI;
+#else
+layout (set = 2, binding = 0, rg32f) uniform readonly image3D DepthVDI;
+#endif
+#endif
+layout(set = 3, binding = 0, rgba32f) uniform image3D OutputColor;
+layout(set = 4, binding = 0, r32f) uniform image3D OutputDepth;
+
+vec2 decode(vec4 c){
+    vec2 v = vec2(0.);
+
+    int ir = int(c.r*255.);
+    int ig = int(c.g*255.);
+    int irg = ir*256 + ig;
+    v.x = float(irg) / 256.;
+
+    int ib = int(c.b*255.);
+    int ia = int(c.a*255.);
+    int iba = ib*256 + ia;
+    v.y = float(iba) / 256.;
+
+    v -= 128.;
+    return v;
+}
+
+const vec4 bitEnc = vec4(1.,255.,65025.,16581375.);
+const vec4 bitDec = 1./bitEnc;
+float DecodeFloatRGBA (vec4 v) {
+    return dot(v, bitDec);
+}
+
+float adjustOpacity(float a, float modifiedStepLength) {
+    return 1.0 - pow((1.0 - a), modifiedStepLength);
+}
+
+ivec2 debug_pixel = ivec2(100, 50);
+
+int windowHeight;
+int windowWidth;
+
+void writeSupersegment(int index, float start, float end, vec4 color) {
+    #if USE_PRINTF
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("Writing supseg: %d. Start: %f, end: %f, color: (%f, %f, %f, %f)", index, start, end, color.rgba);
+    }
+    if(isnan(color.r) || isnan(color.a) || isnan(start) || isnan(end) || isnan(index)) {
+        debugPrintfEXT("Error! Wrong supersegment written by: (%d, %d)", gl_GlobalInvocationID.xy);
+    }
+    #endif
+
+    imageStore(OutputDepth, ivec3(2 * index, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(start, 0, 0, 0));
+    imageStore(OutputDepth, ivec3(2 * index + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(end, 0, 0, 0));
+    imageStore(OutputColor, ivec3(index, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), color);
+}
+
+void main() {
+
+    ivec3 imageCoords  = imageSize(InputVDI);
+
+    windowHeight = imageCoords.g;
+    windowWidth = imageCoords.b;
+
+    debug_pixel.y = (debug_pixel.y); // conversion for inverting along y
+
+    #if SEPARATE_DEPTH
+    int numSupersegments = imageCoords.r;
+    #else
+    int numSupersegments = imageCoords.r / 3;
+    #endif
+
+    mat4 pv = ProjectionOriginal * ViewOriginal;
+    mat4 ipv = invViewOriginal * invProjectionOriginal;
+
+    vec4 v = vec4(0);
+
+    vec2 texcoord = gl_GlobalInvocationID.xy/vec2(imageCoords.b, imageCoords.g);
+    vec2 uv = texcoord * 2.0 - vec2(1.0);
+
+    // NDC of frag on near and far plane
+    vec4 front = vec4( uv, -1, 1 );
+    vec4 back = vec4( uv, 1, 1 );
+
+    vec4 maxV = vec4(0);
+
+    // calculate eye ray in world space
+//    vec4 wfront = ipv * front;
+    vec4 wfront = invViewOriginal * vec4(0, 0, 0, 1);
+    wfront *= 1 / wfront.w;
+    vec4 wback = ipv * back;
+    wback *= 1 / wback.w;
+
+    float totalRayLength = length(wback - wfront);
+
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("wfront: (%f, %f, %f, %f) and wback: (%f, %f, %f, %f) and total ray length: %f", wfront.xyzw, wback.xyzw, totalRayLength);
+    }
+
+    for(int i = 0; i < numSupersegments; i++) {
+        #if SEPARATE_DEPTH
+        vec4 x = imageLoad(InputVDI, ivec3(i, gl_GlobalInvocationID.x, gl_GlobalInvocationID.y));
+        #else
+        vec4 x = imageLoad(InputVDI, ivec3(i*3, gl_GlobalInvocationID.x, gl_GlobalInvocationID.y));
+        #endif
+
+        vec3 newColor = x.rgb;
+        float newAlpha = x.a;
+
+        #if SEPARATE_DEPTH
+        vec4 d = imageLoad(DepthVDI, ivec3(i*2, gl_GlobalInvocationID.x, gl_GlobalInvocationID.y)); //Start point of this supersegment
+        vec4 dNext = imageLoad(DepthVDI, ivec3(i*2+1, gl_GlobalInvocationID.x, gl_GlobalInvocationID.y)); //End point of this supersegment
+
+        float depthHere = d.x / 1000.;
+        float depthEnd = dNext.x / 1000.;
+
+        #else
+        vec4 d = imageLoad(InputVDI, ivec3(i*3+1, gl_GlobalInvocationID.x, gl_GlobalInvocationID.y)); //Start point of this supersegment
+        vec4 dNext = imageLoad(InputVDI, ivec3(i*3+2, gl_GlobalInvocationID.x, gl_GlobalInvocationID.y)); //End point of this supersegment
+        float depthHere = DecodeFloatRGBA(d);
+        float depthEnd = DecodeFloatRGBA(dNext);
+
+        #endif
+
+        if(gl_GlobalInvocationID.xy == debug_pixel) {
+            debugPrintfEXT("Supseg %d! Start is: %f, end is: %f. a: %f", i, depthHere, depthEnd, newAlpha);
+        }
+
+        if(i!=0 && depthHere == 0.0) {
+            break;
+        }
+
+
+        if(i==0 && depthEnd == 0.0) {
+            //                v = vec4(1, 0, 0, 1);
+            break;
+        }
+
+        if(depthEnd <= depthHere) {
+            debugPrintfEXT("This is an error in original supersegment! Start: %f, end is: %f. a: %f. Invoc coords: (%d, %d)", depthHere, depthEnd, newAlpha, gl_GlobalInvocationID.xy);
+        }
+
+        float length_in_supseg = (depthEnd - depthHere) * 1000.;
+
+        //        #if USE_PRINTF
+        //        if(gl_GlobalInvocationID.xy == debug_pixel) {
+        //            debugPrintfEXT("NDC start point: (%f, %f, %f, %f) and NDC end point: (%f, %f, %f, %f).", vec4(ndc_x, ndc_y, depthHere, 1), vec4(ndc_x, ndc_y, depthEnd, 1));
+        //            debugPrintfEXT("World start point: (%f, %f, %f, %f) and end point: (%f, %f, %f, %f). Length: %f", supseg_start_w.xyzw, supseg_end_w.xyzw, length_in_supseg);
+        //        }
+        //        #endif
+
+        float adj_alpha = adjustOpacity(newAlpha, length_in_supseg);
+
+        #if USE_PRINTF
+        if(gl_GlobalInvocationID.xy == debug_pixel) {
+            debugPrintfEXT("Supseg: %d. Color is: (%f, %f, %f). Opacity: %f and adj opacity: %f. Supseg length: %f", i, newColor.rgb, newAlpha, adj_alpha, depthEnd-depthHere);
+        }
+        #endif
+
+        float startFrac = depthHere / totalRayLength;
+        float endFrac = depthEnd / totalRayLength;
+
+        #if USE_PRINTF
+        if(((startFrac > 1) || (endFrac > 1))) {
+            debugPrintfEXT("Error calculating wspace fractional lengths! In ray: (%d, %d) index: %d values are: %f, %f", gl_GlobalInvocationID.xy, i, startFrac, endFrac);
+        }
+        #endif
+
+        if(!isnan(newColor.r)) {
+            //write the supersegment to the output
+
+            vec4 wStart = mix(wfront, wback, startFrac);
+            vec4 wEnd = mix(wfront, wback, endFrac);
+
+            vec4 nStart = pv * wStart;
+            nStart *= 1. / nStart.w;
+
+            vec4 nEnd = pv * wEnd;
+            nEnd *= 1. / nEnd.w;
+
+            if((nStart.x > 1) || (nStart.x < -1) || (nStart.y > 1) || (nStart.y < -1)) {
+                debugPrintfEXT("Incorrect NDC start has been calculated! In ray: (%d, %d) index: %d ndc start is: (%f, %f, %f, %f)", gl_GlobalInvocationID.xy, i, nStart.xyzw);
+            }
+
+
+            if((nEnd.x > 1) || (nEnd.x < -1) || (nEnd.y > 1) || (nEnd.y < -1)) {
+                debugPrintfEXT("Incorrect NDC end has been calculated! In ray: (%d, %d) index: %d ndc end is: (%f, %f, %f, %f)", gl_GlobalInvocationID.xy, i, nEnd.xyzw);
+            }
+
+            if((nStart.z >= (nEnd.z))) {
+                debugPrintfEXT("Error in generated supersegment! In ray: (%d, %d) index: %d values are: %f, %f", gl_GlobalInvocationID.xy, i, nStart.z, nEnd.z);
+            }
+//
+//            if(nStart.z > nEnd.z) {
+//                nStart.z = nEnd.z;
+//            }
+
+            writeSupersegment(i, nStart.z, nEnd.z, vec4(newColor.rgb, newAlpha));
+
+            v.rgb = v.rgb + (1.0f - v.a) * newColor * adj_alpha;
+            v.a = v.a + (1.0f - v.a) * adj_alpha;
+
+            if(gl_GlobalInvocationID.xy == debug_pixel) {
+                debugPrintfEXT("World start: (%f, %f, %f, %f), world end (%f, %f, %f, %f)", wStart.xyzw, wEnd.xyzw);
+                debugPrintfEXT("NDC start: (%f, %f, %f, %f) and NDC end: (%f, %f, %f, %f)", nStart.xyzw, nEnd.xyzw);
+                debugPrintfEXT("Wrote supersegment: start: %f, end %f, color: (%f, %f, %f, %f)", nStart.z, nEnd.z, vec4(newColor.rgb, newAlpha));
+                debugPrintfEXT("accumulated color so far: (%f, %f, %f, %f)", v.rgba);
+            }
+        }
+
+
+        //            if(depthHere >= depthEnd) {
+        //                v = vec4(1);
+        //            }
+
+    }
+
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("For pixel: (%d, %d), final accumulated color is (before attenuation): (%f, %f, %f, %f)", debug_pixel.xy, v.rgba);
+    }
+
+    imageStore(OutputViewport, ivec2(gl_GlobalInvocationID.x, (windowHeight - 1) - gl_GlobalInvocationID.y), v);
+}
