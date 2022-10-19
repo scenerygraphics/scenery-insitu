@@ -13,9 +13,12 @@ class BenchmarkRunner {
     val benchmarkDatasets = listOf<String>("Kingsnake", "Beechnut", "Simulation")
     val benchmarkViewpoints = listOf(15, 30, 40, 45)
 
-    fun runVolumeRendering() {
-        benchmarkDatasets.forEach { dataset->
-            System.setProperty("VolumeBenchmark.Dataset", dataset)
+    fun runVolumeRendering(windowWidth: Int, windowHeight: Int) {
+        benchmarkDatasets.forEach { dataName->
+            val dataset = "${dataName}_${windowWidth}_$windowHeight"
+            System.setProperty("VolumeBenchmark.Dataset", dataName)
+            System.setProperty("VolumeBenchmark.WindowWidth", windowWidth.toString())
+            System.setProperty("VolumeBenchmark.WindowHeight", windowHeight.toString())
 
             val fw = FileWriter("${dataset}_volumerendering.csv", true)
             val bw = BufferedWriter(fw)
@@ -40,7 +43,10 @@ class BenchmarkRunner {
                 val previousViewpoint = 0
                 benchmarkViewpoints.forEach { viewpoint->
                     val rotation = viewpoint - previousViewpoint
-                    instance.rotateCamera(rotation.toFloat())
+
+                    val pitch = (dataName == "Simulation")
+
+                    instance.rotateCamera(rotation.toFloat(), pitch)
 
                     Thread.sleep(1000) //wait for change to take place
 
@@ -68,9 +74,12 @@ class BenchmarkRunner {
         }
     }
 
-    fun storeVDIs() {
-        benchmarkDatasets.forEach { dataset ->
-            System.setProperty("VolumeBenchmark.Dataset", dataset)
+    fun storeVDIs(windowWidth: Int, windowHeight: Int) {
+        benchmarkDatasets.forEach { dataName->
+            val dataset = "${dataName}_${windowWidth}_$windowHeight"
+            System.setProperty("VolumeBenchmark.Dataset", dataName)
+            System.setProperty("VolumeBenchmark.WindowWidth", windowWidth.toString())
+            System.setProperty("VolumeBenchmark.WindowHeight", windowHeight.toString())
             System.setProperty("VolumeBenchmark.GenerateVDI", "true")
             System.setProperty("VolumeBenchmark.StoreVDIs", "true")
             System.setProperty("VolumeBenchmark.TransmitVDIs", "false")
@@ -111,7 +120,7 @@ class BenchmarkRunner {
 
         @JvmStatic
         fun main(args: Array<String>) {
-            BenchmarkRunner().runVolumeRendering()
+            BenchmarkRunner().runVolumeRendering(1920, 1080)
         }
     }
 }
