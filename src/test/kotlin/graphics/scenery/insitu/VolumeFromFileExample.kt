@@ -67,7 +67,7 @@ import kotlin.system.measureNanoTime
 
 data class Timer(var start: Long, var end: Long)
 
-class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL = false) {
+class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty("VolumeBenchmark.WindowWidth")?.toInt()?: 1280, System.getProperty("VolumeBenchmark.WindowHeight")?.toInt() ?: 780, wantREPL = false) {
     var hmd: TrackedStereoGlasses? = null
 
     val context: ZContext = ZContext(4)
@@ -335,17 +335,22 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
 
         with(cam) {
             spatial {
-                position = Vector3f(3.174E+0f, -1.326E+0f, -2.554E+0f)
-                rotation = Quaternionf(-1.276E-2,  9.791E-1,  6.503E-2, -1.921E-1)
-//
-//                position = Vector3f(-2.607E+0f, -5.973E-1f,  2.415E+0f) // V1 for Beechnut
-//                rotation = Quaternionf(-9.418E-2, -7.363E-1, -1.048E-1, -6.618E-1)
-//
-//                position = Vector3f(4.908E+0f, -4.931E-1f, -2.563E+0f) //V1 for Simulation
-//                rotation = Quaternionf( 3.887E-2, -9.470E-1, -1.255E-1,  2.931E-1)
-//
-                position = Vector3f( 4.622E+0f, -9.060E-1f, -1.047E+0f) //V1 for kingsnake
-                rotation = Quaternionf( 5.288E-2, -9.096E-1, -1.222E-1,  3.936E-1)
+                if(dataset == "Kingsnake") {
+                    position = Vector3f( 4.622E+0f, -9.060E-1f, -1.047E+0f) //V1 for kingsnake
+                    rotation = Quaternionf( 5.288E-2, -9.096E-1, -1.222E-1,  3.936E-1)
+                } else if (dataset == "Beechnut") {
+                    position = Vector3f(-2.607E+0f, -5.973E-1f,  2.415E+0f) // V1 for Beechnut
+                    rotation = Quaternionf(-9.418E-2, -7.363E-1, -1.048E-1, -6.618E-1)
+                } else if (dataset == "Simulation") {
+                    position = Vector3f(2.041E-1f, -5.253E+0f, -1.321E+0f) //V1 for Simulation
+                    rotation = Quaternionf(9.134E-2, -9.009E-1,  3.558E-1, -2.313E-1)
+                } else if (dataset == "BonePlug") {
+                    position = Vector3f( 1.897E+0f, -5.994E-1f, -1.899E+0f) //V1 for Boneplug
+                    rotation = Quaternionf( 5.867E-5,  9.998E-1,  1.919E-2,  4.404E-3)
+                } else if (dataset == "Rotstrat") {
+                    position = Vector3f(4.908E+0f, -4.931E-1f, -2.563E+0f) //V1 for Simulation
+                    rotation = Quaternionf( 3.887E-2, -9.470E-1, -1.255E-1,  2.931E-1)
+                }
 
 //                position = Vector3f( 3.183E+0f, -5.973E-1f, -1.475E+0f) //V2 for Beechnut
 //                rotation = Quaternionf( 1.974E-2, -9.803E-1, -1.395E-1,  1.386E-1)
@@ -383,26 +388,25 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
                 addControlPoint(0.01f, 0.3f)
             } else if (dataset == "Kingsnake") {
                 addControlPoint(0.0f, 0.0f)
-                addControlPoint(0.4f, 0.0f)
+                addControlPoint(0.43f, 0.0f)
                 addControlPoint(0.5f, 0.5f)
             } else if (dataset == "Beechnut") {
                 addControlPoint(0.0f, 0.0f)
-                addControlPoint(0.20f, 0.0f)
-                addControlPoint(0.25f, 0.2f)
-                addControlPoint(0.35f, 0.0f)
+                addControlPoint(0.43f, 0.0f)
+                addControlPoint(0.457f, 0.321f)
+                addControlPoint(0.494f, 0.0f)
+                addControlPoint(1.0f, 0.0f)
             } else if (dataset == "Simulation") {
-                addControlPoint(0.0f, 0.0f)
-                addControlPoint(0.2f, 0.0f)
-                addControlPoint(0.4f, 0.0f)
-                addControlPoint(0.45f, 0.1f)
-                addControlPoint(0.5f, 0.10f)
-                addControlPoint(0.55f, 0.1f)
-                addControlPoint(0.83f, 0.1f)
-                addControlPoint(0.86f, 0.4f)
-                addControlPoint(0.88f, 0.7f)
-//                addControlPoint(0.87f, 0.05f)
-                addControlPoint(0.9f, 0.00f)
-                addControlPoint(0.91f, 0.0f)
+                addControlPoint(0.0f, 0f)
+                addControlPoint(0.1f, 0.0f)
+                addControlPoint(0.15f, 0.65f)
+                addControlPoint(0.22f, 0.15f)
+                addControlPoint(0.28f, 0.0f)
+                addControlPoint(0.49f, 0.0f)
+                addControlPoint(0.7f, 0.95f)
+                addControlPoint(0.75f, 0.8f)
+                addControlPoint(0.8f, 0.0f)
+                addControlPoint(0.9f, 0.0f)
                 addControlPoint(1.0f, 0.0f)
             } else if (dataset == "Microscopy") {
                 addControlPoint(0.0f, 0.0f)
@@ -597,10 +601,18 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
         }
     }
 
-    fun rotateCamera(degrees: Float) {
+    fun rotateCamera(degrees: Float, pitch: Boolean = false) {
         cam.targeted = true
-        val frameYaw = degrees / 180.0f * Math.PI.toFloat()
-        val framePitch = 0f
+        val frameYaw: Float
+        val framePitch: Float
+
+        if(pitch) {
+            framePitch = degrees / 180.0f * Math.PI.toFloat()
+            frameYaw = 0f
+        } else {
+            frameYaw = degrees / 180.0f * Math.PI.toFloat()
+            framePitch = 0f
+        }
 
         // first calculate the total rotation quaternion to be applied to the camera
         val yawQ = Quaternionf().rotateXYZ(0.0f, frameYaw, 0.0f).normalize()
@@ -843,8 +855,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
             }
 
             if(storeVDIs) {
-                if(cnt < 20) {
-                    val file = FileOutputStream(File("${dataset}vdidump$cnt"))
+                if(cnt == 4) { //store the 4th VDI
+                    val file = FileOutputStream(File("${dataset}vdi_${windowWidth}_${windowHeight}_dump$cnt"))
     //                    val comp = GZIPOutputStream(file, 65536)
                     VDIDataIO.write(vdiData, file)
                     logger.info("written the dump")
@@ -852,9 +864,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", 1280, 720, wantREPL
 
                     var fileName = ""
                     if(world_abs) {
-                        fileName = "${dataset}VDI${cnt}_world_new"
+                        fileName = "${dataset}VDI_${windowWidth}_${windowHeight}_${cnt}_world_new"
                     } else {
-                        fileName = "${dataset}VDI${cnt}_ndc"
+                        fileName = "${dataset}VDI_${windowWidth}_${windowHeight}_${cnt}_ndc"
                     }
                     if(separateDepth) {
                             SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col")
