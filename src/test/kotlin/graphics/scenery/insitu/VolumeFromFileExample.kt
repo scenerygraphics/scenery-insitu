@@ -440,6 +440,11 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
             if(dataset == "Rotstrat") {
                 volume.colormap = Colormap.get("jet")
                 volume.converterSetups[0].setDisplayRange(25000.0, 50000.0)
+            } else if(dataset == "Beechnut") {
+                volume.converterSetups[0].setDisplayRange(0.0, 33465.0)
+            } else if(dataset == "Simulation") {
+                volume.colormap = Colormap.get("rb")
+                volume.converterSetups[0].setDisplayRange(50.0, 205.0)
             }
 
             volume.origin = Origin.FrontBottomLeft
