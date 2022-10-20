@@ -380,7 +380,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
         val datasetPath = Paths.get("/home/aryaman/Datasets/Volume/${dataset}")
 //        val datasetPath = Paths.get("/scratch/ws/1/argupta-distributed_vdis/Datasets/${dataset}")
 
-        val tf = TransferFunction.ramp(0.25f, 0.02f, 0.7f)
+        val tf = TransferFunction()
         with(tf) {
             if(dataset == "Stagbeetle" || dataset == "Stagbeetle_divided") {
                 addControlPoint(0.0f, 0.0f)
