@@ -10,8 +10,8 @@ import kotlin.concurrent.thread
 
 class BenchmarkRunner {
 
-    val benchmarkDatasets = listOf<String>("Kingsnake", "Beechnut", "Simulation")
-    val benchmarkViewpoints = listOf(15, 30, 40, 45)
+    val benchmarkDatasets = listOf<String>("Kingsnake", "Simulation")
+    val benchmarkViewpoints = listOf(5, 10, 15, 20, 25, 30, 35, 40)
 
     fun runVolumeRendering(windowWidth: Int, windowHeight: Int) {
         benchmarkDatasets.forEach { dataName->
@@ -20,7 +20,7 @@ class BenchmarkRunner {
             System.setProperty("VolumeBenchmark.WindowWidth", windowWidth.toString())
             System.setProperty("VolumeBenchmark.WindowHeight", windowHeight.toString())
 
-            val fw = FileWriter("${dataset}_volumerendering.csv", true)
+            val fw = FileWriter("benchmarking/${dataset}_volumerendering.csv", true)
             val bw = BufferedWriter(fw)
 
             System.setProperty("VolumeBenchmark.GenerateVDI", "false")
@@ -40,9 +40,10 @@ class BenchmarkRunner {
 
                 val stats = instance.hub.get<Statistics>()!!
 
-                val previousViewpoint = 0
+                var previousViewpoint = 0
                 benchmarkViewpoints.forEach { viewpoint->
                     val rotation = viewpoint - previousViewpoint
+                    previousViewpoint = viewpoint
 
                     val pitch = (dataName == "Simulation")
 
@@ -52,15 +53,15 @@ class BenchmarkRunner {
 
                     stats.clear("Renderer.fps")
 
-                    Thread.sleep(1000) //collect data
+                    Thread.sleep(4000) //collect data
 
                     val fps = stats.get("Renderer.fps")!!.avg()
 
-                    bw.append("$fps")
+                    bw.append("$fps, ")
 
-                    renderer.screenshot("benchmarking/downsampling/Reference_${dataset}_${viewpoint}.png")
+                    renderer.screenshot("benchmarking/Reference_${dataset}_${viewpoint}.png")
 
-                    Thread.sleep(1000) //wait for screenshot to be acquired
+                    Thread.sleep(2000) //wait for screenshot to be acquired
 
                 }
                 bw.flush()
