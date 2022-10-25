@@ -76,6 +76,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
     val generateVDIs = System.getProperty("VolumeBenchmark.GenerateVDI")?.toBoolean() ?: false
     val storeVDIs = System.getProperty("VolumeBenchmark.StoreVDIs")?.toBoolean()?: true
     val transmitVDIs = System.getProperty("VolumeBenchmark.TransmitVDIs")?.toBoolean()?: false
+    val vo = System.getProperty("VolumeBenchmark.Vo")?.toInt()?: 0
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
@@ -125,7 +126,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
     val cam: Camera = DetachedHeadCamera(hmd)
     var camTarget = Vector3f(0f)
     val numOctreeLayers = 8
-    val maxSupersegments = 30
+    val maxSupersegments = System.getProperty("VolumeBenchmark.NumSupersegments")?.toInt()?: 20
     var benchmarking = false
     val viewNumber = 1
     var ambientOcclusion = true
@@ -863,7 +864,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 
             if(storeVDIs) {
                 if(cnt == 4) { //store the 4th VDI
-                    val file = FileOutputStream(File("${dataset}vdi_${windowWidth}_${windowHeight}_dump$cnt"))
+                    val file = FileOutputStream(File("${dataset}vdi_${windowWidth}_${windowHeight}_${maxSupersegments}_${vo}_dump$cnt"))
     //                    val comp = GZIPOutputStream(file, 65536)
                     VDIDataIO.write(vdiData, file)
                     logger.info("written the dump")
@@ -871,9 +872,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 
                     var fileName = ""
                     if(world_abs) {
-                        fileName = "${dataset}VDI_${windowWidth}_${windowHeight}_${cnt}_world_new"
+                        fileName = "${dataset}VDI_${windowWidth}_${windowHeight}_${maxSupersegments}_${vo}_${cnt}_world_new"
                     } else {
-                        fileName = "${dataset}VDI_${windowWidth}_${windowHeight}_${cnt}_ndc"
+                        fileName = "${dataset}VDI_${windowWidth}_${windowHeight}_${maxSupersegments}_${vo}_${cnt}_ndc"
                     }
                     if(separateDepth) {
                             SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col")
