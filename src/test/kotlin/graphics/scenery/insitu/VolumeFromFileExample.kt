@@ -67,7 +67,7 @@ import kotlin.system.measureNanoTime
 
 data class Timer(var start: Long, var end: Long)
 
-class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty("VolumeBenchmark.WindowWidth")?.toInt()?: 1280, System.getProperty("VolumeBenchmark.WindowHeight")?.toInt() ?: 780, wantREPL = false) {
+class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty("VolumeBenchmark.WindowWidth")?.toInt()?: 1280, System.getProperty("VolumeBenchmark.WindowHeight")?.toInt() ?: 720, wantREPL = false) {
     var hmd: TrackedStereoGlasses? = null
 
     val context: ZContext = ZContext(4)
