@@ -43,10 +43,7 @@ import org.zeromq.ZMQ
 import org.zeromq.ZMQException
 import tpietzsch.shadergen.generate.SegmentTemplate
 import tpietzsch.shadergen.generate.SegmentType
-import java.io.ByteArrayOutputStream
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
+import java.io.*
 import java.lang.Math
 import java.net.InetAddress
 import java.nio.ByteBuffer
@@ -56,6 +53,8 @@ import java.nio.file.Paths
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
+import kotlin.math.abs
+import kotlin.math.min
 import kotlin.streams.toList
 import kotlin.system.measureNanoTime
 
@@ -73,10 +72,10 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
     val context: ZContext = ZContext(4)
 
     lateinit var volumeManager: VolumeManager
-    val generateVDIs = System.getProperty("VolumeBenchmark.GenerateVDI")?.toBoolean() ?: false
-    val storeVDIs = System.getProperty("VolumeBenchmark.StoreVDIs")?.toBoolean()?: true
-    val transmitVDIs = System.getProperty("VolumeBenchmark.TransmitVDIs")?.toBoolean()?: false
-    val vo = System.getProperty("VolumeBenchmark.Vo")?.toInt()?: 0
+    val generateVDIs = System.getProperty("VolumeBenchmark.GenerateVDI")?.toBoolean() ?: true
+    val storeVDIs = System.getProperty("VolumeBenchmark.StoreVDIs")?.toBoolean()?: false
+    val transmitVDIs = System.getProperty("VolumeBenchmark.TransmitVDIs")?.toBoolean()?: true
+    val vo = System.getProperty("VolumeBenchmark.Vo")?.toFloat()?.toInt() ?: 0
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
@@ -87,6 +86,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
     val num_parts = when (dataset) {
         "Kingsnake" -> {
             1
+        }
+        "Rayleigh_Taylor" -> {
+            2
         }
         "Beechnut" -> {
             3
@@ -103,6 +105,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
         "Kingsnake" -> {
             Vector3f(1024f, 1024f, 795f)
         }
+        "Rayleigh_Taylor" -> {
+            Vector3f(1024f, 1024f, 1024f)
+        }
         "Beechnut" -> {
             Vector3f(1024f, 1024f, 1546f)
         }
@@ -116,7 +121,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 
     val is16bit = if(dataset == "Kingsnake" || dataset == "Simulation") {
         false
-    } else if (dataset == "Beechnut") {
+    } else if (dataset == "Beechnut" || dataset == "Rayleigh_Taylor") {
         true
     } else {
         true
@@ -131,7 +136,18 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
     val viewNumber = 1
     var ambientOcclusion = true
 
-    val closeAfter = 250000L
+    val dynamicSubsampling = true
+
+    val storeCamera = false
+    val storeFrameTime = true
+    val subsampleRay = true
+
+    var subsamplingFactorImage = 1.0f
+
+    var cameraMoving = false
+    var cameraStopped = false
+
+    val closeAfter = 25000000L
 
     /**
      * Reads raw volumetric data from a [file].
@@ -347,6 +363,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                 } else if (dataset == "Simulation") {
                     position = Vector3f(2.041E-1f, -5.253E+0f, -1.321E+0f) //V1 for Simulation
                     rotation = Quaternionf(9.134E-2, -9.009E-1,  3.558E-1, -2.313E-1)
+                } else if (dataset == "Rayleigh_Taylor") {
+                    position = Vector3f( -2.300E+0f, -6.402E+0f,  1.100E+0f) //V1 for Rayleigh_Taylor
+                    rotation = Quaternionf(2.495E-1, -7.098E-1,  3.027E-1, -5.851E-1)
                 } else if (dataset == "BonePlug") {
                     position = Vector3f( 1.897E+0f, -5.994E-1f, -1.899E+0f) //V1 for Boneplug
                     rotation = Quaternionf( 5.867E-5,  9.998E-1,  1.919E-2,  4.404E-3)
@@ -411,6 +430,14 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                 addControlPoint(0.8f, 0.0f)
                 addControlPoint(0.9f, 0.0f)
                 addControlPoint(1.0f, 0.0f)
+            } else if (dataset == "Rayleigh_Taylor") {
+                addControlPoint(0.0f, 0.95f)
+                addControlPoint(0.15f, 0.0f)
+                addControlPoint(0.45f, 0.0f)
+                addControlPoint(0.5f, 0.35f)
+                addControlPoint(0.55f, 0.0f)
+                addControlPoint(0.80f, 0.0f)
+                addControlPoint(1.0f, 0.378f)
             } else if (dataset == "Microscopy") {
                 addControlPoint(0.0f, 0.0f)
                 addControlPoint(0.5f, 0.0f)
@@ -448,6 +475,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
             } else if(dataset == "Simulation") {
                 volume.colormap = Colormap.get("rb")
                 volume.converterSetups[0].setDisplayRange(50.0, 205.0)
+            } else if(dataset == "Rayleigh_Taylor") {
+                volume.colormap = Colormap.get("rbdarker")
             }
 
             volume.origin = Origin.FrontBottomLeft
@@ -457,6 +486,11 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
             logger.info("current slices: $current_slices")
             volume.pixelToWorldRatio = pixelToWorld
             volume.transferFunction = tf
+
+//            if(i == 2){
+//                val tfUI = TransferFunctionUI(650, 500, volume)
+//            }
+
 //            volume.spatial().position = Vector3f(2.0f, 6.0f, 4.0f - ((i - 1) * ((volumeDims.z / num_parts) * pixelToWorld)))
 //            if(i > 1) {
 //            val temp = Vector3f(volumeList.lastOrNull()?.spatial()?.position?: Vector3f(0f)) - Vector3f(0f, 0f, (prev_slices/2f + current_slices/2f) * pixelToWorld)
@@ -556,18 +590,36 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
             }
         }
 
-        thread {
-            while(true)
-            {
-                Thread.sleep(2000)
-                println("${cam.spatial().position}")
-                println("${cam.spatial().rotation}")
-            }
-        }
+//        thread {
+//            dynamicSubsampling()
+//        }
+
+//        thread {
+//            while (true) {
+//                Thread.sleep(2000)
+//                logger.info("Assigning transfer fn")
+//                volumeList[0].transferFunction = volumeList[1].transferFunction
+//            }
+//        }
+
+//        thread {
+//            while(true)
+//            {
+//                Thread.sleep(2000)
+//                println("${cam.spatial().position}")
+//                println("${cam.spatial().rotation}")
+//
+//                logger.info("near plane: ${cam.nearPlaneDistance} and far: ${cam.farPlaneDistance}")
+//            }
+//        }
         thread {
             Thread.sleep(closeAfter)
             renderer?.shouldClose = true
         }
+
+//        thread {
+//            camFlyThrough()
+//        }
 
     }
 //    override fun inputSetup() {
@@ -575,6 +627,139 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 //
 //
 //    }
+
+    fun camFlyThrough() {
+        val r = (hub.get(SceneryElement.Renderer) as Renderer)
+
+        while(!r.firstImageReady) {
+            Thread.sleep(200)
+        }
+
+        renderer!!.recordMovie("/datapot/aryaman/owncloud/VDI_Benchmarks/${dataset}_volume.mp4")
+
+        Thread.sleep(2000)
+
+        val maxPitch = 10f
+        val maxYaw = 10f
+
+        val minYaw = -10f
+        val minPitch = -10f
+
+//        rotateCamera(40f, true)
+        var pitchRot = 0.12f
+        var yawRot = 0.075f
+
+        var totalYaw = 0f
+        var totalPitch = 0f
+
+//        rotateCamera(20f, true)
+
+        moveCamera(yawRot, pitchRot, maxYaw, maxPitch, minPitch, minYaw, totalYaw, totalPitch, 8000f)
+        logger.info("Moving to phase 2")
+        moveCamera(yawRot, pitchRot * 2, maxYaw, maxPitch * 2, minPitch * 2, minYaw, totalYaw, totalPitch, 2000f)
+
+        zoomCamera(0.99f, 1000f)
+        logger.info("Moving to phase 3")
+        moveCamera(yawRot * 3, pitchRot * 3, maxYaw, maxPitch, minPitch, minYaw, totalYaw, totalPitch, 8000f)
+
+        cameraMoving = true
+
+        moveCamera(yawRot *2, pitchRot * 5, 40f, 40f, -60f, -50f, totalYaw, totalPitch, 6000f)
+
+        Thread.sleep(1000)
+
+        renderer!!.recordMovie()
+    }
+
+    private fun moveCamera(yawRot: Float, pitchRot: Float, maxYaw: Float, maxPitch: Float, minPitch: Float, minYaw: Float, totalY: Float, totalP: Float, duration: Float) {
+
+        var totalYaw = totalY
+        var totalPitch = totalP
+
+        var yaw = yawRot
+        var pitch = pitchRot
+
+        val startTime = System.nanoTime()
+
+        var cnt = 0
+
+        val list: MutableList<Any> = ArrayList()
+        val listDi: MutableList<Any> = ArrayList()
+
+        while (true) {
+
+            cnt += 1
+
+            if(totalYaw < maxYaw && totalYaw > minYaw) {
+                rotateCamera(yaw)
+                totalYaw += yaw
+            } else {
+                yaw *= -1f
+                rotateCamera(yaw)
+                totalYaw += yaw
+            }
+
+            if (totalPitch < maxPitch && totalPitch > minPitch) {
+                rotateCamera(pitch, true)
+                totalPitch += pitch
+            } else {
+                pitch *= -1f
+                rotateCamera(pitch, true)
+                totalPitch += pitch
+            }
+            Thread.sleep(50)
+
+            val currentTime = System.nanoTime()
+
+            if ((currentTime - startTime)/1e6 > duration) {
+                break
+            }
+
+            if(cnt % 5 == 0 && storeCamera) {
+                //save the camera and Di
+
+                val rotArray = floatArrayOf(cam.spatial().rotation.x, cam.spatial().rotation.y, cam.spatial().rotation.z, cam.spatial().rotation.w)
+                val posArray = floatArrayOf(cam.spatial().position.x(), cam.spatial().position.y(), cam.spatial().position.z())
+
+                list.add(rotArray)
+                list.add(posArray)
+
+                listDi.add(subsamplingFactorImage)
+
+                logger.info("Added to the list $cnt")
+
+            }
+        }
+
+        val objectMapper = ObjectMapper(MessagePackFactory())
+
+        val bytes = objectMapper.writeValueAsBytes(list)
+
+        Files.write(Paths.get("${dataset}_${subsampleRay}_camera.txt"), bytes)
+
+        val bytesDi = objectMapper.writeValueAsBytes(listDi)
+
+        Files.write(Paths.get("${dataset}_${subsampleRay}_di.txt"), bytesDi)
+
+        logger.warn("The file has been written")
+    }
+
+    fun zoomCamera(factor: Float, duration: Float) {
+        cam.targeted = true
+
+        val startTime = System.nanoTime()
+        while (true) {
+            val distance = (camTarget - cam.spatial().position).length()
+
+            cam.spatial().position = camTarget + cam.forward * distance * (-1.0f * factor)
+
+            Thread.sleep(50)
+
+            if((System.nanoTime() - startTime)/1e6 > duration) {
+                break
+            }
+        }
+    }
 
 
     private fun doBenchmarks() {
@@ -851,7 +1036,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 
                 logger.info("Whole publishing process took: ${publishTime/1e9}")
 
-                val payload = subscriber.recv(ZMQ.DONTWAIT)
+                val payload = subscriber.recv(0)
 
                 if(payload != null) {
                     val deserialized: List<Any> = objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
