@@ -74,7 +74,7 @@ class VDIConverter : SceneryBase("VDIConverter", 512, 512) {
         renderer = hub.add(SceneryElement.Renderer,
             Renderer.createRenderer(hub, applicationName, scene, windowWidth, windowHeight))
 
-        val numSupersegments = 15
+        val numSupersegments = 20
 
         val buff: ByteArray
         val depthBuff: ByteArray?
@@ -98,8 +98,8 @@ class VDIConverter : SceneryBase("VDIConverter", 512, 512) {
         //now cam should have the correct projection matrix (hopefully)
 
         if(separateDepth) {
-            buff = File(basePath + "${dataset}VDI4_ndc_col").readBytes()
-            depthBuff = File(basePath + "${dataset}VDI4_ndc_depth").readBytes()
+            buff = File(basePath + "${dataset}VDI_${windowHeight}_4_ndc_col").readBytes()
+            depthBuff = File(basePath + "${dataset}VDI_${windowHeight}_4_ndc_depth").readBytes()
 
         } else {
             buff = File("/home/aryaman/Repositories/scenery-insitu/VDI10_ndc").readBytes()
@@ -176,12 +176,26 @@ class VDIConverter : SceneryBase("VDIConverter", 512, 512) {
         compute.material().textures["DepthVDI"] = Texture(Vector3i(2 * numSupersegments, windowHeight, windowWidth),  channels = 1, contents = depthBuffer, usageType = hashSetOf(
             Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
 
-        val inv_viewOrig = Matrix4f(-0.941669f,	-0.025429f,	0.335579f,	0.000000f,
+        val inv_viewOrig =
+
+        Matrix4f(-0.941669f,	-0.025429f,	0.335579f,	0.000000f,
             0.000000f,	0.997141f,	0.075559f,	0.000000f,
                     -0.336541f,	0.071151f,	-0.938977f,	0.000000f,
 //                    -313.645f,	74.846016f,	-822.299500f,	1.000000f
                     -0.3136f,	0.074846f,	-0.8223f,	1.000000f
-        )
+        ) //Engine dataset
+
+//        Matrix4f(-0.941669f,	-0.025429f,	0.335579f,	0.000000f,
+//            0.000000f,	0.997141f,	0.075559f,	0.000000f,
+//            -0.336541f,	0.071151f,	-0.938977f,	0.000000f,
+//            -1.659809326f,	0.359451904f,	-4.578207520f,	1.000000f
+//        ) //RayleighTaylor
+
+//        Matrix4f(-0.941669f,	-0.025429f,	0.335579f,	0.000000f,
+//            0.000000f,	0.997141f,	0.075559f,	0.000000f,
+//            -0.336541f,	0.071151f,	-0.938977f,	0.000000f,
+//            -1.154997803f,	0.252724701f,	-3.169741943f,	1.000000f
+//        ) //Kingsnake
 
         val modelOrig = Matrix4f(2.000E+0f, 0.000E+0f,  0.000E+0f,  0.000E+0f,
             0.000E+0f, 2.000E+0f,  0.000E+0f,  0.000E+0f,
