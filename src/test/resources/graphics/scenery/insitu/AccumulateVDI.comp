@@ -313,7 +313,7 @@ if (vis && step > localNear && step < localFar)
                 vec4 end_w = mix(wfront, wback, end_step);
                 #else
                 vec4 start_w = ipv * vec4(uv, supSegStartPoint, 1);
-                start_w += 1. / start_w.w;
+                start_w *= 1. / start_w.w;
 
                 vec4 end_w = ipv * vec4(uv, supSegEndPoint, 1);
                 end_w *= 1. / end_w.w;
