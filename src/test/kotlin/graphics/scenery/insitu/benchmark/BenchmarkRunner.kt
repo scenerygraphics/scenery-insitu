@@ -2,6 +2,7 @@ package graphics.scenery.insitu.benchmark
 
 import graphics.scenery.SceneryElement
 import graphics.scenery.backends.Renderer
+import graphics.scenery.backends.vulkan.VulkanRenderer
 import graphics.scenery.insitu.VolumeFromFileExample
 import graphics.scenery.utils.Statistics
 import java.io.BufferedWriter
@@ -10,10 +11,11 @@ import kotlin.concurrent.thread
 
 class BenchmarkRunner {
 
-    val benchmarkDatasets = listOf<String>("Kingsnake", "Simulation")
-    val benchmarkViewpoints = listOf(5, 10, 15, 20, 25, 30, 35, 40)
-    val benchmarkSupersegments = listOf(20)
-    val benchmarkVos = listOf(0, 90, 180, 270)
+    val benchmarkDatasets = listOf<String>("Kingsnake")
+//    val benchmarkDatasets = listOf<String>("Rayleigh_Taylor")
+    val benchmarkViewpoints = listOf(5, 10, 15, 20, 25, 30, 35, 40, 45, 50)
+    val benchmarkSupersegments = listOf(15, 20, 30, 40)
+    val benchmarkVos = listOf(20)
 
     fun runVolumeRendering(windowWidth: Int, windowHeight: Int) {
         benchmarkDatasets.forEach { dataName->
@@ -85,6 +87,75 @@ class BenchmarkRunner {
         }
     }
 
+    fun benchmarkVDIGeneration(windowWidth: Int, windowHeight: Int) {
+        benchmarkDatasets.forEach { dataName ->
+            val dataset = "${dataName}_${windowWidth}_$windowHeight"
+
+            val fw = FileWriter("benchmarking/${dataset}_vdigeneration.csv", true)
+            val bw = BufferedWriter(fw)
+
+            benchmarkSupersegments.forEach { ns ->
+                val dataset = "${dataName}_${windowWidth}_$windowHeight"
+                System.setProperty("VolumeBenchmark.Dataset", dataName)
+                System.setProperty("VolumeBenchmark.WindowWidth", windowWidth.toString())
+                System.setProperty("VolumeBenchmark.WindowHeight", windowHeight.toString())
+                System.setProperty("VolumeBenchmark.GenerateVDI", "true")
+                System.setProperty("VolumeBenchmark.StoreVDIs", "false")
+                System.setProperty("VolumeBenchmark.TransmitVDIs", "false")
+                System.setProperty("VolumeBenchmark.NumSupersegments", ns.toString())
+
+
+                val instance = VolumeFromFileExample()
+
+                thread {
+                    while (instance.hub.get(SceneryElement.Renderer) == null) {
+                        Thread.sleep(50)
+                    }
+
+                    val renderer = (instance.hub.get(SceneryElement.Renderer) as Renderer)
+
+                    while (!renderer.firstImageReady) {
+                        Thread.sleep(50)
+                    }
+
+                    val stats = instance.hub.get<Statistics>()!!
+
+                    Thread.sleep(1000)
+
+                    var numGenerated = 0
+                    (renderer as VulkanRenderer).postRenderLambdas.add {
+                        instance.rotateCamera(10f)
+                        numGenerated += 1
+                    }
+
+                    while (numGenerated < 10) {
+                        Thread.sleep(500)
+                    }
+
+                    stats.clear("Renderer.fps")
+
+                    while (numGenerated < 20) {
+                        Thread.sleep(500)
+                    }
+
+                    val fps = stats.get("Renderer.fps")!!.avg()
+
+                    bw.append("$fps, ")
+
+                    println("Wrote fps: $fps")
+
+                    renderer.shouldClose = true
+
+                    instance.close()
+
+                }
+                instance.main()
+            }
+
+            bw.flush()
+        }
+    }
+
     fun storeVDIs(windowWidth: Int, windowHeight: Int) {
 
         benchmarkVos.forEach { vo ->
@@ -142,7 +213,7 @@ class BenchmarkRunner {
 
         @JvmStatic
         fun main(args: Array<String>) {
-            BenchmarkRunner().runVolumeRendering(1920, 1080)
+            BenchmarkRunner().benchmarkVDIGeneration(1280, 720)
         }
     }
 }
