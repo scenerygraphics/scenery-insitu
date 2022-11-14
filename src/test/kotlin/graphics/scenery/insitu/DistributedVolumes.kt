@@ -25,7 +25,6 @@ import net.imglib2.type.numeric.integer.UnsignedShortType
 import net.imglib2.type.numeric.real.FloatType
 import org.joml.*
 import org.lwjgl.system.MemoryUtil
-import org.scijava.ui.behaviour.ClickBehaviour
 import tpietzsch.shadergen.generate.SegmentTemplate
 import tpietzsch.shadergen.generate.SegmentType
 import java.io.File
@@ -39,7 +38,6 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 import kotlin.streams.toList
-import kotlin.system.measureNanoTime
 
 class CompositorNode : RichNode() {
     @ShaderProperty
@@ -64,7 +62,7 @@ class CompositorNode : RichNode() {
     var numProcesses = 0
 }
 
-class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth = 1920, windowHeight = 1080, wantREPL = false) {
+class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth = 1280, windowHeight = 720, wantREPL = false) {
 
     private val vulkanProjectionFix =
         Matrix4f(
@@ -90,8 +88,8 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     val generateVDIs = true
     val separateDepth = true
     val colors32bit = true
-    val saveFinal = false
-    val benchmarking = true
+    val saveFinal = true
+    val benchmarking = false
     var cnt_distr = 0
     var cnt_sub = 0
     var vdisGathered = 0
@@ -910,7 +908,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
 
             if(saveFinal && (rank == 0)) {
-                val file = FileOutputStream(File(basePath + "${dataset}vdidump$vdisGathered"))
+                val file = FileOutputStream(File(basePath + "${dataset}vdi_${windowWidth}_${windowHeight}_${maxSupersegments}_0_dump$vdisGathered"))
                 VDIDataIO.write(vdiData, file)
                 logger.info("written the dump $vdisGathered")
                 file.close()
@@ -944,7 +942,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     }
 
     @Suppress("unused")
-    fun compositeVDIs(vdiSetColour: ByteBuffer, vdiSetDepth: ByteBuffer) {
+    fun uploadForCompositing(vdiSetColour: ByteBuffer, vdiSetDepth: ByteBuffer) {
         //Receive the VDIs and composite them
 
 //        logger.info("In the composite function")
