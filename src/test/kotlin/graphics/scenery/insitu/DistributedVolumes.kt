@@ -505,7 +505,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         logger.info("Exiting init function!")
 
         basePath = if(isCluster) {
-            "/scratch/ws/1/argupta-distributed_vdis/vdi_dumps/"
+            "/scratch/ws/1/argupta-vdi_generation/vdi_dumps/"
         } else {
             "/home/aryaman/TestingData/"
         }
@@ -691,7 +691,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         }
 
         basePath = if(isCluster) {
-            "/scratch/ws/1/argupta-distributed_vdis/vdi_dumps/"
+            "/scratch/ws/1/argupta-vdi_generation/vdi_dumps/"
         } else {
             "/home/aryaman/TestingData/"
         }
