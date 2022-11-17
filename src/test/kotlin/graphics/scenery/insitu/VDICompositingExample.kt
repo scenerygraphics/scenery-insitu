@@ -47,7 +47,7 @@ class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
     val separateDepth = true
 
     val compute = CompositorNode()
-    var dataset = "Beechnut"
+    var dataset = "Kingsnake"
 
     override fun init() {
         renderer = hub.add(SceneryElement.Renderer,
@@ -59,17 +59,17 @@ class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
         var depthBuff = ByteArray(windowHeight*windowWidth*2*maxSupersegments)
 
 
-        val commSize = 4
-        val rank = 2
+        val commSize = 1
+        val rank = 0
 
         dataset += "_${commSize}_${rank}"
 
 //        val basePath = "/home/aryaman/Repositories/DistributedVis/cmake-build-debug/"
 //        val basePath = "/home/aryaman/Repositories/scenery-insitu/"
-//        val basePath = "/home/aryaman/TestingData/"
-        val basePath = "/home/aryaman/TestingData/FromCluster/"
+        val basePath = "/home/aryaman/TestingData/"
+//        val basePath = "/home/aryaman/TestingData/FromCluster/"
 
-        val file = FileInputStream(File(basePath + "${dataset}vdidump4"))
+        val file = FileInputStream(File(basePath + "${dataset}vdi_1280_720_20_0_dump4"))
 
         val vdiData = VDIDataIO.read(file)
 
