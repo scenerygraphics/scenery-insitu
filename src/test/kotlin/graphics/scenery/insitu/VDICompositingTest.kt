@@ -8,16 +8,34 @@ import graphics.scenery.backends.vulkan.VulkanTexture
 import graphics.scenery.compute.ComputeMetadata
 import graphics.scenery.textures.Texture
 import graphics.scenery.utils.Image
+import graphics.scenery.utils.SystemHelpers
+import graphics.scenery.volumes.vdi.VDIDataIO
 import net.imglib2.type.numeric.real.FloatType
+import org.joml.Matrix4f
 import org.joml.Quaternionf
 import org.joml.Vector3f
 import org.joml.Vector3i
 import org.lwjgl.system.MemoryUtil
 import java.io.File
+import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
 
 class VDICompositingTest: SceneryBase("VDICompositingTest", windowWidth = 1280, windowHeight = 720, wantREPL = false) {
+
+    private val vulkanProjectionFix =
+        Matrix4f(
+            1.0f,  0.0f, 0.0f, 0.0f,
+            0.0f, -1.0f, 0.0f, 0.0f,
+            0.0f,  0.0f, 0.5f, 0.0f,
+            0.0f,  0.0f, 0.5f, 1.0f)
+
+    fun Matrix4f.applyVulkanCoordinateSystem(): Matrix4f {
+        val m = Matrix4f(vulkanProjectionFix)
+        m.mul(this)
+
+        return m
+    }
 
     val compositor = CompositorNode()
     val maxCompositedSupersegments = 20
@@ -36,14 +54,15 @@ class VDICompositingTest: SceneryBase("VDICompositingTest", windowWidth = 1280, 
     var vdisComposited = AtomicInteger(0)
     var vdisDistributed = AtomicInteger(0)
 
+    var dataset = ""
+    var basePath = ""
+    val benchmarking = false
+
     @Volatile
     var rendererConfigured = false
 
     @Volatile
     var runCompositing = false
-
-    lateinit var compositedColorTex: Texture
-    lateinit var compositedDepthTex: Texture
 
     private external fun distributeVDIs(subVDIColor: ByteBuffer, subVDIDepth: ByteBuffer, sizePerProcess: Int, commSize: Int,
                                         colPointer: Long, depthPointer: Long, mpiPointer: Long)
@@ -103,37 +122,26 @@ class VDICompositingTest: SceneryBase("VDICompositingTest", windowWidth = 1280, 
             workSizes = Vector3i(windowWidth/commSize, windowHeight, 1)
         )
 
+        basePath = if(isCluster) {
+            "/scratch/ws/1/argupta-vdi_generation/vdi_dumps/"
+        } else {
+            "/home/aryaman/TestingData/"
+        }
+
+        logger.info("Got dataset value: $dataset")
+
+        val file = FileInputStream(File(basePath + "${dataset}_${commSize}_${rank}vdi_${windowWidth}_${windowHeight}_${maxSupersegments}_0_dump4"))
+        val vdiData = VDIDataIO.read(file)
+
+        compositor.nw = vdiData.metadata.nw
+        compositor.ViewOriginal = vdiData.metadata.view
+        compositor.invViewOriginal = Matrix4f(vdiData.metadata.view).invert()
+        compositor.ProjectionOriginal = Matrix4f(vdiData.metadata.projection).applyVulkanCoordinateSystem()
+        compositor.invProjectionOriginal = Matrix4f(vdiData.metadata.projection).applyVulkanCoordinateSystem().invert()
+        compositor.numProcesses = commSize
+
         compositor.visible = true
         scene.addChild(compositor)
-
-
-        (renderer as VulkanRenderer).postRenderLambdas.add {
-            if(runCompositing) {
-                compositedColorTex = compositor.material().textures["CompositedVDIColor"]!!
-                compositedDepthTex = compositor.material().textures["CompositedVDIDepth"]!!
-
-                val col = fetchTexture(compositedColorTex)
-                val depth = fetchTexture(compositedDepthTex)
-
-                if(col < 0) {
-                    logger.error("Error fetching the color compositedVDI!!")
-                }
-                if(depth < 0) {
-                    logger.error("Error fetching the depth compositedVDI!!")
-                }
-
-                vdisComposited.incrementAndGet()
-                runCompositing = false
-            }
-
-            if(vdisDistributed.get() > vdisComposited.get()) {
-                runCompositing = true
-            }
-        }
-
-        (renderer as VulkanRenderer).postRenderLambdas.add {
-            compositor.doComposite = runCompositing
-        }
 
         rendererConfigured = true
     }
@@ -169,7 +177,41 @@ class VDICompositingTest: SceneryBase("VDICompositingTest", windowWidth = 1280, 
     @Suppress("unused")
     fun compositeVDIs(subVDIColorBuffer: ByteBuffer, subVDIDepthBuffer: ByteBuffer, rank: Int, iterations: Int) {
 
-        var compositedSoFar = vdisComposited.get()
+        val compositedColorTex = compositor.material().textures["CompositedVDIColor"]!!
+        val compositedDepthTex = compositor.material().textures["CompositedVDIDepth"]!!
+
+        (renderer as VulkanRenderer).postRenderLambdas.add {
+            if(runCompositing) {
+
+
+                val col = fetchTexture(compositedColorTex)
+                val depth = fetchTexture(compositedDepthTex)
+
+                if(col < 0) {
+                    logger.error("Error fetching the color compositedVDI!!")
+                }
+                if(depth < 0) {
+                    logger.error("Error fetching the depth compositedVDI!!")
+                }
+
+                vdisComposited.incrementAndGet()
+                runCompositing = false
+            }
+
+            if(vdisDistributed.get() > vdisComposited.get()) {
+                runCompositing = true
+            }
+        }
+
+        (renderer as VulkanRenderer).postRenderLambdas.add {
+            if(runCompositing) {
+                logger.info("SETTING DO_COMPOSITE TO TRUE!")
+            }
+//            compositor.doComposite = runCompositing
+            compositor.doComposite = true
+        }
+
+        var compositedSoFar = 0//vdisComposited.get()
         for (i in 1..iterations) {
 
             distributeVDIs(subVDIColorBuffer, subVDIDepthBuffer, windowHeight * windowWidth * maxSupersegments * 4 / commSize, commSize, allToAllColorPointer,
@@ -184,6 +226,12 @@ class VDICompositingTest: SceneryBase("VDICompositingTest", windowWidth = 1280, 
             val compositedVDIColorBuffer = compositedColorTex.contents
             val compositedVDIDepthBuffer = compositedDepthTex.contents
 
+            if(!benchmarking) {
+                logger.info("Dumping to file before gather")
+                SystemHelpers.dumpToFile(compositedVDIColorBuffer!!, basePath + "CompositedVDI${vdisDistributed.get()}_ndc_col")
+                SystemHelpers.dumpToFile(compositedVDIDepthBuffer!!, basePath + "CompositedVDI${vdisDistributed.get()}_ndc_depth")
+            }
+
             gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, windowHeight * windowWidth * maxCompositedSupersegments * 4 / commSize, 0,
                 rank, commSize, gatherColorPointer, gatherDepthPointer, mpiPointer)
         }
@@ -192,15 +240,22 @@ class VDICompositingTest: SceneryBase("VDICompositingTest", windowWidth = 1280, 
     @Suppress("unused")
     fun uploadForCompositing(vdiSetColour: ByteBuffer, vdiSetDepth: ByteBuffer) {
 
-            compositor.material().textures["VDIsColor"] = Texture(Vector3i(maxSupersegments, windowHeight, windowWidth), 4, contents = vdiSetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+        if(!benchmarking) {
+            logger.info("Dumping to file in the uploadFromCompositing function")
+            SystemHelpers.dumpToFile(vdiSetColour, basePath + "CompositingTestSetOfVDI${vdisDistributed.get()}_ndc_col")
+            SystemHelpers.dumpToFile(vdiSetDepth, basePath + "CompositingTestSetOfVDI${vdisDistributed.get()}_ndc_depth")
+            logger.info("File dumped")
+        }
+
+        compositor.material().textures["VDIsColor"] = Texture(Vector3i(maxSupersegments, windowHeight, windowWidth), 4, contents = vdiSetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+            type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+
+
+        compositor.material().textures["VDIsDepth"] = Texture(Vector3i(2 * maxSupersegments, windowHeight, windowWidth), 1, contents = vdiSetDepth, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
                 type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
 
 
-            compositor.material().textures["VDIsDepth"] = Texture(Vector3i(2 * maxSupersegments, windowHeight, windowWidth), 1, contents = vdiSetDepth, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
-                    type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
-
-
-            vdisDistributed.incrementAndGet()
+        vdisDistributed.incrementAndGet()
     }
 
     @Suppress("unused")
