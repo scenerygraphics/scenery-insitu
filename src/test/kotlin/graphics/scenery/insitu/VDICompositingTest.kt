@@ -207,8 +207,7 @@ class VDICompositingTest: SceneryBase("VDICompositingTest", windowWidth = 1280, 
             if(runCompositing) {
                 logger.info("SETTING DO_COMPOSITE TO TRUE!")
             }
-//            compositor.doComposite = runCompositing
-            compositor.doComposite = true
+            compositor.doComposite = runCompositing
         }
 
         var compositedSoFar = 0//vdisComposited.get()
