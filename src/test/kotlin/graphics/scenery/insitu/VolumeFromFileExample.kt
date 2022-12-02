@@ -1,7 +1,6 @@
 package graphics.scenery.insitu
 
 import bdv.tools.transformation.TransformedSource
-import com.esotericsoftware.kryo.io.ByteBufferOutputStream
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import graphics.scenery.*
@@ -21,22 +20,15 @@ import graphics.scenery.utils.extensions.plus
 import graphics.scenery.utils.extensions.times
 import graphics.scenery.volumes.*
 import graphics.scenery.volumes.vdi.*
+import net.imglib2.type.numeric.integer.IntType
 import net.imglib2.type.numeric.integer.UnsignedByteType
 import net.imglib2.type.numeric.integer.UnsignedIntType
 import net.imglib2.type.numeric.integer.UnsignedShortType
 import net.imglib2.type.numeric.real.FloatType
-import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream
-import org.apache.commons.compress.compressors.lz4.FramedLZ4CompressorOutputStream
-import org.apache.commons.compress.compressors.lzma.LZMACompressorOutputStream
-import org.apache.commons.compress.compressors.snappy.FramedSnappyCompressorOutputStream
-import org.apache.commons.compress.compressors.snappy.SnappyCompressorOutputStream
 import org.joml.*
 import org.lwjgl.system.MemoryUtil
-import org.lwjgl.util.lz4.LZ4
 import org.msgpack.jackson.dataformat.MessagePackFactory
 import org.scijava.ui.behaviour.ClickBehaviour
-import org.xerial.snappy.Snappy
-import org.xerial.snappy.SnappyFramedOutputStream
 import org.zeromq.SocketType
 import org.zeromq.ZContext
 import org.zeromq.ZMQ
@@ -45,16 +37,14 @@ import tpietzsch.shadergen.generate.SegmentTemplate
 import tpietzsch.shadergen.generate.SegmentType
 import java.io.*
 import java.lang.Math
-import java.net.InetAddress
 import java.nio.ByteBuffer
+import java.nio.FloatBuffer
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
-import kotlin.math.abs
-import kotlin.math.min
 import kotlin.streams.toList
 import kotlin.system.measureNanoTime
 
@@ -66,15 +56,15 @@ import kotlin.system.measureNanoTime
 
 data class Timer(var start: Long, var end: Long)
 
-class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty("VolumeBenchmark.WindowWidth")?.toInt()?: 1280, System.getProperty("VolumeBenchmark.WindowHeight")?.toInt() ?: 780, wantREPL = false) {
+class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty("VolumeBenchmark.WindowWidth")?.toInt()?: 1280, System.getProperty("VolumeBenchmark.WindowHeight")?.toInt() ?: 720, wantREPL = false) {
     var hmd: TrackedStereoGlasses? = null
 
     val context: ZContext = ZContext(4)
 
     lateinit var volumeManager: VolumeManager
     val generateVDIs = System.getProperty("VolumeBenchmark.GenerateVDI")?.toBoolean() ?: true
-    val storeVDIs = System.getProperty("VolumeBenchmark.StoreVDIs")?.toBoolean()?: false
-    val transmitVDIs = System.getProperty("VolumeBenchmark.TransmitVDIs")?.toBoolean()?: true
+    val storeVDIs = System.getProperty("VolumeBenchmark.StoreVDIs")?.toBoolean()?: true
+    val transmitVDIs = System.getProperty("VolumeBenchmark.TransmitVDIs")?.toBoolean()?: false
     val vo = System.getProperty("VolumeBenchmark.Vo")?.toFloat()?.toInt() ?: 0
     val separateDepth = true
     val colors32bit = true
@@ -269,12 +259,14 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 //            val numGridCells = Vector3f(256f, 256f, 256f)
             val lowestLevel = MemoryUtil.memCalloc(numGridCells.x.toInt() * numGridCells.y.toInt() * numGridCells.z.toInt() * 4)
 
-            val thresholdBuffer = MemoryUtil.memCalloc(windowWidth * windowHeight * 4)
+            val qErrorBuffer = MemoryUtil.memCalloc(windowWidth * windowHeight * 4)
+            val numGeneratedBuffer = MemoryUtil.memCalloc(windowWidth * windowHeight * 4)
 
             val outputSubVDIColor: Texture
             val outputSubVDIDepth: Texture
             val gridCells: Texture
-            val thresholds: Texture
+            val qErrorArray: Texture
+            val numGenerated: Texture
 
             outputSubVDIColor = if(colors32bit) {
                 Texture.fromImage(
@@ -304,10 +296,15 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
             volumeManager.customTextures.add("OctreeCells")
             volumeManager.material().textures["OctreeCells"] = gridCells
 
-            thresholds = Texture.fromImage(Image(thresholdBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+            qErrorArray = Texture.fromImage(Image(qErrorBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
                 type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
-            volumeManager.customTextures.add("Thresholds")
-            volumeManager.material().textures["Thresholds"] = thresholds
+            volumeManager.customTextures.add("QuantizationErrors")
+            volumeManager.material().textures["QuantizationErrors"] = qErrorArray
+
+            numGenerated = Texture.fromImage(Image(numGeneratedBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+                type = IntType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+            volumeManager.customTextures.add("SupersegmentsGenerated")
+            volumeManager.material().textures["SupersegmentsGenerated"] = numGenerated
 
             volumeManager.customUniforms.add("doGeneration")
             volumeManager.shaderProperties["doGeneration"] = true
@@ -867,7 +864,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
         var subVDIDepthBuffer: ByteBuffer? = null
         var subVDIColorBuffer: ByteBuffer?
         var gridCellsBuff: ByteBuffer?
-        var thresholdBuff: ByteBuffer?
+        var qErrorBuff: ByteBuffer?
+        var numGeneratedBuff: ByteBuffer?
 
         while(renderer?.firstImageReady == false) {
 //        while(renderer?.firstImageReady == false || volumeManager.shaderProperties.isEmpty()) {
@@ -892,10 +890,15 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 
         (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (gridCells to gridTexturesCnt)
 
-        val thresholds = volumeManager.material().textures["Thresholds"]!!
-        val thresholdCnt = AtomicInteger(0)
+        val qErrorTexture = volumeManager.material().textures["QuantizationErrors"]!!
+        val qErrorCnt = AtomicInteger(0)
 
-        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (thresholds to thresholdCnt)
+        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (qErrorTexture to qErrorCnt)
+
+        val numGeneratedTexture = volumeManager.material().textures["SupersegmentsGenerated"]!!
+        val numGeneratedCnt = AtomicInteger(0)
+
+        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (numGeneratedTexture to numGeneratedCnt)
 
         var prevColor = colorCnt.get()
         var prevDepth = depthCnt.get()
@@ -937,7 +940,19 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                 subVDIDepthBuffer = subVDIDepth!!.contents
             }
             gridCellsBuff = gridCells.contents
-            thresholdBuff = thresholds.contents
+            qErrorBuff = qErrorTexture.contents
+            numGeneratedBuff = numGeneratedTexture.contents
+
+            val qErrorFloat = qErrorBuff!!.asFloatBuffer()
+
+            var qErrorSum = 0.0f
+            val reduceTime = measureNanoTime {
+                for(i in 0 until qErrorFloat.remaining()) {
+                    qErrorSum += qErrorFloat.get(i)
+                }
+            }
+
+            logger.info("Sum of errors is: $qErrorSum, which took ${reduceTime/1e9} to compute")
 
             tGeneration.end = System.nanoTime()
 
@@ -1065,7 +1080,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                             SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col")
                             SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth")
                             SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
-    //                      SystemHelpers.dumpToFile(thresholdBuff!!, "${fileName}_thresholds")
+                            SystemHelpers.dumpToFile(qErrorBuff!!, "${fileName}_quantization_errors")
+                            SystemHelpers.dumpToFile(numGeneratedBuff!!, "${fileName}_supersegments_generated")
                     } else {
                         SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)
                         SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")

@@ -53,11 +53,12 @@ layout(set = 2, binding = 0) uniform sampler3D volumeCache;
 layout(set = 3, binding = 0, rgba32f) uniform image3D OutputSubVDIColor;
 layout(set = 4, binding = 0, r32f) uniform image3D OutputSubVDIDepth;
 layout (set = 8, binding = 0, r32ui) uniform uimage3D OctreeCells;
-//layout (set = 9, binding = 0, r32f) uniform image2D Thresholds;
+layout (set = 9, binding = 0, r32f) uniform image2D QuantizationErrors;
+layout (set = 10, binding = 0, r32i) uniform iimage2D SupersegmentsGenerated;
 
 #pragma scenery endverbatim
 
-ivec2 debug_pixel = ivec2(624, 390);
+ivec2 debug_pixel = ivec2(960, 540);
 
 // intersect ray with a box
 // http://www.siggraph.org/education/materials/HyperGraph/raytrace/rtinter3.htm
@@ -231,10 +232,6 @@ void writeSupersegment(int index, float start, float end, vec4 color) {
 
 void update_cell_count(ivec3 cell) {
     uint ret = imageAtomicAdd(OctreeCells, cell, 1);
-
-//    if(gl_GlobalInvocationID.xy == debug_pixel) {
-//        debugPrintfEXT("Updated the cell: (%d, %d, %d). Prev value was: %u", cell.xyz, ret);
-//    }
 }
 
 ivec3 num_cells;
@@ -319,12 +316,13 @@ void main()
     vec4 wback = ipv * back;
     wback *= 1 / wback.w;
 
-//    #if USE_PRINTF
-//    if(gl_GlobalInvocationID.xy == debug_pixel) {
+    #if USE_PRINTF
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("Num grid cells: (%d, %d, %d).", num_cells.xyz);
 //        debugPrintfEXT("front: (%f, %f, %f, %f) back: (%f, %f, %f, %f).", front.xyzw, back.xyzw);
 //        debugPrintfEXT("wfront: (%f, %f, %f, %f) wback: (%f, %f, %f, %f).", wfront.xyzw, wback.xyzw);
-//    }
-//    #endif
+    }
+    #endif
 
     // -- bounding box intersection for all volumes ----------
     float tnear = 1, tfar = 0, tmax = getMaxDepth( depthUV );
@@ -361,6 +359,8 @@ void main()
 
     int supersegmentNum = 0;
 
+    float quantization_error = 0;
+
     if ( tnear < tfar )
     {
         vec4 fb = wback - wfront;
@@ -382,6 +382,7 @@ void main()
 
         bool final_generation_step = false;
         bool supsegs_written = false;
+        bool error_computed = false;
 
         int desired_supsegs = maxSupersegments;
 //        int delta = 3; // up to delta supsegs less than max is acceptable
@@ -401,13 +402,9 @@ void main()
 //        mid_thresh = 0.06775235; //Beechnut median
 //        mid_thresh = 0.2165875; //Simulation median
 
-        while(!thresh_found || !supsegs_written) {
+        while(!thresh_found || !supsegs_written || !error_computed) {
             iter++;
 //            if(iter > 50) break;
-            if(thresh_found) {
-                supsegs_written = true;
-//                writeThreshold(mid_thresh);
-            }
             newSupSegThresh = mid_thresh;
 
             int num_terminations = 0;
@@ -487,6 +484,14 @@ void main()
                 wprev = wpos;
             }
 
+            if(supsegs_written) {
+                error_computed = true;
+            }
+
+            if(thresh_found) {
+                supsegs_written = true;
+            }
+
             #if USE_PRINTF //TODO: check if the iterations are actually taking place and benchmark against fixed threshold
             if(gl_GlobalInvocationID.xy == debug_pixel) {
                 debugPrintfEXT("Iteration: %d of searching for thresh. Low: %f, high: %f, mid: %f. Num terminations: %d", iter, low_thresh, high_thresh, mid_thresh, num_terminations);
@@ -546,25 +551,18 @@ void main()
         }
         #endif
 
-//        if(supersegmentNum == 0) {
+        imageStore(SupersegmentsGenerated, ivec2(gl_GlobalInvocationID.xy), ivec4(supersegmentNum));
+        imageStore(QuantizationErrors, ivec2(gl_GlobalInvocationID.xy), vec4(quantization_error));
+
+//        writeThreshold(float(supersegmentNum));
+
+        //        if(supersegmentNum == 0) {
 //            writeThreshold(-1.);
 //        }
 
         if(supersegmentNum < maxSupersegments) {
             for(int i = supersegmentNum; i < maxSupersegments; i++) {
-#if SEPARATE_DEPTH
-                imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-//                imageStore(OutputSubVDIColor, ivec3(i * 4, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-//                imageStore(OutputSubVDIColor, ivec3(i * 4 + 1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-//                imageStore(OutputSubVDIColor, ivec3(i*4+2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-//                imageStore(OutputSubVDIColor, ivec3(i*4+3, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-                #if INT_DEPTHS
-                imageStore(OutputSubVDIDepth, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), uvec4(0));
-                #else
-                imageStore(OutputSubVDIDepth, ivec3(i*2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-                imageStore(OutputSubVDIDepth, ivec3(i*2+1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-                #endif
-#endif
+                writeSupersegment(i, 0, 0, vec4(0));
             }
         }
     } else {
@@ -572,19 +570,7 @@ void main()
 //        writeThreshold(-1.);
         if(supersegmentNum < maxSupersegments) {
             for(int i = supersegmentNum; i < maxSupersegments; i++) {
-#if SEPARATE_DEPTH
-                imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-//                imageStore(OutputSubVDIColor, ivec3(i*4, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-//                imageStore(OutputSubVDIColor, ivec3(i*4+1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-//                imageStore(OutputSubVDIColor, ivec3(i*4+2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-//                imageStore(OutputSubVDIColor, ivec3(i*4+3, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-                #if INT_DEPTHS
-                imageStore(OutputSubVDIDepth, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), uvec4(0));
-                #else
-                imageStore(OutputSubVDIDepth, ivec3(i*2, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-                imageStore(OutputSubVDIDepth, ivec3(i*2+1, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-                #endif
-#endif
+                writeSupersegment(i, 0, 0, vec4(0));
             }
         }
     }
