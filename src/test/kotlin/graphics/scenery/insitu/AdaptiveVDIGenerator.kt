@@ -44,6 +44,7 @@ import java.nio.file.Paths
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
+import kotlin.math.ceil
 import kotlin.streams.toList
 import kotlin.system.measureNanoTime
 
@@ -276,13 +277,15 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
             val outputSubVDIDepth: Texture
             val gridCells: Texture
 
+            val totalMaxSupersegments = maxSupersegments * windowWidth * windowHeight
+
             outputSubVDIColor = if(colors32bit) {
                 Texture.fromImage(
-                    Image(outputSubColorBuffer, numLayers * maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(
+                    Image(outputSubColorBuffer, numLayers * 512, 512, ceil((totalMaxSupersegments / (512*512)).toDouble()).toInt()), usage = hashSetOf(
                         Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 4, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
             } else {
                 Texture.fromImage(
-                    Image(outputSubColorBuffer, numLayers * maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(
+                    Image(outputSubColorBuffer, numLayers * 512, 512, ceil((totalMaxSupersegments / (512*512)).toDouble()).toInt()), usage = hashSetOf(
                         Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
             }
 
@@ -291,7 +294,7 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
 
             if(separateDepth) {
                 outputSubVDIDepth = Texture.fromImage(
-                    Image(outputSubDepthBuffer, 2 * maxSupersegments, windowHeight, windowWidth),  usage = hashSetOf(
+                    Image(outputSubDepthBuffer, 2 * 512, 512, ceil((totalMaxSupersegments / (512*512)).toDouble()).toInt()),  usage = hashSetOf(
                         Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
 //                    Image(outputSubDepthBuffer, 2*maxSupersegments, windowHeight, windowWidth),  usage = hashSetOf(
 //                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
@@ -317,6 +320,15 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
 
             volumeManager.customUniforms.add("doGeneration")
             volumeManager.shaderProperties["doGeneration"] = true
+
+            volumeManager.customUniforms.add("windowWidth")
+            volumeManager.shaderProperties["windowWidth"] = windowWidth
+
+            volumeManager.customUniforms.add("windowHeight")
+            volumeManager.shaderProperties["windowHeight"] = windowHeight
+
+            volumeManager.customUniforms.add("maxSupersegments")
+            volumeManager.shaderProperties["maxSupersegments"] = maxSupersegments
 
             hub.add(volumeManager)
 

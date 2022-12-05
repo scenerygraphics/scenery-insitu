@@ -13,6 +13,9 @@ uniform vec3 cacheSize; // TODO: get from texture!?
 uniform mat4 transform;
 
 uniform bool doGeneration;
+uniform int windowWidth;
+uniform int windowHeight;
+uniform int maxSupersegments;
 
 #pragma scenery verbatim
 layout(set = 0, binding = 0) uniform VRParameters {
@@ -54,6 +57,7 @@ layout(set = 3, binding = 0, rgba32f) uniform image3D OutputSubVDIColor;
 layout(set = 4, binding = 0, r32f) uniform image3D OutputSubVDIDepth;
 layout (set = 8, binding = 0, r32ui) uniform uimage3D OctreeCells;
 layout (set = 9, binding = 0, r32i) uniform readonly iimage2D PrefixSums;
+layout (set = 10, binding = 0, r32f) uniform readonly image2D Thresholds;
 
 #pragma scenery endverbatim
 
@@ -138,9 +142,9 @@ vec4 encode(float x, float y){
 }
 
 vec4 supsegs_accumulated = vec4(0);
-int windowWidthG = 0;
-int windowHeightG = 0;
-int averageSupersegments = 0;
+int bufferWidth = 0;
+int bufferHeight = 0;
+int bufferDepth = 0;
 mat4 pvG;
 mat4 ipvG;
 
@@ -150,8 +154,8 @@ void accumulateSupseg(vec4 color, float depthHere, float depthEnd) {
     vec3 newColor = color.rgb;
     float newAlpha = color.a;
 
-    float ndc_x = (float(gl_GlobalInvocationID.x) / float(windowWidthG)) * 2.0 - 1.0;
-    float ndc_y = (float(gl_GlobalInvocationID.y) / float(windowHeightG)) * 2.0 - 1.0;
+    float ndc_x = (float(gl_GlobalInvocationID.x) / float(windowWidth)) * 2.0 - 1.0;
+    float ndc_y = (float(gl_GlobalInvocationID.y) / float(windowHeight)) * 2.0 - 1.0;
 
     vec4 supseg_start_w = ipvG * vec4(ndc_x, ndc_y, depthHere, 1);
     supseg_start_w *= 1. / supseg_start_w.w;
@@ -197,16 +201,16 @@ void writeSupersegment(int index, float start, float end, vec4 color) {
 
     int linearized = imageLoad(PrefixSums, ivec2(gl_GlobalInvocationID.xy)).x + index;
 
-    int x = linearized / (averageSupersegments * windowHeightG);
+    int z_ = linearized / (bufferWidth * bufferHeight);
 
-    int remainder = linearized % (averageSupersegments * windowHeightG);
+    int remainder = linearized % (bufferWidth * bufferHeight);
 
-    int y = remainder / averageSupersegments;
-    int i = remainder % averageSupersegments;
+    int y_ = remainder / bufferWidth;
+    int x_ = remainder % bufferWidth;
 
-    imageStore(OutputSubVDIDepth, ivec3(2 * i, y, x), vec4(start, 0, 0, 0));
-    imageStore(OutputSubVDIDepth, ivec3(2 * i + 1, y, x), vec4(end, 0, 0, 0));
-    imageStore(OutputSubVDIColor, ivec3(i, y, x), color);
+    imageStore(OutputSubVDIDepth, ivec3(2 * x_, y_, z_), vec4(start, 0, 0, 0));
+    imageStore(OutputSubVDIDepth, ivec3(2 * x_ + 1, y_, z_), vec4(end, 0, 0, 0));
+    imageStore(OutputSubVDIColor, ivec3(x_, y_, z_), color);
 }
 
 //void writeThreshold(float threshold) {
@@ -237,7 +241,7 @@ int findZInterval_view(float z_view) {
     return interval_num;
 }
 
-bool thresh_found = false;
+bool thresh_found = true;
 
 // ---------------------
 // $insert{Convert}
@@ -247,6 +251,10 @@ bool thresh_found = false;
 void main()
 {
     if(!doGeneration) {
+        return;
+    }
+
+    if(gl_GlobalInvocationID.x >= windowWidth || gl_GlobalInvocationID.y >= windowHeight) {
         return;
     }
 
@@ -260,8 +268,9 @@ void main()
     //    #endif
 
     ivec3 imageCoords  = imageSize(OutputSubVDIColor);
-    int windowWidth = imageCoords.b;
-    int windowHeight = imageCoords.g;
+    int bufferWidth = imageCoords.x;
+    int bufferHeight = imageCoords.y;
+    int bufferDepth = imageCoords.z;
 
     num_cells = imageSize(OctreeCells).xyz;
 
@@ -275,8 +284,6 @@ void main()
 
     ipvG = ipv;
     pvG = pv;
-    windowWidthG = windowWidth;
-    windowHeightG = windowHeight;
 
     // frag coord in NDC
     // TODO: Re-introduce dithering
@@ -286,7 +293,7 @@ void main()
     //    float newSupSegThresh = 0.00014;
     float newSupSegThresh = 0.04555;
 
-    vec2 texcoord = gl_GlobalInvocationID.xy/vec2(imageCoords.b, imageCoords.g);
+    vec2 texcoord = gl_GlobalInvocationID.xy/vec2(windowWidth, windowHeight);
     vec2 uv = texcoord * 2.0 - vec2(1.0);
     vec2 depthUV = (vrParameters.stereoEnabled ^ 1) * texcoord + vrParameters.stereoEnabled * vec2((texcoord.x/2.0 + currentEye.eye * 0.5), texcoord.y);
     depthUV = depthUV * 2.0 - vec2(1.0);
@@ -333,15 +340,6 @@ void main()
 
         // -------------------------------------------------------
 
-    int maxSupersegments = 0;
-
-    if(gl_GlobalInvocationID.x < (windowWidth - 1)) {
-        maxSupersegments = imageLoad(PrefixSums, ivec2(gl_GlobalInvocationID.x + 1, gl_GlobalInvocationID.y)).x - imageLoad(PrefixSums, ivec2(gl_GlobalInvocationID.xy)).x;
-    } else {
-        maxSupersegments = imageLoad(PrefixSums, ivec2(0, gl_GlobalInvocationID.y + 1)).x - imageLoad(PrefixSums, ivec2(gl_GlobalInvocationID.xy)).x;
-    }
-    averageSupersegments = imageCoords.r;
-
     float minOpacity = 0.0; //If alpha is less than this, the sample is considered transparent and not included in generated supersegments
     //    float minOpacity = 0.00196078431; //If alpha is less than this, the sample is considered transparent and not included in generated supersegments
     /* Exlanation of minOpacity value: the smallest number that can be stored in 8 but opacity channel is 1/255 = 0.00392156862. Any value less than half of this will be rounded down to 0 and
@@ -370,19 +368,15 @@ void main()
         float low_thresh = 0.0;
         float high_thresh = 1.732; //sq. root of 3
 
-        bool final_generation_step = false;
+        bool final_generation_step = true;
         bool supsegs_written = false;
         bool error_computed = false;
-
-        int desired_supsegs = maxSupersegments;
-        //        int delta = 3; // up to delta supsegs less than max is acceptable
-        int delta = int(floor(0.15 * maxSupersegments)); // up to delta supsegs less than max is acceptable
 
         vec4 v = vec4( 0 );
 
         int iter = 0;
-        float mid_thresh = 0.0001; //start off with a very low thresh to eliminate those rays that contain primarily homogenous regions already
-        //        float mid_thresh = (low_thresh + high_thresh)/2.0;
+        float mid_thresh = imageLoad(Thresholds, ivec2(gl_GlobalInvocationID).xy).x;
+
         bool first_iteration = true;
 
         //        thresh_found = true;
@@ -392,7 +386,7 @@ void main()
         //        mid_thresh = 0.06775235; //Beechnut median
         //        mid_thresh = 0.2165875; //Simulation median
 
-        while(!thresh_found || !supsegs_written || !error_computed) {
+        while(!thresh_found || !supsegs_written) {
             iter++;
             //            if(iter > 50) break;
 
@@ -490,40 +484,6 @@ void main()
             }
             #endif
 
-            if(!supsegs_written) {
-
-                if(abs(high_thresh - low_thresh) < 0.000001) {
-                    thresh_found = true;
-                    mid_thresh = ((num_terminations == 0) ? low_thresh : high_thresh); // we want to err on the higher side, so that we generate < max no of supsegs, unless we are ending up generating 0 supsegs
-
-                    //                #if USE_PRINTF
-                    //                if(gl_GlobalInvocationID.xy == debug_pixel) {
-                    //                    debugPrintfEXT("Termination criteria reached. Num_terminations: %d. Setting mid_thresh to: %f", num_terminations, mid_thresh);
-                    //                }
-                    //                #endif
-                    //                low_thresh = high_thresh;
-                    //                mid_thresh = high_thresh;// we want to err on the higher side, so that we generate < max no of supsegs
-                    continue;
-                } else if(num_terminations > desired_supsegs) {
-                    low_thresh = mid_thresh;
-                } else if(num_terminations < (desired_supsegs - delta)) {
-                    high_thresh = mid_thresh;
-                } else {
-                    thresh_found = true;
-                    continue;
-                }
-
-                if(first_iteration) {
-                    first_iteration = false;
-                    if(num_terminations < desired_supsegs) {
-                        thresh_found = true;
-                        continue;
-                    }
-                }
-
-                mid_thresh = (low_thresh + high_thresh) / 2.0;
-            }
-
             //            #if USE_PRINTF
             //            if(gl_GlobalInvocationID.xy == debug_pixel && supsegs_written) {
             //                debugPrintfEXT("Before applying the exponential, color was: (%f, %f, %f, %f)", v.rgba);
@@ -547,28 +507,5 @@ void main()
         //        if(supersegmentNum == 0) {
         //            writeThreshold(-1.);
         //        }
-
-        if(supersegmentNum < maxSupersegments) {
-            for(int i = supersegmentNum; i < maxSupersegments; i++) {
-                writeSupersegment(i, 0, 0, vec4(0));
-            }
-        }
-    } else {
-        FragColor = vec4(0, 0, 0, 0);
-        //        writeThreshold(-1.);
-        if(supersegmentNum < maxSupersegments) {
-            for(int i = supersegmentNum; i < maxSupersegments; i++) {
-                writeSupersegment(i, 0, 0, vec4(0));
-            }
-        }
     }
-
-    //    if(supersegmentNum < maxSupersegments - 1) {
-    //        for(int i = supersegmentNum; i < maxSupersegments; i++) {
-    //            imageStore(OutputSubVDIDepth, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-    //            imageStore(OutputSubVDIColor, ivec3(i, gl_GlobalInvocationID.y, gl_GlobalInvocationID.x), vec4(0));
-    //        }
-    //    }
-
-    //    imageStore(OutputRender, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), FragColor);
 }
