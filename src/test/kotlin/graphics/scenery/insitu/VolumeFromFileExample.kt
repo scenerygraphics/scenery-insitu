@@ -38,7 +38,6 @@ import tpietzsch.shadergen.generate.SegmentType
 import java.io.*
 import java.lang.Math
 import java.nio.ByteBuffer
-import java.nio.FloatBuffer
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -259,13 +258,13 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 //            val numGridCells = Vector3f(256f, 256f, 256f)
             val lowestLevel = MemoryUtil.memCalloc(numGridCells.x.toInt() * numGridCells.y.toInt() * numGridCells.z.toInt() * 4)
 
-            val qErrorBuffer = MemoryUtil.memCalloc(windowWidth * windowHeight * 4)
+            val thresholdsBuffer = MemoryUtil.memCalloc(windowWidth * windowHeight * 4)
             val numGeneratedBuffer = MemoryUtil.memCalloc(windowWidth * windowHeight * 4)
 
             val outputSubVDIColor: Texture
             val outputSubVDIDepth: Texture
             val gridCells: Texture
-            val qErrorArray: Texture
+            val thresholdsArray: Texture
             val numGenerated: Texture
 
             outputSubVDIColor = if(colors32bit) {
@@ -296,10 +295,10 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
             volumeManager.customTextures.add("OctreeCells")
             volumeManager.material().textures["OctreeCells"] = gridCells
 
-            qErrorArray = Texture.fromImage(Image(qErrorBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+            thresholdsArray = Texture.fromImage(Image(thresholdsBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
                 type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
-            volumeManager.customTextures.add("QuantizationErrors")
-            volumeManager.material().textures["QuantizationErrors"] = qErrorArray
+            volumeManager.customTextures.add("Thresholds")
+            volumeManager.material().textures["Thresholds"] = thresholdsArray
 
             numGenerated = Texture.fromImage(Image(numGeneratedBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
                 type = IntType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
@@ -864,8 +863,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
         var subVDIDepthBuffer: ByteBuffer? = null
         var subVDIColorBuffer: ByteBuffer?
         var gridCellsBuff: ByteBuffer?
-        var qErrorBuff: ByteBuffer?
+        var thresholdBuff: ByteBuffer?
         var numGeneratedBuff: ByteBuffer?
+        var prefixBuff: ByteBuffer?
 
         while(renderer?.firstImageReady == false) {
 //        while(renderer?.firstImageReady == false || volumeManager.shaderProperties.isEmpty()) {
@@ -890,10 +890,10 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 
         (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (gridCells to gridTexturesCnt)
 
-        val qErrorTexture = volumeManager.material().textures["QuantizationErrors"]!!
-        val qErrorCnt = AtomicInteger(0)
+        val thresholdsTexture = volumeManager.material().textures["Thresholds"]!!
+        val thresholdsCnt = AtomicInteger(0)
 
-        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (qErrorTexture to qErrorCnt)
+        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (thresholdsTexture to thresholdsCnt)
 
         val numGeneratedTexture = volumeManager.material().textures["SupersegmentsGenerated"]!!
         val numGeneratedCnt = AtomicInteger(0)
@@ -940,19 +940,26 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                 subVDIDepthBuffer = subVDIDepth!!.contents
             }
             gridCellsBuff = gridCells.contents
-            qErrorBuff = qErrorTexture.contents
+            thresholdBuff = thresholdsTexture.contents
             numGeneratedBuff = numGeneratedTexture.contents
 
-            val qErrorFloat = qErrorBuff!!.asFloatBuffer()
+            val numGeneratedIntBuffer = numGeneratedBuff!!.asIntBuffer()
 
-            var qErrorSum = 0.0f
-            val reduceTime = measureNanoTime {
-                for(i in 0 until qErrorFloat.remaining()) {
-                    qErrorSum += qErrorFloat.get(i)
+            val prefixTime = measureNanoTime {
+                prefixBuff = MemoryUtil.memAlloc(windowWidth * windowHeight * 4)
+                val prefixIntBuff = prefixBuff!!.asIntBuffer()
+
+                prefixIntBuff.put(0, numGeneratedIntBuffer.get(0))
+
+                for(i in 1 until windowWidth * windowHeight) {
+                    prefixIntBuff.put(i, prefixIntBuff.get(i-1) + numGeneratedIntBuffer.get(i))
+//                    if(i%100 == 0) {
+//                        logger.info("i: $i. The numbers added were: ${prefixIntBuff.get(i-1)} and ${distributionIntBuff.get(i)}")
+//                    }
                 }
             }
 
-            logger.info("Sum of errors is: $qErrorSum, which took ${reduceTime/1e9} to compute")
+            logger.info("Prefix sum took ${prefixTime/1e9} to compute")
 
             tGeneration.end = System.nanoTime()
 
@@ -1080,7 +1087,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                             SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col")
                             SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth")
                             SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
-                            SystemHelpers.dumpToFile(qErrorBuff!!, "${fileName}_quantization_errors")
+                            SystemHelpers.dumpToFile(thresholdBuff!!, "${fileName}_thresholds")
+                            SystemHelpers.dumpToFile(prefixBuff!!, "${fileName}_prefix")
                             SystemHelpers.dumpToFile(numGeneratedBuff!!, "${fileName}_supersegments_generated")
                     } else {
                         SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)
