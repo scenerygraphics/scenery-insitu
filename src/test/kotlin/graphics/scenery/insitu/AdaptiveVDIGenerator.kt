@@ -246,13 +246,15 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
                 ),
             )
 
+            val totalMaxSupersegments = maxSupersegments * windowWidth * windowHeight
+
             val outputSubColorBuffer = if(colors32bit) {
-                MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*numLayers * 4)
+                MemoryUtil.memCalloc(numLayers * 512 * 512 * ceil((totalMaxSupersegments / (512*512)).toDouble()).toInt() * 4 * 4)
             } else {
-                MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*numLayers)
+                MemoryUtil.memCalloc(numLayers * 512 * 512 * ceil((totalMaxSupersegments / (512*512)).toDouble()).toInt() * 4)
             }
             val outputSubDepthBuffer = if(separateDepth) {
-                MemoryUtil.memCalloc(windowHeight*windowWidth*2*maxSupersegments*2 * 2)
+                MemoryUtil.memCalloc(2 * 512 * 512 * ceil((totalMaxSupersegments / (512*512)).toDouble()).toInt() * 4)
 //                MemoryUtil.memCalloc(windowHeight*windowWidth*2*maxSupersegments*2)
             } else {
                 MemoryUtil.memCalloc(0)
@@ -265,19 +267,18 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
 
             val basePath = "/home/aryaman/Repositories/scenery-insitu/"
 
-            val prefixSums = File(basePath + "prefix").readBytes()
+            val prefixSums = File(basePath + "${dataset}VDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_4_ndc_prefix").readBytes()
+            val thresholds = File(basePath + "${dataset}VDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_4_ndc_thresholds").readBytes()
 
-            val prefixBuffer: ByteBuffer
-
-            prefixBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * 4)
+            val prefixBuffer: ByteBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * 4)
+            val thresholdBuffer: ByteBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * 4)
 
             prefixBuffer.put(prefixSums).flip()
+            thresholdBuffer.put(thresholds).flip()
 
             val outputSubVDIColor: Texture
             val outputSubVDIDepth: Texture
             val gridCells: Texture
-
-            val totalMaxSupersegments = maxSupersegments * windowWidth * windowHeight
 
             outputSubVDIColor = if(colors32bit) {
                 Texture.fromImage(
@@ -312,6 +313,16 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
                 Vector3i(windowWidth, windowHeight, 1), 1, contents = prefixBuffer, usageType = hashSetOf(
                     Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
                 , type = IntType(),
+                mipmap = false,
+                minFilter = Texture.FilteringMode.NearestNeighbour,
+                maxFilter = Texture.FilteringMode.NearestNeighbour
+            )
+
+            volumeManager.customTextures.add("Thresholds")
+            volumeManager.material().textures["Thresholds"] = Texture(
+                Vector3i(windowWidth, windowHeight, 1), 1, contents = prefixBuffer, usageType = hashSetOf(
+                    Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
+                , type = FloatType(),
                 mipmap = false,
                 minFilter = Texture.FilteringMode.NearestNeighbour,
                 maxFilter = Texture.FilteringMode.NearestNeighbour
@@ -1073,8 +1084,8 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
                         fileName = "${dataset}VDI_${windowWidth}_${windowHeight}_${maxSupersegments}_${vo}_${cnt}_ndc"
                     }
                     if(separateDepth) {
-                        SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col")
-                        SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth")
+                        SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col_rle")
+                        SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth_rle")
                         SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
                     } else {
                         SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)

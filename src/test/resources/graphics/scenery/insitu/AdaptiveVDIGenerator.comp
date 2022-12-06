@@ -477,13 +477,6 @@ void main()
                 supsegs_written = true;
             }
 
-            #if USE_PRINTF //TODO: check if the iterations are actually taking place and benchmark against fixed threshold
-            if(gl_GlobalInvocationID.xy == debug_pixel) {
-                debugPrintfEXT("Iteration: %d of searching for thresh. Low: %f, high: %f, mid: %f. Num terminations: %d", iter, low_thresh, high_thresh, mid_thresh, num_terminations);
-                debugPrintfEXT("Desired supsegs: %d and delta: %d", desired_supsegs, delta);
-            }
-            #endif
-
             //            #if USE_PRINTF
             //            if(gl_GlobalInvocationID.xy == debug_pixel && supsegs_written) {
             //                debugPrintfEXT("Before applying the exponential, color was: (%f, %f, %f, %f)", v.rgba);
