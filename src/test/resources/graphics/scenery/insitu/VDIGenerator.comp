@@ -402,7 +402,7 @@ void main()
 //        mid_thresh = 0.06775235; //Beechnut median
 //        mid_thresh = 0.2165875; //Simulation median
 
-        while(!thresh_found || !supsegs_written || !error_computed) {
+        while(!thresh_found || !supsegs_written) {
             iter++;
 //            if(iter > 50) break;
             newSupSegThresh = mid_thresh;
