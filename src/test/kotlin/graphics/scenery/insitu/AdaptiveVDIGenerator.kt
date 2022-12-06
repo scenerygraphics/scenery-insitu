@@ -320,7 +320,7 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
 
             volumeManager.customTextures.add("Thresholds")
             volumeManager.material().textures["Thresholds"] = Texture(
-                Vector3i(windowWidth, windowHeight, 1), 1, contents = prefixBuffer, usageType = hashSetOf(
+                Vector3i(windowWidth, windowHeight, 1), 1, contents = thresholdBuffer, usageType = hashSetOf(
                     Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
                 , type = FloatType(),
                 mipmap = false,
