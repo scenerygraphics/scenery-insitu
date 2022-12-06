@@ -268,9 +268,9 @@ void main()
     //    #endif
 
     ivec3 imageCoords  = imageSize(OutputSubVDIColor);
-    int bufferWidth = imageCoords.x;
-    int bufferHeight = imageCoords.y;
-    int bufferDepth = imageCoords.z;
+    bufferWidth = imageCoords.x;
+    bufferHeight = imageCoords.y;
+    bufferDepth = imageCoords.z;
 
     num_cells = imageSize(OctreeCells).xyz;
 
