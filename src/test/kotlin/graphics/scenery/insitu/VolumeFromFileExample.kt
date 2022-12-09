@@ -949,10 +949,10 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                 prefixBuff = MemoryUtil.memAlloc(windowWidth * windowHeight * 4)
                 val prefixIntBuff = prefixBuff!!.asIntBuffer()
 
-                prefixIntBuff.put(0, numGeneratedIntBuffer.get(0))
+                prefixIntBuff.put(0, 0)
 
                 for(i in 1 until windowWidth * windowHeight) {
-                    prefixIntBuff.put(i, prefixIntBuff.get(i-1) + numGeneratedIntBuffer.get(i))
+                    prefixIntBuff.put(i, prefixIntBuff.get(i-1) + numGeneratedIntBuffer.get(i-1))
 //                    if(i%100 == 0) {
 //                        logger.info("i: $i. The numbers added were: ${prefixIntBuff.get(i-1)} and ${distributionIntBuff.get(i)}")
 //                    }
