@@ -72,7 +72,12 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
     val world_abs = false
     val dataset = System.getProperty("VolumeBenchmark.Dataset")?.toString()?: "Kingsnake"
 
-    val VDIsGenerated = AtomicInteger(0)
+    @Volatile
+    var runGeneration = false
+    @Volatile
+    var runThreshSearch = true
+
+    val vdisGenerated = AtomicInteger(0)
 
     val num_parts = when (dataset) {
         "Kingsnake" -> {
@@ -267,14 +272,9 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
 
             val basePath = "/home/aryaman/Repositories/scenery-insitu/"
 
-            val prefixSums = File(basePath + "${dataset}VDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_4_ndc_prefix").readBytes()
-            val thresholds = File(basePath + "${dataset}VDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_4_ndc_thresholds").readBytes()
-
             val prefixBuffer: ByteBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * 4)
             val thresholdBuffer: ByteBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * 4)
-
-            prefixBuffer.put(prefixSums).flip()
-            thresholdBuffer.put(thresholds).flip()
+            val numGeneratedBuffer: ByteBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * 4)
 
             val outputSubVDIColor: Texture
             val outputSubVDIDepth: Texture
@@ -318,6 +318,16 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
                 maxFilter = Texture.FilteringMode.NearestNeighbour
             )
 
+            volumeManager.customTextures.add("SupersegmentsGenerated")
+            volumeManager.material().textures["SupersegmentsGenerated"] = Texture(
+                Vector3i(windowWidth, windowHeight, 1), 1, contents = numGeneratedBuffer, usageType = hashSetOf(
+                    Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
+                , type = IntType(),
+                mipmap = false,
+                minFilter = Texture.FilteringMode.NearestNeighbour,
+                maxFilter = Texture.FilteringMode.NearestNeighbour
+            )
+
             volumeManager.customTextures.add("Thresholds")
             volumeManager.material().textures["Thresholds"] = Texture(
                 Vector3i(windowWidth, windowHeight, 1), 1, contents = thresholdBuffer, usageType = hashSetOf(
@@ -330,7 +340,10 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
 
 
             volumeManager.customUniforms.add("doGeneration")
-            volumeManager.shaderProperties["doGeneration"] = true
+            volumeManager.shaderProperties["doGeneration"] = false
+
+            volumeManager.customUniforms.add("doThreshSearch")
+            volumeManager.shaderProperties["doThreshSearch"] = true
 
             volumeManager.customUniforms.add("windowWidth")
             volumeManager.shaderProperties["windowWidth"] = windowWidth
@@ -903,25 +916,12 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
         }
 
         val subVDIColor = volumeManager.material().textures["OutputSubVDIColor"]!!
-        val colorCnt = AtomicInteger(0)
 
-        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (subVDIColor to colorCnt)
-
-        val depthCnt = AtomicInteger(0)
-        var subVDIDepth: Texture? = null
-
-        if(separateDepth) {
-            subVDIDepth = volumeManager.material().textures["OutputSubVDIDepth"]!!
-            (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (subVDIDepth to depthCnt)
-        }
+        val subVDIDepth = volumeManager.material().textures["OutputSubVDIDepth"]!!
 
         val gridCells = volumeManager.material().textures["OctreeCells"]!!
-        val gridTexturesCnt = AtomicInteger(0)
 
-        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (gridCells to gridTexturesCnt)
-
-        var prevColor = colorCnt.get()
-        var prevDepth = depthCnt.get()
+        val numGeneratedTexture = volumeManager.material().textures["SupersegmentsGenerated"]!!
 
         var cnt = 0
 
@@ -948,13 +948,79 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
         val compressor = VDICompressor()
         val compressionTool = VDICompressor.CompressionTool.LZ4
 
+        (renderer as VulkanRenderer).postRenderLambdas.add {
+            if(runThreshSearch) {
+                //fetch numgenerated, calculate and upload prefixsums
+
+                val generated = fetchTexture(numGeneratedTexture)
+
+                if(generated < 0) {
+                    logger.error("Error fetching texture. generated: $generated")
+                }
+
+                val numGeneratedBuff = numGeneratedTexture.contents
+                val numGeneratedIntBuffer = numGeneratedBuff!!.asIntBuffer()
+                var prefixBuffer: ByteBuffer?
+
+                val prefixTime = measureNanoTime {
+                    prefixBuffer = MemoryUtil.memAlloc(windowWidth * windowHeight * 4)
+                    val prefixIntBuff = prefixBuffer!!.asIntBuffer()
+
+                    prefixIntBuff.put(0, 0)
+
+                    for(i in 1 until windowWidth * windowHeight) {
+                        prefixIntBuff.put(i, prefixIntBuff.get(i-1) + numGeneratedIntBuffer.get(i-1))
+//                    if(i%100 == 0) {
+//                        logger.info("i: $i. The numbers added were: ${prefixIntBuff.get(i-1)} and ${distributionIntBuff.get(i)}")
+//                    }
+                    }
+                }
+                logger.info("Prefix sum took ${prefixTime/1e9} to compute")
+
+                volumeManager.material().textures["PrefixSums"] = Texture(
+                    Vector3i(windowWidth, windowHeight, 1), 1, contents = prefixBuffer, usageType = hashSetOf(
+                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
+                    , type = IntType(),
+                    mipmap = false,
+                    minFilter = Texture.FilteringMode.NearestNeighbour,
+                    maxFilter = Texture.FilteringMode.NearestNeighbour
+                )
+
+                runThreshSearch = false
+                runGeneration = true
+            } else {
+                // fetch the VDI
+                val col = fetchTexture(subVDIColor)
+                val depth = fetchTexture(subVDIDepth)
+                val grid = fetchTexture(gridCells)
+
+                if(col < 0 || depth < 0 || grid < 0) {
+                    logger.error("Error fetching texture. col: $col, depth: $depth, grid: $grid")
+                }
+
+                vdisGenerated.incrementAndGet()
+
+                runGeneration = false
+                runThreshSearch = true
+            }
+        }
+
+        (renderer as VulkanRenderer).postRenderLambdas.add {
+            volumeManager.shaderProperties["doGeneration"] = runGeneration
+            volumeManager.shaderProperties["doThreshSearch"] = runThreshSearch
+        }
+
+        var generatedSoFar = 0
+
         while (true) {
             tGeneration.start = System.nanoTime()
-            while(colorCnt.get() == prevColor || depthCnt.get() == prevDepth) {
+
+            while((vdisGenerated.get() <= generatedSoFar)) {
                 Thread.sleep(5)
             }
-            prevColor = colorCnt.get()
-            prevDepth = depthCnt.get()
+
+            generatedSoFar = vdisGenerated.get()
+
             subVDIColorBuffer = subVDIColor.contents
             if(separateDepth) {
                 subVDIDepthBuffer = subVDIDepth!!.contents
@@ -1086,13 +1152,13 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
                     if(separateDepth) {
                         SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col_rle")
                         SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth_rle")
-                        SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
+                        SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree_rle")
                     } else {
                         SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)
                         SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
                     }
                     logger.info("Wrote VDI $cnt")
-                    VDIsGenerated.incrementAndGet()
+                    vdisGenerated.incrementAndGet()
                 }
             }
             cnt++

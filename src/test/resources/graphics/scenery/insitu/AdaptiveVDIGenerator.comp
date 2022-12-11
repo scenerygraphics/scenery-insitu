@@ -13,6 +13,7 @@ uniform vec3 cacheSize; // TODO: get from texture!?
 uniform mat4 transform;
 
 uniform bool doGeneration;
+uniform bool doThreshSearch;
 uniform int windowWidth;
 uniform int windowHeight;
 uniform int maxSupersegments;
@@ -56,8 +57,9 @@ layout(set = 2, binding = 0) uniform sampler3D volumeCache;
 layout(set = 3, binding = 0, rgba32f) uniform image3D OutputSubVDIColor;
 layout(set = 4, binding = 0, r32f) uniform image3D OutputSubVDIDepth;
 layout (set = 8, binding = 0, r32ui) uniform uimage3D OctreeCells;
-layout (set = 9, binding = 0, r32i) uniform readonly iimage2D PrefixSums;
-layout (set = 10, binding = 0, r32f) uniform readonly image2D Thresholds;
+layout (set = 9, binding = 0, r32f) uniform image2D Thresholds;
+layout (set = 10, binding = 0, r32i) uniform iimage2D SupersegmentsGenerated;
+layout (set = 11, binding = 0, r32i) uniform readonly iimage2D PrefixSums;
 
 #pragma scenery endverbatim
 
@@ -250,7 +252,15 @@ bool thresh_found = true;
 
 void main()
 {
-    if(!doGeneration) {
+    bool write_supersegments;
+
+    if(doGeneration) {
+        write_supersegments = true;
+        thresh_found = true;
+    } else if(doThreshSearch) {
+        write_supersegments = false;
+        thresh_found = false;
+    } else {
         return;
     }
 
@@ -368,14 +378,20 @@ void main()
         float low_thresh = 0.0;
         float high_thresh = 1.732; //sq. root of 3
 
-        bool final_generation_step = true;
         bool supsegs_written = false;
-        bool error_computed = false;
+
+        int desired_supsegs = maxSupersegments;
+        int delta = int(floor(0.15 * maxSupersegments)); // up to delta supsegs less than max is acceptable
 
         vec4 v = vec4( 0 );
 
         int iter = 0;
-        float mid_thresh = imageLoad(Thresholds, ivec2(gl_GlobalInvocationID).xy).x;
+        float mid_thresh;
+        if(doGeneration) {
+            mid_thresh = imageLoad(Thresholds, ivec2(gl_GlobalInvocationID).xy).x;
+        } else { //this imples we are in the thresh search step
+            mid_thresh = 0.0001; //start off with a very low thresh to eliminate those rays that contain primarily homogenous regions already
+        }
 
         bool first_iteration = true;
 
@@ -386,7 +402,7 @@ void main()
         //        mid_thresh = 0.06775235; //Beechnut median
         //        mid_thresh = 0.2165875; //Simulation median
 
-        while(!thresh_found || !supsegs_written) {
+        while(!thresh_found || write_supersegments) {
             iter++;
             //            if(iter > 50) break;
 
@@ -469,12 +485,32 @@ void main()
                 wprev = wpos;
             }
 
-            if(supsegs_written) {
-                error_computed = true;
-            }
+            if(doThreshSearch) {
+                if (abs(high_thresh - low_thresh) < 0.000001) {
+                    thresh_found = true;
+                    mid_thresh = ((num_terminations == 0) ? low_thresh : high_thresh);// we want to err on the higher side, so that we generate < max no of supsegs, unless we are ending up generating 0 supsegs
+                    break;
+                } else if (num_terminations > desired_supsegs) {
+                    low_thresh = mid_thresh;
+                } else if (num_terminations < (desired_supsegs - delta)) {
+                    high_thresh = mid_thresh;
+                } else {
+                    thresh_found = true;
+                    break;
+                }
 
-            if(thresh_found) {
-                supsegs_written = true;
+                if (first_iteration) {
+                    first_iteration = false;
+                    if (num_terminations < desired_supsegs) {
+                        thresh_found = true;
+                        break;
+                    }
+                }
+
+                mid_thresh = (low_thresh + high_thresh) / 2.0;
+
+            } else {
+                write_supersegments = false;
             }
 
             //            #if USE_PRINTF
@@ -495,10 +531,20 @@ void main()
         }
             #endif
 
-        //        writeThreshold(float(supersegmentNum));
+        if(doThreshSearch) {
+            imageStore(Thresholds, ivec2(gl_GlobalInvocationID.xy), vec4(mid_thresh));
+            imageStore(SupersegmentsGenerated, ivec2(gl_GlobalInvocationID.xy), ivec4(supersegmentNum));
+        }
+
+//        writeThreshold(float(supersegmentNum));
 
         //        if(supersegmentNum == 0) {
         //            writeThreshold(-1.);
         //        }
+    } else {
+        if(doThreshSearch) {
+            imageStore(Thresholds, ivec2(gl_GlobalInvocationID.xy), vec4(0));
+            imageStore(SupersegmentsGenerated, ivec2(gl_GlobalInvocationID.xy), ivec4(0));
+        }
     }
 }

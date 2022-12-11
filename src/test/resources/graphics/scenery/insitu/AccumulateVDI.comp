@@ -9,6 +9,7 @@ if (vis && step > localNear && step < localFar)
 //    }
 //    #endif
 
+    //TODO: the below check should be removed for efficiency
     if(x.r > -0.5 || lastSample) { // we need to process this sample only if it is from a volume that actually exists at this sample point
 //        #if USE_PRINTF
 //        if(gl_GlobalInvocationID.xy == debug_pixel && thresh_found) {
@@ -147,30 +148,13 @@ if (vis && step > localNear && step < localFar)
                         vec4 end_w = ipv * vec4(uv, supSegEndPoint, 1);
                         end_w *= 1. / end_w.w;
 
-                        #if USE_PRINTF
-                        if(gl_GlobalInvocationID.xy == debug_pixel && thresh_found) {
-                            debugPrintfEXT("Start world: (%f, %f, %f, %f)", start_w.xyzw);
-                            debugPrintfEXT("end world: (%f, %f, %f, %f)", end_w.xyzw);
-                        }
-                            #endif
-
-                            #endif
+                        #endif
 
                         vec4 start_v = ViewMatrices[0] * start_w;
                         vec4 end_v = ViewMatrices[0] * end_w;
 
                         int start_cell = findZInterval_view(start_v.z);
                         int end_cell = findZInterval_view(end_v.z);
-
-                        #if USE_PRINTF
-                        if(gl_GlobalInvocationID.xy == debug_pixel && thresh_found) {
-                            debugPrintfEXT("uv: (%f, %f)", uv.xy);
-                            debugPrintfEXT("Voew matrix first col: (%f, %f, %f, %f)", ViewMatrices[0][0].xyzw);
-                            debugPrintfEXT("supsegstart: %f and end: %f", supSegStartPoint, supSegEndPoint);
-                            debugPrintfEXT("View start: %f and end: %f", start_v.z, end_v.z);
-                            debugPrintfEXT("Start cell: %d and end cell: %d", start_cell, end_cell);
-                        }
-                            #endif
 
                         for(int j = start_cell; j <= end_cell; j++) {
                             grid_cell.z = j;
