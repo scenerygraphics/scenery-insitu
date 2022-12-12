@@ -16,6 +16,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.streams.toList
 
 class VolumeCommons (val windowWidth: Int, val windowHeight: Int, val dataset: String, val logger: Logger) {
 
