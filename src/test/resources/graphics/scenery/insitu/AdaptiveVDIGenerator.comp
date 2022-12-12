@@ -222,9 +222,9 @@ void writeSupersegment(int index, float start, float end, vec4 color) {
 void update_cell_count(ivec3 cell) {
     uint ret = imageAtomicAdd(OctreeCells, cell, 1);
 
-    if(gl_GlobalInvocationID.xy == debug_pixel) {
-        debugPrintfEXT("Updated the cell: (%d, %d, %d). Prev value was: %u", cell.xyz, ret);
-    }
+//    if(gl_GlobalInvocationID.xy == debug_pixel) {
+//        debugPrintfEXT("Updated the cell: (%d, %d, %d). Prev value was: %u", cell.xyz, ret);
+//    }
 }
 
 ivec3 num_cells;
@@ -356,6 +356,7 @@ void main()
     therefore not impact the rendering. 0.00392156862/2 = 0.00196078431*/
 
     int supersegmentNum = 0;
+    int num_terminations = 0;
 
     float quantization_error = 0;
 
@@ -408,7 +409,7 @@ void main()
 
             newSupSegThresh = mid_thresh;
 
-            int num_terminations = 0;
+            num_terminations = 0;
 
             bool supersegmentIsOpen = false;
             #if INT_DEPTHS
@@ -533,7 +534,7 @@ void main()
 
         if(doThreshSearch) {
             imageStore(Thresholds, ivec2(gl_GlobalInvocationID.xy), vec4(mid_thresh));
-            imageStore(SupersegmentsGenerated, ivec2(gl_GlobalInvocationID.xy), ivec4(supersegmentNum));
+            imageStore(SupersegmentsGenerated, ivec2(gl_GlobalInvocationID.xy), ivec4(num_terminations));
         }
 
 //        writeThreshold(float(supersegmentNum));

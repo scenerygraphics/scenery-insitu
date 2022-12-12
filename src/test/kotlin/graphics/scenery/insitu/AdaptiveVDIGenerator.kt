@@ -749,6 +749,8 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
         var subVDIDepthBuffer: ByteBuffer? = null
         var subVDIColorBuffer: ByteBuffer?
         var gridCellsBuff: ByteBuffer?
+        var prefixBuffer: ByteBuffer? = null
+        var numGeneratedBuff: ByteBuffer? = null
 
         while(renderer?.firstImageReady == false) {
 //        while(renderer?.firstImageReady == false || volumeManager.shaderProperties.isEmpty()) {
@@ -800,9 +802,8 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
                     logger.error("Error fetching texture. generated: $generated")
                 }
 
-                val numGeneratedBuff = numGeneratedTexture.contents
+                numGeneratedBuff = numGeneratedTexture.contents
                 val numGeneratedIntBuffer = numGeneratedBuff!!.asIntBuffer()
-                var prefixBuffer: ByteBuffer?
 
                 val prefixTime = measureNanoTime {
                     prefixBuffer = MemoryUtil.memAlloc(windowWidth * windowHeight * 4)
@@ -822,7 +823,7 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
                 logger.info("Prefix sum took ${prefixTime/1e9} to compute")
 
 
-                volumeManager.material().textures["PrefixSums"] = Texture(
+                volumeList.first().volumeManager.material().textures["PrefixSums"] = Texture(
                     Vector3i(windowWidth, windowHeight, 1), 1, contents = prefixBuffer, usageType = hashSetOf(
                         Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
                     , type = IntType(),
@@ -867,9 +868,7 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
             generatedSoFar = vdisGenerated.get()
 
             subVDIColorBuffer = subVDIColor.contents
-            if(separateDepth) {
-                subVDIDepthBuffer = subVDIDepth!!.contents
-            }
+            subVDIDepthBuffer = subVDIDepth.contents
             gridCellsBuff = gridCells.contents
 
             tGeneration.end = System.nanoTime()
@@ -998,6 +997,8 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
                         SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col_rle")
                         SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth_rle")
                         SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree_rle")
+                        SystemHelpers.dumpToFile(prefixBuffer!!, "${fileName}_prefix")
+                        SystemHelpers.dumpToFile(numGeneratedBuff!!, "${fileName}_supersegments_generated")
                     } else {
                         SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)
                         SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
