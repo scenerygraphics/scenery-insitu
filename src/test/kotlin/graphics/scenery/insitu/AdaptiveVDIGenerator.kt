@@ -223,174 +223,14 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
             benchmarking = false
             //set up volume manager
 
-
-            raycastShader = "AdaptiveVDIGenerator.comp"
-//            raycastShader = "LochmannGenerator.comp"
-            accumulateShader = "AccumulateVDI.comp"
-//            accumulateShader = "AccumulateLochmann.comp"
-            compositeShader = "VDICompositor.comp"
-            val maxOutputSupersegments = 40
-            val numLayers = if(separateDepth) {
-                1
-            } else {
-                3         // VDI supersegments require both front and back depth values, along with color
-            }
-
-            volumeManager = VolumeManager(
-                hub, useCompute = true, customSegments = hashMapOf(
-                    SegmentType.FragmentShader to SegmentTemplate(
-                        this.javaClass,
-                        raycastShader,
-                        "intersectBoundingBox", "vis", "localNear", "localFar", "SampleVolume", "Convert", "Accumulate",
-                    ),
-                    SegmentType.Accumulator to SegmentTemplate(
-//                                this.javaClass,
-                        accumulateShader,
-                        "vis", "localNear", "localFar", "sampleVolume", "convert",
-                    ),
-                ),
-            )
-
-            val totalMaxSupersegments = maxSupersegments * windowWidth * windowHeight
-
-            val outputSubColorBuffer = if(colors32bit) {
-                MemoryUtil.memCalloc(numLayers * 512 * 512 * ceil((totalMaxSupersegments / (512*512)).toDouble()).toInt() * 4 * 4)
-            } else {
-                MemoryUtil.memCalloc(numLayers * 512 * 512 * ceil((totalMaxSupersegments / (512*512)).toDouble()).toInt() * 4)
-            }
-            val outputSubDepthBuffer = if(separateDepth) {
-                MemoryUtil.memCalloc(2 * 512 * 512 * ceil((totalMaxSupersegments / (512*512)).toDouble()).toInt() * 4)
-//                MemoryUtil.memCalloc(windowHeight*windowWidth*2*maxSupersegments*2)
-            } else {
-                MemoryUtil.memCalloc(0)
-            }
-
-//            val numGridCells = 2.0.pow(numOctreeLayers)
-            val numGridCells = Vector3f(windowWidth.toFloat() / 8f, windowHeight.toFloat() / 8f, maxSupersegments.toFloat())
-//            val numGridCells = Vector3f(256f, 256f, 256f)
-            val lowestLevel = MemoryUtil.memCalloc(numGridCells.x.toInt() * numGridCells.y.toInt() * numGridCells.z.toInt() * 4)
-
-            val basePath = "/home/aryaman/Repositories/scenery-insitu/"
-
-            val prefixBuffer: ByteBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * 4)
-            val thresholdBuffer: ByteBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * 4)
-            val numGeneratedBuffer: ByteBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * 4)
-
-            val outputSubVDIColor: Texture
-            val outputSubVDIDepth: Texture
-            val gridCells: Texture
-
-            outputSubVDIColor = if(colors32bit) {
-                Texture.fromImage(
-                    Image(outputSubColorBuffer, numLayers * 512, 512, ceil((totalMaxSupersegments / (512*512)).toDouble()).toInt()), usage = hashSetOf(
-                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 4, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
-            } else {
-                Texture.fromImage(
-                    Image(outputSubColorBuffer, numLayers * 512, 512, ceil((totalMaxSupersegments / (512*512)).toDouble()).toInt()), usage = hashSetOf(
-                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-            }
-
-            volumeManager.customTextures.add("OutputSubVDIColor")
-            volumeManager.material().textures["OutputSubVDIColor"] = outputSubVDIColor
-
-            if(separateDepth) {
-                outputSubVDIDepth = Texture.fromImage(
-                    Image(outputSubDepthBuffer, 2 * 512, 512, ceil((totalMaxSupersegments / (512*512)).toDouble()).toInt()),  usage = hashSetOf(
-                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
-//                    Image(outputSubDepthBuffer, 2*maxSupersegments, windowHeight, windowWidth),  usage = hashSetOf(
-//                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
-                volumeManager.customTextures.add("OutputSubVDIDepth")
-                volumeManager.material().textures["OutputSubVDIDepth"] = outputSubVDIDepth
-            }
-
-            gridCells = Texture.fromImage(Image(lowestLevel, numGridCells.x.toInt(), numGridCells.y.toInt(), numGridCells.z.toInt()), channels = 1, type = UnsignedIntType(),
-                usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-            volumeManager.customTextures.add("OctreeCells")
-            volumeManager.material().textures["OctreeCells"] = gridCells
-
-            volumeManager.customTextures.add("PrefixSums")
-            volumeManager.material().textures["PrefixSums"] = Texture(
-                Vector3i(windowWidth, windowHeight, 1), 1, contents = prefixBuffer, usageType = hashSetOf(
-                    Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
-                , type = IntType(),
-                mipmap = false,
-                minFilter = Texture.FilteringMode.NearestNeighbour,
-                maxFilter = Texture.FilteringMode.NearestNeighbour
-            )
-
-            volumeManager.customTextures.add("SupersegmentsGenerated")
-            volumeManager.material().textures["SupersegmentsGenerated"] = Texture(
-                Vector3i(windowWidth, windowHeight, 1), 1, contents = numGeneratedBuffer, usageType = hashSetOf(
-                    Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
-                , type = IntType(),
-                mipmap = false,
-                minFilter = Texture.FilteringMode.NearestNeighbour,
-                maxFilter = Texture.FilteringMode.NearestNeighbour
-            )
-
-            volumeManager.customTextures.add("Thresholds")
-            volumeManager.material().textures["Thresholds"] = Texture(
-                Vector3i(windowWidth, windowHeight, 1), 1, contents = thresholdBuffer, usageType = hashSetOf(
-                    Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
-                , type = FloatType(),
-                mipmap = false,
-                minFilter = Texture.FilteringMode.NearestNeighbour,
-                maxFilter = Texture.FilteringMode.NearestNeighbour
-            )
-
-
-            volumeManager.customUniforms.add("doGeneration")
-            volumeManager.shaderProperties["doGeneration"] = false
-
-            volumeManager.customUniforms.add("doThreshSearch")
-            volumeManager.shaderProperties["doThreshSearch"] = true
-
-            volumeManager.customUniforms.add("windowWidth")
-            volumeManager.shaderProperties["windowWidth"] = windowWidth
-
-            volumeManager.customUniforms.add("windowHeight")
-            volumeManager.shaderProperties["windowHeight"] = windowHeight
-
-            volumeManager.customUniforms.add("maxSupersegments")
-            volumeManager.shaderProperties["maxSupersegments"] = maxSupersegments
+            volumeManager = VDIVolumeManager.create(windowWidth, windowHeight, maxSupersegments, scene, hub, true)
 
             hub.add(volumeManager)
-
-            val compute = RichNode()
-            compute.setMaterial(ShaderMaterial(Shaders.ShadersFromFiles(arrayOf("GridCellsToZero.comp"), this@AdaptiveVDIGenerator::class.java)))
-
-            compute.metadata["ComputeMetadata"] = ComputeMetadata(
-                workSizes = Vector3i(numGridCells.x.toInt(), numGridCells.y.toInt(), 1),
-                invocationType = InvocationType.Permanent
-            )
-
-            compute.material().textures["GridCells"] = gridCells
-
-            scene.addChild(compute)
 
         } else {
-            volumeManager = VolumeManager(hub,
-                useCompute = true,
-                customSegments = hashMapOf(
-                    SegmentType.FragmentShader to SegmentTemplate(
-                        this.javaClass,
-                        "ComputeRaycast.comp",
-                        "intersectBoundingBox", "vis", "localNear", "localFar", "SampleVolume", "Convert", "Accumulate"),
-                ))
-            volumeManager.customTextures.add("OutputRender")
-
-            val outputBuffer = MemoryUtil.memCalloc(windowWidth*windowHeight*4)
-            val outputTexture = Texture.fromImage(Image(outputBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-            volumeManager.material().textures["OutputRender"] = outputTexture
-
-            volumeManager.customUniforms.add("ambientOcclusion")
-            volumeManager.shaderProperties["ambientOcclusion"] = false
+            volumeManager = VDIVolumeManager.create(windowWidth, windowHeight, scene, hub)
 
             hub.add(volumeManager)
-
-            val plane = FullscreenObject()
-            scene.addChild(plane)
-            plane.material().textures["diffuse"] = volumeManager.material().textures["OutputRender"]!!
         }
 
 
@@ -948,6 +788,8 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
         val compressor = VDICompressor()
         val compressionTool = VDICompressor.CompressionTool.LZ4
 
+        var totalSupersegmentsGenerated = 0
+
         (renderer as VulkanRenderer).postRenderLambdas.add {
             if(runThreshSearch) {
                 //fetch numgenerated, calculate and upload prefixsums
@@ -974,8 +816,11 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
 //                        logger.info("i: $i. The numbers added were: ${prefixIntBuff.get(i-1)} and ${distributionIntBuff.get(i)}")
 //                    }
                     }
+
+                    totalSupersegmentsGenerated = prefixIntBuff.get(windowWidth*windowHeight-1) + numGeneratedIntBuffer.get(windowWidth*windowHeight-1)
                 }
                 logger.info("Prefix sum took ${prefixTime/1e9} to compute")
+
 
                 volumeManager.material().textures["PrefixSums"] = Texture(
                     Vector3i(windowWidth, windowHeight, 1), 1, contents = prefixBuffer, usageType = hashSetOf(
@@ -1006,8 +851,8 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
         }
 
         (renderer as VulkanRenderer).postRenderLambdas.add {
-            volumeManager.shaderProperties["doGeneration"] = runGeneration
-            volumeManager.shaderProperties["doThreshSearch"] = runThreshSearch
+            volumeList.first().volumeManager.shaderProperties["doGeneration"] = runGeneration
+            volumeList.first().volumeManager.shaderProperties["doThreshSearch"] = runThreshSearch
         }
 
         var generatedSoFar = 0

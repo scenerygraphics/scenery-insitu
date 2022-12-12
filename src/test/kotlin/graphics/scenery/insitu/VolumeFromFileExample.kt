@@ -91,143 +91,15 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
     override fun init() {
         renderer = hub.add(Renderer.createRenderer(hub, applicationName, scene, windowWidth, windowHeight))
 
-        val raycastShader: String
-        val accumulateShader: String
-        val compositeShader: String
-
         if(generateVDIs) {
             benchmarking = false
-            raycastShader = "VDIGenerator.comp"
-//            raycastShader = "LochmannGenerator.comp"
-            accumulateShader = "AccumulateVDI.comp"
-//            accumulateShader = "AccumulateLochmann.comp"
-            compositeShader = "VDICompositor.comp"
-            val maxOutputSupersegments = 40
-            val numLayers = if(separateDepth) {
-                1
-            } else {
-                3         // VDI supersegments require both front and back depth values, along with color
-            }
 
-            volumeManager = VolumeManager(
-                hub, useCompute = true, customSegments = hashMapOf(
-                    SegmentType.FragmentShader to SegmentTemplate(
-                        this.javaClass,
-                        raycastShader,
-                        "intersectBoundingBox", "vis", "localNear", "localFar", "SampleVolume", "Convert", "Accumulate",
-                    ),
-                    SegmentType.Accumulator to SegmentTemplate(
-//                                this.javaClass,
-                        accumulateShader,
-                        "vis", "localNear", "localFar", "sampleVolume", "convert",
-                    ),
-                ),
-            )
-
-            val outputSubColorBuffer = if(colors32bit) {
-                MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*numLayers * 4)
-            } else {
-                MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*numLayers)
-            }
-            val outputSubDepthBuffer = if(separateDepth) {
-                MemoryUtil.memCalloc(windowHeight*windowWidth*2*maxSupersegments*2 * 2)
-//                MemoryUtil.memCalloc(windowHeight*windowWidth*2*maxSupersegments*2)
-            } else {
-                MemoryUtil.memCalloc(0)
-            }
-
-//            val numGridCells = 2.0.pow(numOctreeLayers)
-            val numGridCells = Vector3f(windowWidth.toFloat() / 8f, windowHeight.toFloat() / 8f, maxSupersegments.toFloat())
-//            val numGridCells = Vector3f(256f, 256f, 256f)
-            val lowestLevel = MemoryUtil.memCalloc(numGridCells.x.toInt() * numGridCells.y.toInt() * numGridCells.z.toInt() * 4)
-
-            val thresholdsBuffer = MemoryUtil.memCalloc(windowWidth * windowHeight * 4)
-            val numGeneratedBuffer = MemoryUtil.memCalloc(windowWidth * windowHeight * 4)
-
-            val outputSubVDIColor: Texture
-            val outputSubVDIDepth: Texture
-            val gridCells: Texture
-            val thresholdsArray: Texture
-            val numGenerated: Texture
-
-            outputSubVDIColor = if(colors32bit) {
-                Texture.fromImage(
-                    Image(outputSubColorBuffer, numLayers * maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(
-                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 4, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
-            } else {
-                Texture.fromImage(
-                    Image(outputSubColorBuffer, numLayers * maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(
-                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-            }
-
-            volumeManager.customTextures.add("OutputSubVDIColor")
-            volumeManager.material().textures["OutputSubVDIColor"] = outputSubVDIColor
-
-            if(separateDepth) {
-                outputSubVDIDepth = Texture.fromImage(
-                    Image(outputSubDepthBuffer, 2 * maxSupersegments, windowHeight, windowWidth),  usage = hashSetOf(
-                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
-//                    Image(outputSubDepthBuffer, 2*maxSupersegments, windowHeight, windowWidth),  usage = hashSetOf(
-//                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
-                volumeManager.customTextures.add("OutputSubVDIDepth")
-                volumeManager.material().textures["OutputSubVDIDepth"] = outputSubVDIDepth
-            }
-
-            gridCells = Texture.fromImage(Image(lowestLevel, numGridCells.x.toInt(), numGridCells.y.toInt(), numGridCells.z.toInt()), channels = 1, type = UnsignedIntType(),
-                usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-            volumeManager.customTextures.add("OctreeCells")
-            volumeManager.material().textures["OctreeCells"] = gridCells
-
-            thresholdsArray = Texture.fromImage(Image(thresholdsBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
-                type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
-            volumeManager.customTextures.add("Thresholds")
-            volumeManager.material().textures["Thresholds"] = thresholdsArray
-
-            numGenerated = Texture.fromImage(Image(numGeneratedBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
-                type = IntType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
-            volumeManager.customTextures.add("SupersegmentsGenerated")
-            volumeManager.material().textures["SupersegmentsGenerated"] = numGenerated
-
-            volumeManager.customUniforms.add("doGeneration")
-            volumeManager.shaderProperties["doGeneration"] = true
+            volumeManager = VDIVolumeManager.create(windowWidth, windowHeight, maxSupersegments, scene, hub, false)
 
             hub.add(volumeManager)
-
-            val compute = RichNode()
-            compute.setMaterial(ShaderMaterial(Shaders.ShadersFromFiles(arrayOf("GridCellsToZero.comp"), this@VolumeFromFileExample::class.java)))
-
-            compute.metadata["ComputeMetadata"] = ComputeMetadata(
-                workSizes = Vector3i(numGridCells.x.toInt(), numGridCells.y.toInt(), 1),
-                invocationType = InvocationType.Permanent
-            )
-
-            compute.material().textures["GridCells"] = gridCells
-
-            scene.addChild(compute)
 
         } else {
-            volumeManager = VolumeManager(hub,
-                useCompute = true,
-                customSegments = hashMapOf(
-                    SegmentType.FragmentShader to SegmentTemplate(
-                        this.javaClass,
-                        "ComputeRaycast.comp",
-                        "intersectBoundingBox", "vis", "localNear", "localFar", "SampleVolume", "Convert", "Accumulate"),
-                ))
-            volumeManager.customTextures.add("OutputRender")
-
-            val outputBuffer = MemoryUtil.memCalloc(windowWidth*windowHeight*4)
-            val outputTexture = Texture.fromImage(Image(outputBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-            volumeManager.material().textures["OutputRender"] = outputTexture
-
-            volumeManager.customUniforms.add("ambientOcclusion")
-            volumeManager.shaderProperties["ambientOcclusion"] = false
-
-            hub.add(volumeManager)
-
-            val plane = FullscreenObject()
-            scene.addChild(plane)
-            plane.material().textures["diffuse"] = volumeManager.material().textures["OutputRender"]!!
+            volumeManager = VDIVolumeManager.create(windowWidth, windowHeight, scene, hub)
         }
 
         volumeCommons = VolumeCommons(windowWidth, windowHeight, dataset, logger)
