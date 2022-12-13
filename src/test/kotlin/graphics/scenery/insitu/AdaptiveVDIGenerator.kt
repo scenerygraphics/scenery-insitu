@@ -45,6 +45,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 import kotlin.math.ceil
+import kotlin.math.max
 import kotlin.streams.toList
 import kotlin.system.measureNanoTime
 
@@ -871,6 +872,8 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
             subVDIDepthBuffer = subVDIDepth.contents
             gridCellsBuff = gridCells.contents
 
+            logger.info("total supersegments generated $totalSupersegmentsGenerated, which is ${totalSupersegmentsGenerated.toDouble() / (windowWidth * windowHeight * maxSupersegments).toDouble()} of maximum")
+
             tGeneration.end = System.nanoTime()
 
             val timeTaken = (tGeneration.end - tGeneration.start)/1e9
@@ -994,6 +997,9 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
                         fileName = "${dataset}VDI_${windowWidth}_${windowHeight}_${maxSupersegments}_${vo}_${cnt}_ndc"
                     }
                     if(separateDepth) {
+                        logger.info("Buffer sizes are: ${subVDIColorBuffer!!.capacity()}, ${subVDIDepthBuffer!!.capacity()}")
+                        subVDIColorBuffer.limit(totalSupersegmentsGenerated * 4 * 4)
+                        subVDIDepthBuffer.limit(2 * totalSupersegmentsGenerated * 4)
                         SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col_rle")
                         SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth_rle")
                         SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree_rle")
