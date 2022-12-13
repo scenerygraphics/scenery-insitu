@@ -55,13 +55,14 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 
     lateinit var volumeManager: VolumeManager
     lateinit var volumeCommons: VolumeCommons
-    val generateVDIs = System.getProperty("VolumeBenchmark.GenerateVDI")?.toBoolean() ?: false
+    val generateVDIs = System.getProperty("VolumeBenchmark.GenerateVDI")?.toBoolean() ?: true
     val storeVDIs = System.getProperty("VolumeBenchmark.StoreVDIs")?.toBoolean()?: true
     val transmitVDIs = System.getProperty("VolumeBenchmark.TransmitVDIs")?.toBoolean()?: false
     val vo = System.getProperty("VolumeBenchmark.Vo")?.toFloat()?.toInt() ?: 0
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
+    val rleInfo = false
     val dataset = System.getProperty("VolumeBenchmark.Dataset")?.toString()?: "Kingsnake"
 
     val VDIsGenerated = AtomicInteger(0)
@@ -94,7 +95,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
         if(generateVDIs) {
             benchmarking = false
 
-            volumeManager = VDIVolumeManager.create(windowWidth, windowHeight, maxSupersegments, scene, hub, false)
+            volumeManager = VDIVolumeManager.create(windowWidth, windowHeight, maxSupersegments, scene, hub, false, rleInfo)
 
             hub.add(volumeManager)
 
@@ -457,9 +458,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
         var subVDIDepthBuffer: ByteBuffer? = null
         var subVDIColorBuffer: ByteBuffer?
         var gridCellsBuff: ByteBuffer?
-        var thresholdBuff: ByteBuffer?
-        var numGeneratedBuff: ByteBuffer?
-        var prefixBuff: ByteBuffer?
+        var thresholdBuff: ByteBuffer? = null
+        var numGeneratedBuff: ByteBuffer? = null
+        var prefixBuff: ByteBuffer? = null
 
         while(renderer?.firstImageReady == false) {
 //        while(renderer?.firstImageReady == false || volumeManager.shaderProperties.isEmpty()) {
@@ -484,15 +485,21 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 
         (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (gridCells to gridTexturesCnt)
 
-        val thresholdsTexture = volumeManager.material().textures["Thresholds"]!!
-        val thresholdsCnt = AtomicInteger(0)
+        var thresholdsTexture: Texture? = null
+        var numGeneratedTexture: Texture? = null
 
-        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (thresholdsTexture to thresholdsCnt)
+        if(rleInfo) {
+            thresholdsTexture = volumeManager.material().textures["Thresholds"]!!
+            val thresholdsCnt = AtomicInteger(0)
 
-        val numGeneratedTexture = volumeManager.material().textures["SupersegmentsGenerated"]!!
-        val numGeneratedCnt = AtomicInteger(0)
+            (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (thresholdsTexture to thresholdsCnt)
 
-        (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (numGeneratedTexture to numGeneratedCnt)
+            numGeneratedTexture = volumeManager.material().textures["SupersegmentsGenerated"]!!
+            val numGeneratedCnt = AtomicInteger(0)
+
+            (renderer as? VulkanRenderer)?.persistentTextureRequests?.add (numGeneratedTexture to numGeneratedCnt)
+        }
+
 
         var prevColor = colorCnt.get()
         var prevDepth = depthCnt.get()
@@ -534,26 +541,29 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                 subVDIDepthBuffer = subVDIDepth!!.contents
             }
             gridCellsBuff = gridCells.contents
-            thresholdBuff = thresholdsTexture.contents
-            numGeneratedBuff = numGeneratedTexture.contents
 
-            val numGeneratedIntBuffer = numGeneratedBuff!!.asIntBuffer()
+            if(rleInfo) {
+                thresholdBuff = thresholdsTexture!!.contents
+                numGeneratedBuff = numGeneratedTexture!!.contents
 
-            val prefixTime = measureNanoTime {
-                prefixBuff = MemoryUtil.memAlloc(windowWidth * windowHeight * 4)
-                val prefixIntBuff = prefixBuff!!.asIntBuffer()
+                val numGeneratedIntBuffer = numGeneratedBuff!!.asIntBuffer()
 
-                prefixIntBuff.put(0, 0)
+                val prefixTime = measureNanoTime {
+                    prefixBuff = MemoryUtil.memAlloc(windowWidth * windowHeight * 4)
+                    val prefixIntBuff = prefixBuff!!.asIntBuffer()
 
-                for(i in 1 until windowWidth * windowHeight) {
-                    prefixIntBuff.put(i, prefixIntBuff.get(i-1) + numGeneratedIntBuffer.get(i-1))
+                    prefixIntBuff.put(0, 0)
+
+                    for(i in 1 until windowWidth * windowHeight) {
+                        prefixIntBuff.put(i, prefixIntBuff.get(i-1) + numGeneratedIntBuffer.get(i-1))
 //                    if(i%100 == 0) {
 //                        logger.info("i: $i. The numbers added were: ${prefixIntBuff.get(i-1)} and ${distributionIntBuff.get(i)}")
 //                    }
+                    }
                 }
-            }
 
-            logger.info("Prefix sum took ${prefixTime/1e9} to compute")
+                logger.info("Prefix sum took ${prefixTime/1e9} to compute")
+            }
 
             tGeneration.end = System.nanoTime()
 
@@ -681,9 +691,11 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                             SystemHelpers.dumpToFile(subVDIColorBuffer!!, "${fileName}_col")
                             SystemHelpers.dumpToFile(subVDIDepthBuffer!!, "${fileName}_depth")
                             SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")
-                            SystemHelpers.dumpToFile(thresholdBuff!!, "${fileName}_thresholds")
-                            SystemHelpers.dumpToFile(prefixBuff!!, "${fileName}_prefix")
-                            SystemHelpers.dumpToFile(numGeneratedBuff!!, "${fileName}_supersegments_generated")
+                            if(rleInfo) {
+                                SystemHelpers.dumpToFile(thresholdBuff!!, "${fileName}_thresholds")
+                                SystemHelpers.dumpToFile(prefixBuff!!, "${fileName}_prefix")
+                                SystemHelpers.dumpToFile(numGeneratedBuff!!, "${fileName}_supersegments_generated")
+                            }
                     } else {
                         SystemHelpers.dumpToFile(subVDIColorBuffer!!, fileName)
                         SystemHelpers.dumpToFile(gridCellsBuff!!, "${fileName}_octree")

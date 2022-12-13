@@ -44,6 +44,8 @@ layout(push_constant) uniform currentEye_t {
 
 #define USE_PRINTF 0
 
+#define RLE_INFO 0
+
 #if USE_PRINTF
 #extension GL_EXT_debug_printf : enable
 #endif
@@ -53,8 +55,10 @@ layout(set = 2, binding = 0) uniform sampler3D volumeCache;
 layout(set = 3, binding = 0, rgba32f) uniform image3D OutputSubVDIColor;
 layout(set = 4, binding = 0, r32f) uniform image3D OutputSubVDIDepth;
 layout (set = 8, binding = 0, r32ui) uniform uimage3D OctreeCells;
+#if RLE_INFO
 layout (set = 9, binding = 0, r32f) uniform image2D Thresholds;
 layout (set = 10, binding = 0, r32i) uniform iimage2D SupersegmentsGenerated;
+#endif
 
 #pragma scenery endverbatim
 
@@ -489,7 +493,9 @@ void main()
             }
 
             if(thresh_found) {
+                #if RLE_INFO
                 imageStore(Thresholds, ivec2(gl_GlobalInvocationID.xy), vec4(mid_thresh));
+                #endif
                 supsegs_written = true;
             }
 
@@ -552,7 +558,9 @@ void main()
         }
         #endif
 
+        #if RLE_INFO
         imageStore(SupersegmentsGenerated, ivec2(gl_GlobalInvocationID.xy), ivec4(supersegmentNum));
+        #endif
 
 //        writeThreshold(float(supersegmentNum));
 

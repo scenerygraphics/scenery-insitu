@@ -40,7 +40,7 @@ class VDIVolumeManager (val windowWidth: Int, val windowHeight: Int, val dataset
             )
         }
 
-        private fun vdiFull(windowWidth: Int, windowHeight: Int, maxSupersegments: Int, scene: Scene, hub: Hub): VolumeManager {
+        private fun vdiFull(windowWidth: Int, windowHeight: Int, maxSupersegments: Int, scene: Scene, hub: Hub, rleInfo: Boolean): VolumeManager {
             val raycastShader = "VDIGenerator.comp"
             val accumulateShader = "AccumulateVDI.comp"
             val volumeManager = instantiateVolumeManager(raycastShader, accumulateShader, hub)
@@ -86,17 +86,20 @@ class VDIVolumeManager (val windowWidth: Int, val windowHeight: Int, val dataset
             volumeManager.customTextures.add("OctreeCells")
             volumeManager.material().textures["OctreeCells"] = gridCells
 
-            thresholdsArray = Texture.fromImage(
-                Image(thresholdsBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
-                type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
-            volumeManager.customTextures.add("Thresholds")
-            volumeManager.material().textures["Thresholds"] = thresholdsArray
+            if(rleInfo) {
+                thresholdsArray = Texture.fromImage(
+                    Image(thresholdsBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+                    type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+                volumeManager.customTextures.add("Thresholds")
+                volumeManager.material().textures["Thresholds"] = thresholdsArray
 
-            numGenerated = Texture.fromImage(
-                Image(numGeneratedBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
-                type = IntType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
-            volumeManager.customTextures.add("SupersegmentsGenerated")
-            volumeManager.material().textures["SupersegmentsGenerated"] = numGenerated
+                numGenerated = Texture.fromImage(
+                    Image(numGeneratedBuffer, windowWidth, windowHeight), usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+                    type = IntType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+                volumeManager.customTextures.add("SupersegmentsGenerated")
+                volumeManager.material().textures["SupersegmentsGenerated"] = numGenerated
+            }
+
 
             volumeManager.customUniforms.add("doGeneration")
             volumeManager.shaderProperties["doGeneration"] = true
@@ -225,11 +228,11 @@ class VDIVolumeManager (val windowWidth: Int, val windowHeight: Int, val dataset
             return volumeManager
         }
 
-        fun create(windowWidth: Int, windowHeight: Int, maxSupersegments: Int, scene: Scene, hub: Hub, dense: Boolean): VolumeManager {
+        fun create(windowWidth: Int, windowHeight: Int, maxSupersegments: Int, scene: Scene, hub: Hub, dense: Boolean, rleInfo: Boolean = false): VolumeManager {
             return if(dense) {
                 vdiDense(windowWidth, windowHeight, maxSupersegments, scene, hub)
             } else {
-                vdiFull(windowWidth, windowHeight, maxSupersegments, scene, hub)
+                vdiFull(windowWidth, windowHeight, maxSupersegments, scene, hub, rleInfo)
             }
         }
 
