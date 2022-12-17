@@ -201,7 +201,7 @@ void writeSupersegment(int index, float start, float end, vec4 color) {
     }
     #endif
 
-    int linearized = imageLoad(PrefixSums, ivec2(gl_GlobalInvocationID.xy)).x + index;
+    int linearized = imageLoad(PrefixSums, ivec2(gl_GlobalInvocationID.yx)).x + index;
 
     int z_ = linearized / (bufferWidth * bufferHeight);
 
@@ -534,7 +534,7 @@ void main()
 
         if(doThreshSearch) {
             imageStore(Thresholds, ivec2(gl_GlobalInvocationID.xy), vec4(mid_thresh));
-            imageStore(SupersegmentsGenerated, ivec2(gl_GlobalInvocationID.xy), ivec4(num_terminations));
+            imageStore(SupersegmentsGenerated, ivec2(gl_GlobalInvocationID.yx), ivec4(num_terminations));
         }
 
 //        writeThreshold(float(supersegmentNum));
@@ -545,7 +545,7 @@ void main()
     } else {
         if(doThreshSearch) {
             imageStore(Thresholds, ivec2(gl_GlobalInvocationID.xy), vec4(0));
-            imageStore(SupersegmentsGenerated, ivec2(gl_GlobalInvocationID.xy), ivec4(0));
+            imageStore(SupersegmentsGenerated, ivec2(gl_GlobalInvocationID.yx), ivec4(0));
         }
     }
 }

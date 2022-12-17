@@ -125,7 +125,7 @@ class VDIVolumeManager (val windowWidth: Int, val windowHeight: Int, val dataset
 
             val volumeManager = instantiateVolumeManager(raycastShader, accumulateShader, hub)
 
-            val totalMaxSupersegments = maxSupersegments * windowWidth * windowHeight
+            val totalMaxSupersegments = maxSupersegments * windowWidth * windowHeight //TODO: maybe there needs to be a toFloat() here
 
             val outputSubColorBuffer = MemoryUtil.memCalloc(512 * 512 * ceil((totalMaxSupersegments / (512*512)).toDouble()).toInt() * 4 * 4)
 
@@ -169,7 +169,7 @@ class VDIVolumeManager (val windowWidth: Int, val windowHeight: Int, val dataset
 
             volumeManager.customTextures.add("PrefixSums")
             volumeManager.material().textures["PrefixSums"] = Texture(
-                Vector3i(windowWidth, windowHeight, 1), 1, contents = prefixBuffer, usageType = hashSetOf(
+                Vector3i(windowHeight, windowWidth, 1), 1, contents = prefixBuffer, usageType = hashSetOf(
                     Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
                 , type = IntType(),
                 mipmap = false,
@@ -179,7 +179,7 @@ class VDIVolumeManager (val windowWidth: Int, val windowHeight: Int, val dataset
 
             volumeManager.customTextures.add("SupersegmentsGenerated")
             volumeManager.material().textures["SupersegmentsGenerated"] = Texture(
-                Vector3i(windowWidth, windowHeight, 1), 1, contents = numGeneratedBuffer, usageType = hashSetOf(
+                Vector3i(windowHeight, windowWidth, 1), 1, contents = numGeneratedBuffer, usageType = hashSetOf(
                     Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
                 , type = IntType(),
                 mipmap = false,
