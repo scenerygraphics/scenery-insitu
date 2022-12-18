@@ -25,17 +25,14 @@ import net.imglib2.type.numeric.real.FloatType
 import org.joml.*
 import org.lwjgl.system.MemoryUtil
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.lang.Math
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.IntBuffer
-import java.nio.file.Files
-import java.nio.file.Path
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
-import kotlin.streams.toList
+import kotlin.math.ceil
 import kotlin.system.measureNanoTime
 
 class CompositorNode : RichNode() {
@@ -59,6 +56,18 @@ class CompositorNode : RichNode() {
 
     @ShaderProperty
     var numProcesses = 0
+
+    @ShaderProperty
+    var isDense = false
+
+    @ShaderProperty
+    var windowWidth = 0
+
+    @ShaderProperty
+    var windowHeight = 0
+
+    @ShaderProperty
+    var totalSupersegmentsFrom = IntArray(50); // the total supersegments received from a given PE
 }
 
 class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth = 1280, windowHeight = 720, wantREPL = false) {
@@ -138,7 +147,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
     private external fun distributeVDIs(subVDIColor: ByteBuffer, subVDIDepth: ByteBuffer, sizePerProcess: Int, commSize: Int,
         colPointer: Long, depthPointer: Long, mpiPointer: Long)
-    private external fun distributeDenseVDIs(subVDIColor: ByteBuffer, subVDIDepth: ByteBuffer, prefixSums: ByteBuffer, colorLimits: IntArray, depthLimits: IntArray, commSize: Int,
+    private external fun distributeDenseVDIs(subVDIColor: ByteBuffer, subVDIDepth: ByteBuffer, prefixSums: ByteBuffer, supersegmentCounts: IntArray, commSize: Int,
                                         colPointer: Long, depthPointer: Long, prefixPointer: Long, mpiPointer: Long)
     private external fun gatherCompositedVDIs(compositedVDIColor: ByteBuffer, compositedVDIDepth: ByteBuffer, compositedVDILen: Int, root: Int, myRank: Int, commSize: Int,
         colPointer: Long, depthPointer: Long, mpiPointer: Long)
@@ -201,7 +210,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         volumes[volumeID]?.goToLastTimepoint()
     }
 
-    fun setupCompositor(compositeShader: String) {
+    fun setupCompositor(compositeShader: String, dense: Boolean = false) {
 
         compositor.name = "compositor node"
         compositor.setMaterial(ShaderMaterial(Shaders.ShadersFromFiles(arrayOf(compositeShader), this@DistributedVolumes::class.java)))
@@ -222,6 +231,17 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         compositor.metadata["ComputeMetadata"] = ComputeMetadata(
             workSizes = Vector3i(windowWidth/commSize, windowHeight, 1)
         )
+        compositor.windowWidth = windowWidth
+        compositor.windowHeight = windowHeight
+        compositor.isDense = dense
+
+        if(!dense) {
+            val prefixPlaceHolder = MemoryUtil.memCalloc(1 * 1 * 4)
+            compositor.material().textures["PrefixSums"] = Texture(Vector3i(1, 1, 1), 1, contents = prefixPlaceHolder, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
+                , type = IntType(), mipmap = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour
+            )
+        }
+
         if(!singleGPUBenchmarks) {
             compositor.visible = true
             scene.addChild(compositor)
@@ -250,8 +270,8 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
             } else {
                 runGeneration = true
-                setupCompositor("VDICompositor.comp")
             }
+            setupCompositor("VDICompositor.comp")
 
         } else {
             volumeManager = VDIVolumeManager.create(windowWidth, windowHeight, scene, hub)
@@ -533,8 +553,8 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         var depthTexture = volumes[0]?.volumeManager?.material()?.textures?.get("OutputSubVDIDepth")!!
         val numGeneratedTexture = volumeManager.material().textures["SupersegmentsGenerated"]!!
 
-//        var compositedColor = compositor.material().textures["CompositedVDIColor"]!!
-//        var compositedDepth = compositor.material().textures["CompositedVDIDepth"]!!
+        var compositedColor = compositor.material().textures["CompositedVDIColor"]!!
+        var compositedDepth = compositor.material().textures["CompositedVDIDepth"]!!
 
         var prefixBuffer: ByteBuffer? = null
         var prefixIntBuff: IntBuffer? = null
@@ -569,7 +589,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
 
                 volumes[0]!!.volumeManager.material().textures["PrefixSums"] = Texture(
-                    Vector3i(windowWidth, windowHeight, 1), 1, contents = prefixBuffer, usageType = hashSetOf(
+                    Vector3i(windowHeight, windowWidth, 1), 1, contents = prefixBuffer, usageType = hashSetOf(
                         Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
                     , type = IntType(),
                     mipmap = false,
@@ -599,18 +619,18 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             }
 
             if(runCompositing) {
-//                compositedColor = compositor.material().textures["CompositedVDIColor"]!!
-//                compositedDepth = compositor.material().textures["CompositedVDIDepth"]!!
-//
-//                val col = fetchTexture(compositedColor)
-//                val depth = fetchTexture(compositedDepth)
-//
-//                if(col < 0) {
-//                    logger.error("Error fetching the color compositedVDI!!")
-//                }
-//                if(depth < 0) {
-//                    logger.error("Error fetching the depth compositedVDI!!")
-//                }
+                compositedColor = compositor.material().textures["CompositedVDIColor"]!!
+                compositedDepth = compositor.material().textures["CompositedVDIDepth"]!!
+
+                val col = fetchTexture(compositedColor)
+                val depth = fetchTexture(compositedDepth)
+
+                if(col < 0) {
+                    logger.error("Error fetching the color compositedVDI!!")
+                }
+                if(depth < 0) {
+                    logger.error("Error fetching the depth compositedVDI!!")
+                }
 
                 vdisComposited.incrementAndGet()
                 runCompositing = false
@@ -668,8 +688,8 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             subVDIColorBuffer!!.limit(totalSupersegmentsGenerated * 4 * 4)
             subVDIDepthBuffer!!.limit(2 * totalSupersegmentsGenerated * 4)
 
-//            compositedVDIColorBuffer = compositedColor.contents
-//            compositedVDIDepthBuffer = compositedDepth.contents
+            compositedVDIColorBuffer = compositedColor.contents
+            compositedVDIDepthBuffer = compositedDepth.contents
 
 
 //            if(!benchmarking) {
@@ -681,22 +701,29 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             cnt_sub++
 
 //            }
-            val colorLimits = IntArray(commSize)
-            val depthLimits = IntArray(commSize)
+            val supersegmentCounts = IntArray(commSize)
 
             val totalLists = windowHeight * windowWidth
 
+            var supersegmentsSoFar = 0
+
             for(i in 0 until (commSize-1)) {
-                colorLimits[i] = prefixIntBuff!!.get((totalLists / commSize) * (i + 1) + 1) * 4 * 4
-                depthLimits[i] = prefixIntBuff!!.get((totalLists / commSize) * (i + 1) + 1) * 4 * 2
+                supersegmentCounts[i] = prefixIntBuff!!.get((totalLists / commSize) * (i + 1) + 1) - supersegmentsSoFar
+                supersegmentsSoFar = supersegmentCounts[i];
             }
-            colorLimits[commSize-1] = totalSupersegmentsGenerated * 4 * 4
-            depthLimits[commSize-1] = totalSupersegmentsGenerated * 4 * 2
+
+            supersegmentCounts[commSize-1] = totalSupersegmentsGenerated - supersegmentsSoFar
 
             logger.info("Total supersegments generated by rank $rank: $totalSupersegmentsGenerated")
 
+            for(i in 0 until windowWidth * windowHeight) {
+                if(prefixIntBuff!!.get(i) < 0) {
+                    logger.info("This is an error before distribute! value is ${prefixIntBuff!!.get(i)} at loc: $i")
+                }
+            }
+
             start = System.nanoTime()
-            distributeDenseVDIs(subVDIColorBuffer!!, subVDIDepthBuffer!!, prefixBuffer!!, colorLimits, depthLimits, commSize, allToAllColorPointer,
+            distributeDenseVDIs(subVDIColorBuffer!!, subVDIDepthBuffer!!, prefixBuffer!!, supersegmentCounts, commSize, allToAllColorPointer,
                 allToAllDepthPointer, allToAllPrefixPointer, mpiPointer)
             end = System.nanoTime() - start
 
@@ -713,24 +740,22 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
             //fetch the composited VDI
 
-//            if(!benchmarking) {
-//                logger.info("Dumping sub VDI files")
-//                SystemHelpers.dumpToFile(compositedVDIColorBuffer!!, basePath + "${dataset}CompositedVDI${cnt_sub}_ndc_col")
-//                SystemHelpers.dumpToFile(compositedVDIDepthBuffer!!, basePath + "${dataset}CompositedVDI${cnt_sub}_ndc_depth")
-//                logger.info("File dumped")
-//
-//                logger.info("Cam position: ${cam.spatial().position}")
-//                logger.info("Cam rotation: ${cam.spatial().rotation}")
-//
-//                cnt_sub++
-//            }
-//
-//            start = System.nanoTime()
-//            gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, windowHeight * windowWidth * maxOutputSupersegments * 4 / commSize, 0,
-//                rank, commSize, gatherColorPointer, gatherDepthPointer, mpiPointer) //3 * commSize because the supersegments here contain only 1 element
-//            end = System.nanoTime() - start
-//
-////            logger.info("Gather took: ${end/1e9}")
+            if(!benchmarking) {
+                logger.info("Dumping composited VDI files")
+                SystemHelpers.dumpToFile(compositedVDIColorBuffer!!, basePath + "${dataset}CompositedVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_col")
+                SystemHelpers.dumpToFile(compositedVDIDepthBuffer!!, basePath + "${dataset}CompositedVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_depth")
+                logger.info("File dumped")
+
+                logger.info("Cam position: ${cam.spatial().position}")
+                logger.info("Cam rotation: ${cam.spatial().rotation}")
+            }
+
+            start = System.nanoTime()
+            gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, windowHeight * windowWidth * maxOutputSupersegments * 4 / commSize, 0,
+                rank, commSize, gatherColorPointer, gatherDepthPointer, mpiPointer) //3 * commSize because the supersegments here contain only 1 element
+            end = System.nanoTime() - start
+
+//            logger.info("Gather took: ${end/1e9}")
 
 
             if(saveFinal && (rank == 0)) {
@@ -992,19 +1017,46 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     }
 
     @Suppress("unused")
-    fun uploadForCompositingDense(vdiSetColour: ByteBuffer, vdiSetDepth: ByteBuffer, prefixSet: ByteBuffer, colorLimits: IntArray, depthLimits: IntArray) {
+    fun uploadForCompositingDense(vdiSetColour: ByteBuffer, vdiSetDepth: ByteBuffer, prefixSet: ByteBuffer, colorCounts: IntArray, depthCounts: IntArray) {
 
-        val prefixIntBuffer = prefixSet.asIntBuffer()
-        var prefixAdded = 0
-        for(i in 1 until commSize) {
-            val numSupsegs = colorLimits[i-1] / (4*4)
-            prefixAdded += numSupsegs
-            for (j in (i * ((windowWidth * windowHeight)/commSize)) until ((i+1) * (windowWidth*windowHeight)/commSize)) {
-                logger.info("prefix was: ${prefixIntBuffer.get(j)}")
-                prefixIntBuffer.put(j, prefixIntBuffer.get(j) + prefixAdded)
-                logger.info("updated to: ${prefixIntBuffer.get(j)}")
-            }
+//        val prefixIntBuff = prefixSet.order(ByteOrder.LITTLE_ENDIAN).asIntBuffer()
+//
+//        var error = false
+//
+//        for(i in 0 until windowWidth * windowHeight) {
+//            if(prefixIntBuff.get(i) < 0) {
+//                logger.info("This is an error after distribute! value is ${prefixIntBuff.get(i)} at loc: $i")
+//                error = true
+//            }
+//        }
+//
+//        if(error) {
+//            logger.info("encountered error in prefix sum at iteration: $cnt_distr")
+//        }
+//
+//        var prefixAdded = 0
+//        for(i in 1 until commSize) {
+//            val numSupsegs = colorCounts[i-1] / (4*4)
+//            prefixAdded += numSupsegs
+//            for (j in (i * ((windowWidth * windowHeight)/commSize)) until ((i+1) * (windowWidth*windowHeight)/commSize)) {
+////                if(j % 100 == 0) {
+////                    logger.info("prefix was: ${prefixIntBuffer.get(j)}")
+////                }
+//                prefixIntBuff.put(j, prefixIntBuff.get(j) + prefixAdded)
+////                if(j % 100 == 0) {
+////                    logger.info("updated to: ${prefixIntBuffer.get(j)}")
+////                }
+//            }
+//        }
+
+        var supersegmentsRecvd = 0f
+
+        for (i in 0 until commSize) {
+            compositor.totalSupersegmentsFrom[i] = colorCounts[i] / (4 * 4)
+            logger.info("Rank $rank: totalSupersegmentsFrom $i: ${colorCounts[i] / (4 * 4)}")
+            supersegmentsRecvd += (colorCounts[i] / (4 * 4)).toFloat()
         }
+
 
         logger.info("Dumping to file in the composite function")
         SystemHelpers.dumpToFile(vdiSetColour, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_col_rle")
@@ -1012,6 +1064,16 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         SystemHelpers.dumpToFile(prefixSet, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_prefix")
         logger.info("File dumped")
         cnt_distr++
+
+        compositor.material().textures["VDIsColor"] = Texture(Vector3i(512, 512, ceil((supersegmentsRecvd / (512*512)).toDouble()).toInt()), 4, contents = vdiSetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+            type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+
+        compositor.material().textures["VDIsDepth"] = Texture(Vector3i(2 * 512, 512, ceil((supersegmentsRecvd / (512*512)).toDouble()).toInt()), 1, contents = vdiSetDepth, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+            type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+
+        compositor.material().textures["PrefixSums"] = Texture(Vector3i(windowHeight, windowWidth, 1), 1, contents = prefixSet, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+            type = IntType(), mipmap = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour
+        )
 
         vdisDistributed.incrementAndGet()
 

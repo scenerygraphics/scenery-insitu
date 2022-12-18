@@ -550,7 +550,7 @@ class AdaptiveVDIGenerator: SceneryBase("Volume Rendering", System.getProperty("
 
 
                 volumeList.first().volumeManager.material().textures["PrefixSums"] = Texture(
-                    Vector3i(windowWidth, windowHeight, 1), 1, contents = prefixBuffer, usageType = hashSetOf(
+                    Vector3i(windowHeight, windowWidth, 1), 1, contents = prefixBuffer, usageType = hashSetOf(
                         Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
                     , type = IntType(),
                     mipmap = false,
