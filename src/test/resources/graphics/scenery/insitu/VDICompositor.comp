@@ -2,11 +2,7 @@
 #extension GL_EXT_debug_printf : enable
 #define USE_PRINTF 1
 
-//layout(set = 4, binding = 0) uniform ShaderProperties {
-//    bool doComposite;
-//};
-
-layout(set = 4, binding = 0) uniform ShaderProperties {
+layout(set = 5, binding = 0) uniform ShaderProperties {
     mat4 ProjectionOriginal;
     mat4 invProjectionOriginal;
     mat4 ViewOriginal;
@@ -14,46 +10,50 @@ layout(set = 4, binding = 0) uniform ShaderProperties {
     float nw;
     bool doComposite;
     int numProcesses;
+    int windowWidth;
+    int windowHeight;
+    bool isDense;
+    int totalSupersegmentsFrom[50]; // the total supersegments received from a given PE
 };
 
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 layout (set = 0, binding = 0, rgba32f) uniform readonly image3D VDIsColor;
 layout (set = 1, binding = 0, r32f) uniform readonly image3D VDIsDepth;
-layout (set = 2, binding = 0, rgba32f) uniform image3D CompositedVDIColor; //TODO: put loadstore
-layout (set = 3, binding = 0, r32f) uniform image3D CompositedVDIDepth; //TODO: put loadstore
-
-vec2 decode(vec4 c){
-    vec2 v = vec2(0.);
-
-    int ir = int(c.r*255.);
-    int ig = int(c.g*255.);
-    int irg = ir*256 + ig;
-    v.x = float(irg) / 256.;
-
-    int ib = int(c.b*255.);
-    int ia = int(c.a*255.);
-    int iba = ib*256 + ia;
-    v.y = float(iba) / 256.;
-
-    v -= 128.;
-    return v;
-}
-
-const vec4 bitEnc = vec4(1.,255.,65025.,16581375.);
-const vec4 bitDec = 1./bitEnc;
-float DecodeFloatRGBA (vec4 v) {
-    return dot(v, bitDec);
-}
+layout (set = 2, binding = 0, r32i) uniform iimage2D VDIsPrefix;
+layout (set = 3, binding = 0, rgba32f) uniform image3D CompositedVDIColor; //TODO: put loadstore
+layout (set = 4, binding = 0, r32f) uniform image3D CompositedVDIDepth; //TODO: put loadstore
 
 float adjustOpacity(float a, float modifiedStepLength) {
     return 1.0 - pow((1.0 - a), modifiedStepLength);
 }
 
-ivec2 debug_pixel = ivec2(24, 428);
+ivec2 debug_pixel = ivec2(640, 360);
 
 int frontSupersegment[50]; // which supersegment of this pixel are we currently looking at, for each process
+int supersegmentsFromPE[50]; //how many supersegments did this list receive from each of the PEs
+int cumulativePrefixIncrements[50];
 int numInputSupersegments;
 ivec3 opImageCoords;
+
+int bufferWidth;
+int bufferHeight;
+int bufferDepth;
+
+ivec3 supersegmentIndices(ivec2 theList, int index, int processID) {
+    int linearized = imageLoad(VDIsPrefix, theList.yx).x + index + cumulativePrefixIncrements[processID];
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("Linearized loc: %d", linearized);
+    }
+
+    int z_ = linearized / (bufferWidth * bufferHeight);
+
+    int remainder = linearized % (bufferWidth * bufferHeight);
+
+    int y_ = remainder / bufferWidth;
+    int x_ = remainder % bufferWidth;
+
+    return ivec3(x_, y_, z_);
+}
 
 int determineNextSupseg(int numProcesses, out float startDepth, out float endDepth, out vec4 colour) {
 
@@ -65,11 +65,32 @@ int determineNextSupseg(int numProcesses, out float startDepth, out float endDep
 
     //Loop over VDI slices from all processes to determine which one has a supersegment that is next along the ray
     for (int j = 0; j < numProcesses; j++) {
-        if(frontSupersegment[j] >= numInputSupersegments) {
+
+        int numInputs;
+        if(isDense) {
+            numInputs = supersegmentsFromPE[j];
+        } else {
+            numInputs = numInputSupersegments;
+        }
+
+        if(gl_GlobalInvocationID.xy == debug_pixel) {
+            debugPrintfEXT("front supseg: %d", frontSupersegment[j]);
+        }
+        if(frontSupersegment[j] >= numInputs) {
             continue;
         }
 
-        float curStartDepth = imageLoad(VDIsDepth, ivec3(frontSupersegment[j] * 2, gl_GlobalInvocationID.y, j * opImageCoords.z + gl_GlobalInvocationID.x)).x;
+        ivec3 indices;
+        if(isDense) {
+            indices = supersegmentIndices(ivec2(j * opImageCoords.z + gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), frontSupersegment[j], j);
+            if(gl_GlobalInvocationID.xy == debug_pixel) {
+                debugPrintfEXT("The buffer indices are: %d, %d, %d", indices.xyz);
+            }
+        } else {
+            indices = ivec3(frontSupersegment[j], gl_GlobalInvocationID.y, j * opImageCoords.z + gl_GlobalInvocationID.x);
+        }
+
+        float curStartDepth = imageLoad(VDIsDepth, ivec3(indices.x * 2, indices.yz)).x;
 
 //        #if USE_PRINTF
 //        if(gl_GlobalInvocationID.xy == debug_pixel) {
@@ -82,8 +103,8 @@ int determineNextSupseg(int numProcesses, out float startDepth, out float endDep
             lowDepth = curStartDepth;
             lowIndex = j;
             startDepth = curStartDepth;
-            endDepth = imageLoad(VDIsDepth, ivec3(frontSupersegment[j] * 2 + 1, gl_GlobalInvocationID.y, j * opImageCoords.z + gl_GlobalInvocationID.x)).x;
-            colour = imageLoad(VDIsColor, ivec3(frontSupersegment[j], gl_GlobalInvocationID.y, j * opImageCoords.z + gl_GlobalInvocationID.x)).rgba;
+            endDepth = imageLoad(VDIsDepth, ivec3(indices.x * 2 + 1, indices.yz)).x;
+            colour = imageLoad(VDIsColor, ivec3(indices)).rgba;
         }
     }
 
@@ -101,7 +122,7 @@ vec4 test = vec4(0);
 
 void writeSupersegment(int index, float start, float end, vec4 color) {
 
-    int windowWidth = 1280;
+    int windowWidth = 1280; //TODO: hardcoded value needs to be generalized
     int windowHeight = 720;
 
     vec3 newColor = color.rgb;
@@ -149,6 +170,36 @@ void writeSupersegment(int index, float start, float end, vec4 color) {
 
 }
 
+int numSupersegmentsIn(ivec2 theList, int process_id) {
+
+    if(theList.x == (windowWidth - 1) && theList.y == (windowHeight - 1)) {
+        return totalSupersegmentsFrom[numProcesses-1] - imageLoad(VDIsPrefix, ivec2(theList.yx)).x;
+    } else {
+        ivec2 nextList;
+        if(gl_GlobalInvocationID.y < (windowHeight - 1)) {
+            //this is not a corner list
+            nextList = ivec2(theList.y + 1, theList.x);
+        } else {
+            //this is a corner list but not the last
+            nextList = ivec2(0, theList.x+1);
+        }
+
+        int prefixNext = imageLoad(VDIsPrefix, ivec2(nextList)).x;
+        int prefixThis = imageLoad(VDIsPrefix, ivec2(theList.yx)).x;
+
+        if(gl_GlobalInvocationID.xy == debug_pixel) {
+            debugPrintfEXT("theList: (%d, %d), nextList: (%d, %d)", theList.xy, nextList.xy);
+            debugPrintfEXT("prefix next: %d, this: %d", prefixNext, prefixThis);
+        }
+
+        if(prefixNext == 0 && prefixThis != 0) {
+            return totalSupersegmentsFrom[process_id] - prefixThis;
+        } else {
+            return prefixNext - prefixThis;
+        }
+    }
+}
+
 void main() {
 
     #if USE_PRINTF
@@ -166,6 +217,11 @@ void main() {
         return;
     }
 
+    ivec3 bufferCoords  = imageSize(VDIsColor);
+    bufferWidth = bufferCoords.x;
+    bufferHeight = bufferCoords.y;
+    bufferDepth = bufferCoords.z;
+
     mat4 pv_orig = ProjectionOriginal * ViewOriginal;
 
     mat4 ivp_orig = invViewOriginal * invProjectionOriginal;
@@ -174,17 +230,42 @@ void main() {
 //        return;
 //    }
 
-    ivec3 imageCoords  = imageSize(VDIsColor);
-    numInputSupersegments = imageCoords.r;
-    int windowWidth = imageCoords.z;
-    int windowHeight = imageCoords.y;
+    opImageCoords = imageSize(CompositedVDIColor);
+    int numOutputSupersegments = opImageCoords.x;
+
+    if(isDense) {
+
+//        int lists_per_process = windowWidth * windowHeight / numProcesses;
+
+//        uint current_list_id = gl_GlobalInvocationID.y * windowWidth + gl_GlobalInvocationID.x + 1;
+
+//        uint process_id = current_list_id % lists_per_process; //which process does this list come from? (0-indexed)
+
+        int cumulativeSupsegs = 0;
+
+        for(int i = 0; i < numProcesses; i++) {
+            ivec2 listID = ivec2(i * opImageCoords.z + gl_GlobalInvocationID.x, gl_GlobalInvocationID.y);
+            supersegmentsFromPE[i] = numSupersegmentsIn(listID, i);
+            #if USE_PRINTF
+            if(gl_GlobalInvocationID.xy == debug_pixel) {
+                debugPrintfEXT("Received %d supersegments from PE %d", supersegmentsFromPE[i], i);
+            }
+            if(supersegmentsFromPE[i] < 0 || supersegmentsFromPE[i] > 20) {
+                debugPrintfEXT("Error! invoc id: (%d, %d) has %d supersegs", gl_GlobalInvocationID.xy, supersegmentsFromPE[i]);
+            }
+            #endif
+            cumulativePrefixIncrements[i] = cumulativeSupsegs;
+            cumulativeSupsegs += totalSupersegmentsFrom[i];
+        }
+
+    } else {
+        ivec3 imageCoords  = imageSize(VDIsColor);
+        numInputSupersegments = imageCoords.r;
+    }
 
 //    for(int i = 0; i< 50; i++) {
 //        imageStore(CompositedVDIColor, ivec2(i, gl_GlobalInvocationID.x), vec4(1));
 //    }
-
-    opImageCoords = imageSize(CompositedVDIColor);
-    int numOutputSupersegments = opImageCoords.x;
 
     #if USE_PRINTF
     if(gl_GlobalInvocationID.xy == debug_pixel) {
@@ -224,7 +305,7 @@ void main() {
 
     while(!thresh_found || !supsegs_written) {
         iter++;
-//        if(iter > 15) {
+//        if(iter > 1) {
 //            break;
 //        }
         if (thresh_found) {
@@ -258,11 +339,11 @@ void main() {
             transparentSample = false;
             num_samples++;
 
-//            #if USE_PRINTF
-//            if(gl_GlobalInvocationID.xy == debug_pixel) {
-//                debugPrintfEXT("Looking for the next supseg %d", num_samples);
-//            }
-//            #endif
+            #if USE_PRINTF
+            if(gl_GlobalInvocationID.xy == debug_pixel) {
+                debugPrintfEXT("Looking for the next supseg %d. Num processes: %d", num_samples, numProcesses);
+            }
+            #endif
 
             int processId = determineNextSupseg(numProcesses, startDepth, endDepth, colour);
 

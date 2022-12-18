@@ -271,7 +271,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             } else {
                 runGeneration = true
             }
-            setupCompositor("VDICompositor.comp")
+            setupCompositor("VDICompositor.comp", denseVDIs)
 
         } else {
             volumeManager = VDIVolumeManager.create(windowWidth, windowHeight, scene, hub)
@@ -638,6 +638,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 runThreshSearch = true
             }
 
+//            logger.info("distributed: ${vdisDistributed.get()} and composited: ${vdisComposited.get()}")
             if(vdisDistributed.get() > vdisComposited.get()) {
                 runCompositing = true
             }
@@ -645,6 +646,10 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
         (renderer as VulkanRenderer).postRenderLambdas.add {
             compositor.doComposite = runCompositing
+
+            if(runCompositing) {
+                logger.info("doComposite has been set to true!")
+            }
 
             volumes[0]?.volumeManager?.shaderProperties?.set("doGeneration", runGeneration)
             volumes[0]?.volumeManager?.shaderProperties?.set("doThreshSearch", runThreshSearch)
@@ -1049,21 +1054,22 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 //            }
 //        }
 
-        var supersegmentsRecvd = 0f
+        val supersegmentsRecvd = (vdiSetColour.remaining() / (4*4)).toFloat() //including potential 0 supersegments that were padded
+
+        logger.info("total supsegs recvd (including 0s): $supersegmentsRecvd")
 
         for (i in 0 until commSize) {
             compositor.totalSupersegmentsFrom[i] = colorCounts[i] / (4 * 4)
             logger.info("Rank $rank: totalSupersegmentsFrom $i: ${colorCounts[i] / (4 * 4)}")
-            supersegmentsRecvd += (colorCounts[i] / (4 * 4)).toFloat()
         }
 
 
-        logger.info("Dumping to file in the composite function")
-        SystemHelpers.dumpToFile(vdiSetColour, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_col_rle")
-        SystemHelpers.dumpToFile(vdiSetDepth, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_depth_rle")
-        SystemHelpers.dumpToFile(prefixSet, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_prefix")
-        logger.info("File dumped")
-        cnt_distr++
+//        logger.info("Dumping to file in the composite function")
+//        SystemHelpers.dumpToFile(vdiSetColour, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_col_rle")
+//        SystemHelpers.dumpToFile(vdiSetDepth, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_depth_rle")
+//        SystemHelpers.dumpToFile(prefixSet, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_prefix")
+//        logger.info("File dumped")
+//        cnt_distr++
 
         compositor.material().textures["VDIsColor"] = Texture(Vector3i(512, 512, ceil((supersegmentsRecvd / (512*512)).toDouble()).toInt()), 4, contents = vdiSetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
             type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
@@ -1071,7 +1077,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         compositor.material().textures["VDIsDepth"] = Texture(Vector3i(2 * 512, 512, ceil((supersegmentsRecvd / (512*512)).toDouble()).toInt()), 1, contents = vdiSetDepth, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
             type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
 
-        compositor.material().textures["PrefixSums"] = Texture(Vector3i(windowHeight, windowWidth, 1), 1, contents = prefixSet, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+        compositor.material().textures["VDIsPrefix"] = Texture(Vector3i(windowHeight, windowWidth, 1), 1, contents = prefixSet, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
             type = IntType(), mipmap = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour
         )
 
