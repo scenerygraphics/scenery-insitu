@@ -27,7 +27,7 @@ float adjustOpacity(float a, float modifiedStepLength) {
     return 1.0 - pow((1.0 - a), modifiedStepLength);
 }
 
-ivec2 debug_pixel = ivec2(640, 360);
+ivec2 debug_pixel = ivec2(80, 360);
 
 int frontSupersegment[50]; // which supersegment of this pixel are we currently looking at, for each process
 int supersegmentsFromPE[50]; //how many supersegments did this list receive from each of the PEs
@@ -40,7 +40,7 @@ int bufferHeight;
 int bufferDepth;
 
 ivec3 supersegmentIndices(ivec2 theList, int index, int processID) {
-    int linearized = imageLoad(VDIsPrefix, theList.yx).x + index + cumulativePrefixIncrements[processID];
+    int linearized = imageLoad(VDIsPrefix, theList.yx).x + index + cumulativePrefixIncrements[processID] - imageLoad(VDIsPrefix, ivec2(0, (((windowWidth / numProcesses) * (processID))))).x;
     if(gl_GlobalInvocationID.xy == debug_pixel) {
         debugPrintfEXT("Linearized loc: %d", linearized);
     }
@@ -172,8 +172,12 @@ void writeSupersegment(int index, float start, float end, vec4 color) {
 
 int numSupersegmentsIn(ivec2 theList, int process_id) {
 
-    if(theList.x == (windowWidth - 1) && theList.y == (windowHeight - 1)) {
-        return totalSupersegmentsFrom[numProcesses-1] - imageLoad(VDIsPrefix, ivec2(theList.yx)).x;
+    if(theList.x == (((windowWidth / numProcesses) * (process_id + 1)) - 1) && theList.y == (windowHeight - 1)) {
+        if(gl_GlobalInvocationID.xy == debug_pixel) {
+            debugPrintfEXT("total from process: %d. At (%d, %d): %d", totalSupersegmentsFrom[process_id], theList.yx, imageLoad(VDIsPrefix, ivec2(theList.yx)));
+            debugPrintfEXT("Start prefix of process, at (%d, %d): %d", ivec2(0, (((windowWidth / numProcesses) * (process_id)))), imageLoad(VDIsPrefix, ivec2(0, (((windowWidth / numProcesses) * (process_id))))));
+        }
+        return totalSupersegmentsFrom[process_id] - (imageLoad(VDIsPrefix, ivec2(theList.yx)) - imageLoad(VDIsPrefix, ivec2(0, (((windowWidth / numProcesses) * (process_id)))))).x;
     } else {
         ivec2 nextList;
         if(gl_GlobalInvocationID.y < (windowHeight - 1)) {
@@ -251,7 +255,7 @@ void main() {
                 debugPrintfEXT("Received %d supersegments from PE %d", supersegmentsFromPE[i], i);
             }
             if(supersegmentsFromPE[i] < 0 || supersegmentsFromPE[i] > 20) {
-                debugPrintfEXT("Error! invoc id: (%d, %d) has %d supersegs", gl_GlobalInvocationID.xy, supersegmentsFromPE[i]);
+                debugPrintfEXT("Error! invoc id: (%d, %d) has %d supersegs from process: %d", gl_GlobalInvocationID.xy, supersegmentsFromPE[i], i);
             }
             #endif
             cumulativePrefixIncrements[i] = cumulativeSupsegs;
