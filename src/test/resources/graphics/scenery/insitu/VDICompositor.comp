@@ -122,9 +122,6 @@ vec4 test = vec4(0);
 
 void writeSupersegment(int index, float start, float end, vec4 color) {
 
-    int windowWidth = 1280; //TODO: hardcoded value needs to be generalized
-    int windowHeight = 720;
-
     vec3 newColor = color.rgb;
     float newAlpha = color.a;
 
@@ -218,6 +215,10 @@ void main() {
             debugPrintfEXT("VDICompositor: skipping this pass!");
         }
         #endif
+        return;
+    }
+
+    if(gl_GlobalInvocationID.x >= windowWidth || gl_GlobalInvocationID.y >= windowHeight) {
         return;
     }
 
