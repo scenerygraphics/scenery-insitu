@@ -70,7 +70,7 @@ class CompositorNode : RichNode() {
     var totalSupersegmentsFrom = IntArray(50); // the total supersegments received from a given PE
 }
 
-class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth = 1920, windowHeight = 1080, wantREPL = false) {
+class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth = 1280, windowHeight = 720, wantREPL = false) {
 
     private val vulkanProjectionFix =
         Matrix4f(
@@ -164,7 +164,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     private external fun distributeDenseVDIs(subVDIColor: ByteBuffer, subVDIDepth: ByteBuffer, prefixSums: ByteBuffer, supersegmentCounts: IntArray, commSize: Int,
                                         colPointer: Long, depthPointer: Long, prefixPointer: Long, mpiPointer: Long)
     private external fun gatherCompositedVDIs(compositedVDIColor: ByteBuffer, compositedVDIDepth: ByteBuffer, compositedVDILen: Int, root: Int, myRank: Int, commSize: Int,
-        colPointer: Long, depthPointer: Long, mpiPointer: Long)
+        colPointer: Long, depthPointer: Long, vo: Int, mpiPointer: Long)
 
     @Suppress("unused")
     fun setVolumeDims(dims: IntArray) {
@@ -899,7 +899,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
             start = System.nanoTime()
             gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, windowHeight * windowWidth * maxOutputSupersegments * 4 / commSize, 0,
-                rank, commSize, gatherColorPointer, gatherDepthPointer, mpiPointer) //3 * commSize because the supersegments here contain only 1 element
+                rank, commSize, gatherColorPointer, gatherDepthPointer, vo.toInt(), mpiPointer) //3 * commSize because the supersegments here contain only 1 element
             end = System.nanoTime() - start
 
             logger.info("Gather took: ${end/1e9}")
@@ -1123,7 +1123,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
             start = System.nanoTime()
             gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, windowHeight * windowWidth * maxOutputSupersegments * 4 / commSize, 0,
-                rank, commSize, gatherColorPointer, gatherDepthPointer, mpiPointer) //3 * commSize because the supersegments here contain only 1 element
+                rank, commSize, gatherColorPointer, gatherDepthPointer, vo.toInt(), mpiPointer) //3 * commSize because the supersegments here contain only 1 element
             end = System.nanoTime() - start
 
             logger.info("Gather took: ${end/1e9}")
