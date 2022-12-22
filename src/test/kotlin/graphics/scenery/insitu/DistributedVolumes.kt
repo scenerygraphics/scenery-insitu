@@ -70,7 +70,7 @@ class CompositorNode : RichNode() {
     var totalSupersegmentsFrom = IntArray(50); // the total supersegments received from a given PE
 }
 
-class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth = 1280, windowHeight = 720, wantREPL = false) {
+class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth = 1920, windowHeight = 1080, wantREPL = false) {
 
     private val vulkanProjectionFix =
         Matrix4f(
@@ -106,8 +106,22 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     val cam: Camera = DetachedHeadCamera(hmd)
     var camTarget = Vector3f(0f)
 
+    var vo = 90f
+
     val maxSupersegments = 20
     var maxOutputSupersegments = 20
+
+    data class Timer(var start: Long, var end: Long)
+
+    val tRend = Timer(0,0)
+    val tComposite = Timer(0,0)
+
+    var totalComposite: Double = 0.0
+    var totalRender: Double = 0.0
+
+    var numIterations: Int = 0
+
+    val warmUpIterations = 20
 
     var commSize = 1
     var rank = 0
@@ -178,18 +192,91 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         volume.colormap = colorMap
         volume.pixelToWorldRatio = pixelToWorld
 
-        val tf = volumeCommons.setupTransferFunction()
+        val tf = TransferFunction()
+        with(tf) {
+            if(dataset == "Stagbeetle" || dataset == "Stagbeetle_divided") {
+                addControlPoint(0.0f, 0.0f)
+                addControlPoint(0.005f, 0.0f)
+                addControlPoint(0.01f, 0.3f)
+            } else if (dataset == "Kingsnake") {
+                addControlPoint(0.0f, 0.0f)
+                addControlPoint(0.43f, 0.0f)
+                addControlPoint(0.5f, 0.5f)
+            } else if (dataset == "Beechnut") {
+                addControlPoint(0.0f, 0.0f)
+                addControlPoint(0.43f, 0.0f)
+                addControlPoint(0.457f, 0.321f)
+                addControlPoint(0.494f, 0.0f)
+                addControlPoint(1.0f, 0.0f)
+            } else if (dataset == "Simulation") {
+                addControlPoint(0.0f, 0f)
+                addControlPoint(0.1f, 0.0f)
+                addControlPoint(0.15f, 0.65f)
+                addControlPoint(0.22f, 0.15f)
+                addControlPoint(0.28f, 0.0f)
+                addControlPoint(0.49f, 0.0f)
+                addControlPoint(0.7f, 0.95f)
+                addControlPoint(0.75f, 0.8f)
+                addControlPoint(0.8f, 0.0f)
+                addControlPoint(0.9f, 0.0f)
+                addControlPoint(1.0f, 0.0f)
+            } else if (dataset == "Rayleigh_Taylor") {
+                addControlPoint(0.0f, 0.95f)
+                addControlPoint(0.15f, 0.0f)
+                addControlPoint(0.45f, 0.0f)
+                addControlPoint(0.5f, 0.35f)
+                addControlPoint(0.55f, 0.0f)
+                addControlPoint(0.80f, 0.0f)
+                addControlPoint(1.0f, 0.378f)
+            } else if (dataset == "Microscopy") {
+                addControlPoint(0.0f, 0.0f)
+                addControlPoint(0.5f, 0.0f)
+                addControlPoint(0.65f, 0.0f)
+                addControlPoint(0.80f, 0.2f)
+                addControlPoint(0.85f, 0.0f)
+            } else if (dataset == "Rotstrat") {
+                addControlPoint(0.0f, 0.0f)
+                addControlPoint(0.4f, 0.0f)
+                addControlPoint(0.6f, 0.01f)
+                addControlPoint(1.0f, 0.05f)
+            } else if (dataset == "Isotropic") {
+                addControlPoint(0.0f, 0.01f)
+                addControlPoint(0.1f, 0.01f)
+                addControlPoint(0.5f, 0.0f)
+                addControlPoint(0.6f, 0.0f)
+                addControlPoint(0.65f, 0.0f)
+                addControlPoint(0.7f, 0.0f)
+                addControlPoint(0.8f, 0.5f)
+            } else {
+                logger.info("Using a standard transfer function")
+                addControlPoint(0.0f, 0.0f)
+                addControlPoint(1.0f, 1.0f)
+
+            }
+        }
+
+        volume.name = "volume"
+        volume.colormap = Colormap.get("hot")
+        if(dataset == "Rotstrat") {
+            volume.colormap = Colormap.get("viridis")
+            volume.converterSetups[0].setDisplayRange(13000.0, 57000.0)
+        } else if(dataset == "Beechnut") {
+            volume.converterSetups[0].setDisplayRange(0.0, 33465.0)
+        } else if(dataset == "Simulation") {
+            volume.colormap = Colormap.get("rb")
+            volume.converterSetups[0].setDisplayRange(50.0, 205.0)
+        } else if(dataset == "Rayleigh_Taylor") {
+            volume.colormap = Colormap.get("rbdarker")
+        } else  if(dataset == "Isotropic") {
+            volume.colormap = Colormap.get("rb")
+            volume.converterSetups[0].setDisplayRange(32000.0, 60000.0)
+        }
 
         volume.transferFunction = tf
 
         if(dataset.contains("BonePlug")) {
             volume.converterSetups[0].setDisplayRange(200.0, 12500.0)
             volume.colormap = Colormap.get("viridis")
-        }
-
-        if(dataset == "Rotstrat") {
-            volume.colormap = Colormap.get("jet")
-            volume.converterSetups[0].setDisplayRange(25000.0, 50000.0)
         }
 
         scene.addChild(volume)
@@ -272,19 +359,63 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 runGeneration = true
             }
 
+            setupCompositor("VDICompositor.comp", denseVDIs)
+
         } else {
             volumeManager = VDIVolumeManager.create(windowWidth, windowHeight, scene, hub)
 
             hub.add(volumeManager)
         }
 
-        setupCompositor("VDICompositor.comp", denseVDIs)
 
         volumeManagerInitialized = true
 
         volumeCommons = VolumeCommons(windowWidth, windowHeight, dataset, logger)
 
-        volumeCommons.positionCamera(cam)
+        with(cam) {
+            spatial {
+                if(dataset == "Kingsnake") {
+                    position = Vector3f( 4.622E+0f, -9.060E-1f, -1.047E+0f) //V1 for kingsnake
+                    rotation = Quaternionf( 5.288E-2, -9.096E-1, -1.222E-1,  3.936E-1)
+                } else if (dataset == "Beechnut") {
+                    position = Vector3f(-2.607E+0f, -5.973E-1f,  2.415E+0f) // V1 for Beechnut
+                    rotation = Quaternionf(-9.418E-2, -7.363E-1, -1.048E-1, -6.618E-1)
+                } else if (dataset == "Simulation") {
+                    logger.info("Using simulation camera coordinates")
+                    position = Vector3f(2.041E-1f, -5.253E+0f, -1.321E+0f) //V1 for Simulation
+                    rotation = Quaternionf(9.134E-2, -9.009E-1,  3.558E-1, -2.313E-1)
+                } else if (dataset == "Rayleigh_Taylor") {
+                    position = Vector3f( -2.300E+0f, -6.402E+0f,  1.100E+0f) //V1 for Rayleigh_Taylor
+                    rotation = Quaternionf(2.495E-1, -7.098E-1,  3.027E-1, -5.851E-1)
+                } else if (dataset == "BonePlug") {
+                    position = Vector3f( 1.897E+0f, -5.994E-1f, -1.899E+0f) //V1 for Boneplug
+                    rotation = Quaternionf( 5.867E-5,  9.998E-1,  1.919E-2,  4.404E-3)
+                } else if (dataset == "Rotstrat") {
+//                    position = Vector3f( 2.799E+0f, -6.156E+0f, -2.641E+0f) //V1 for Rotstrat
+//                    rotation = Quaternionf(-3.585E-2, -9.257E-1,  3.656E-1,  9.076E-2)
+
+                    position = Vector3f(6.361E+0f, -6.156E+0f,  2.679E+0f) //V2
+                    rotation = Quaternionf(-2.839E-1, -5.904E-1,  2.332E-1,  7.187E-1)
+                } else if (dataset == "Isotropic") {
+                    position = Vector3f( 2.799E+0f, -6.156E+0f, -2.641E+0f) //V1 for Isotropic
+                    rotation = Quaternionf(-3.585E-2, -9.257E-1,  3.656E-1,  9.076E-2)
+
+//                    position = Vector3f(6.361E+0f, -6.156E+0f,  2.679E+0f) //V2
+//                    rotation = Quaternionf(-2.839E-1, -5.904E-1,  2.332E-1,  7.187E-1)
+                }
+
+//                position = Vector3f( 3.183E+0f, -5.973E-1f, -1.475E+0f) //V2 for Beechnut
+//                rotation = Quaternionf( 1.974E-2, -9.803E-1, -1.395E-1,  1.386E-1)
+//
+//                position = Vector3f( 4.458E+0f, -9.057E-1f,  4.193E+0f) //V2 for Kingsnake
+//                rotation = Quaternionf( 1.238E-1, -3.649E-1,-4.902E-2,  9.215E-1)
+
+//                position = Vector3f( 6.284E+0f, -4.932E-1f,  4.787E+0f) //V2 for Simulation
+//                rotation = Quaternionf( 1.162E-1, -4.624E-1, -6.126E-2,  8.769E-1)
+            }
+            perspectiveCamera(50.0f, windowWidth, windowHeight)
+            cam.farPlaneDistance = 20.0f
+        }
         scene.addChild(cam)
 
         val lights = (0 until 3).map {
@@ -476,7 +607,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 //            texture.contents = ref.copyTo(buffer, true)
             ref.copyTo(buffer, false)
             val end = System.nanoTime()
-//            logger.info("The request textures of size ${texture.contents?.remaining()?.toFloat()?.div((1024f*1024f))} took: ${(end.toDouble()-start.toDouble())/1000000.0}")
+            logger.info("The request textures of size ${texture.contents?.remaining()?.toFloat()?.div((1024f*1024f))} took: ${(end.toDouble()-start.toDouble())/1000000.0}")
         } else {
             logger.error("In fetchTexture: Texture not accessible")
         }
@@ -508,6 +639,9 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 Vector3f(1.920E+0f, -6.986E-1f,  6.855E-1f)
             }
             "Rotstrat" -> {
+                Vector3f( 1.920E+0f, -1.920E+0f,  1.800E+0f)
+            }
+            "Isotropic" -> {
                 Vector3f( 1.920E+0f, -1.920E+0f,  1.800E+0f)
             }
             else -> {
@@ -543,6 +677,10 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
         val vdiData = setupMetadata()
 
+        rotateCamera(vo)
+
+//        Thread.sleep(10000)
+
         compositor.nw = vdiData.metadata.nw
         compositor.ViewOriginal = vdiData.metadata.view
         compositor.invViewOriginal = Matrix4f(vdiData.metadata.view).invert()
@@ -573,6 +711,8 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
                 val numGeneratedBuff = numGeneratedTexture.contents
                 val numGeneratedIntBuffer = numGeneratedBuff!!.asIntBuffer()
+
+                //todo: check for errors in numGeneratedIntBuffer buffer
 
                 val prefixTime = measureNanoTime {
                     prefixBuffer = MemoryUtil.memAlloc(windowWidth * windowHeight * 4)
@@ -636,6 +776,12 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 vdisComposited.incrementAndGet()
                 runCompositing = false
 
+//                if(vdisGathered % 10 == 0) {
+//                    rotateCamera(10f)
+//                    vdiData.metadata.projection = cam.spatial().projection
+//                    vdiData.metadata.view = cam.spatial().getTransformation()
+//                }
+
                 runThreshSearch = true
             }
 
@@ -649,7 +795,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             compositor.doComposite = runCompositing
 
             if(runCompositing) {
-                logger.info("doComposite has been set to true!")
+                logger.debug("doComposite has been set to true!")
             }
 
             volumes[0]?.volumeManager?.shaderProperties?.set("doGeneration", runGeneration)
@@ -684,7 +830,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             }
             end = System.nanoTime() - start
 
-//            logger.info("Waiting for VDI generation took: ${end/1e9}")
+            logger.info("Waiting for VDI generation took: ${end/1e9}")
 
             generatedSoFar = vdisGenerated.get()
 
@@ -698,15 +844,14 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             compositedVDIDepthBuffer = compositedDepth.contents
 
 
-//            if(!benchmarking) {
-            logger.info("Dumping sub VDI files")
-            SystemHelpers.dumpToFile(subVDIColorBuffer!!, basePath + "${dataset}SubVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_col_rle")
-            SystemHelpers.dumpToFile(subVDIDepthBuffer!!, basePath + "${dataset}SubVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_depth_rle")
-            SystemHelpers.dumpToFile(prefixBuffer!!, basePath + "${dataset}SubVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_prefix")
-            logger.info("File dumped")
-            cnt_sub++
-
-//            }
+            if(!benchmarking) {
+                logger.info("Dumping sub VDI files")
+                SystemHelpers.dumpToFile(subVDIColorBuffer!!, basePath + "${dataset}SubVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_col_rle")
+                SystemHelpers.dumpToFile(subVDIDepthBuffer!!, basePath + "${dataset}SubVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_depth_rle")
+                SystemHelpers.dumpToFile(prefixBuffer!!, basePath + "${dataset}SubVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_prefix")
+                logger.info("File dumped")
+                cnt_sub++
+            }
             val supersegmentCounts = IntArray(commSize)
 
             val totalLists = windowHeight * windowWidth
@@ -715,22 +860,22 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
             for(i in 0 until (commSize-1)) {
                 supersegmentCounts[i] = prefixIntBuff!!.get((totalLists / commSize) * (i + 1)) - supersegmentsSoFar
-                logger.info("Rank: $rank will send ${supersegmentCounts[i]} supersegments to process $i")
+                logger.debug("Rank: $rank will send ${supersegmentCounts[i]} supersegments to process $i")
                 supersegmentsSoFar += supersegmentCounts[i];
             }
 
             supersegmentCounts[commSize-1] = totalSupersegmentsGenerated - supersegmentsSoFar
-            logger.info("Rank: $rank will send ${supersegmentCounts[commSize-1]} supersegments to process ${commSize-1}")
+            logger.debug("Rank: $rank will send ${supersegmentCounts[commSize-1]} supersegments to process ${commSize-1}")
 
-            logger.info("Total supersegments generated by rank $rank: $totalSupersegmentsGenerated")
+            logger.debug("Total supersegments generated by rank $rank: $totalSupersegmentsGenerated")
 
             start = System.nanoTime()
             distributeDenseVDIs(subVDIColorBuffer!!, subVDIDepthBuffer!!, prefixBuffer!!, supersegmentCounts, commSize, allToAllColorPointer,
                 allToAllDepthPointer, allToAllPrefixPointer, mpiPointer)
             end = System.nanoTime() - start
 
-//            logger.info("Distributing VDIs took: ${end/1e9}")
-            logger.info("Back in the management function")
+            logger.info("Distributing VDIs took: ${end/1e9}")
+            logger.debug("Back in the management function")
 
             start = System.nanoTime()
             while(vdisComposited.get() <= compositedSoFar) {
@@ -748,8 +893,8 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 SystemHelpers.dumpToFile(compositedVDIDepthBuffer!!, basePath + "${dataset}CompositedVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_depth")
                 logger.info("File dumped")
 
-                logger.info("Cam position: ${cam.spatial().position}")
-                logger.info("Cam rotation: ${cam.spatial().rotation}")
+                logger.debug("Cam position: ${cam.spatial().position}")
+                logger.debug("Cam rotation: ${cam.spatial().rotation}")
             }
 
             start = System.nanoTime()
@@ -757,19 +902,19 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 rank, commSize, gatherColorPointer, gatherDepthPointer, mpiPointer) //3 * commSize because the supersegments here contain only 1 element
             end = System.nanoTime() - start
 
-//            logger.info("Gather took: ${end/1e9}")
+            logger.info("Gather took: ${end/1e9}")
 
 
             if(saveFinal && (rank == 0)) {
-                val file = FileOutputStream(File(basePath + "${dataset}vdi_${windowWidth}_${windowHeight}_${maxSupersegments}_0_dump$vdisGathered"))
+                val file = FileOutputStream(File(basePath + "${dataset}vdi_${windowWidth}_${windowHeight}_${maxSupersegments}_${vo}_dump$vdisGathered"))
                 VDIDataIO.write(vdiData, file)
-                logger.info("written the dump $vdisGathered")
+                logger.debug("written the dump $vdisGathered")
                 file.close()
             }
 
             vdisGathered++
             end_complete = System.nanoTime() - start_complete
-//            logger.info("Whole iteration took: ${end_complete/1e9}")
+            logger.info("Whole iteration took: ${end_complete/1e9}")
         }
 
     }
@@ -896,7 +1041,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             }
             end = System.nanoTime() - start
 
-//            logger.info("Waiting for VDI generation took: ${end/1e9}")
+            logger.info("Waiting for VDI generation took: ${end/1e9}")
 
 
 //            logger.warn("C1: vdis generated so far: $generatedSoFar and the new value of vdisgenerated: ${vdisGenerated.get()}")
@@ -934,7 +1079,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             allToAllDepthPointer, mpiPointer)
             end = System.nanoTime() - start
 
-//            logger.info("Distributing VDIs took: ${end/1e9}")
+            logger.info("Distributing VDIs took: ${end/1e9}")
 
 
 //            logger.info("Back in the management function")
@@ -981,7 +1126,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 rank, commSize, gatherColorPointer, gatherDepthPointer, mpiPointer) //3 * commSize because the supersegments here contain only 1 element
             end = System.nanoTime() - start
 
-//            logger.info("Gather took: ${end/1e9}")
+            logger.info("Gather took: ${end/1e9}")
 
 
             if(saveFinal && (rank == 0)) {
@@ -1005,7 +1150,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
             end_complete = System.nanoTime() - start_complete
 
-//            logger.info("Whole iteration took: ${end_complete/1e9}")
+            logger.info("Whole iteration took: ${end_complete/1e9}")
         }
     }
 
@@ -1050,23 +1195,23 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 ////                }
 //            }
 //        }
-
         val supersegmentsRecvd = (vdiSetColour.remaining() / (4*4)).toFloat() //including potential 0 supersegments that were padded
 
         logger.info("Rank: $rank: total supsegs recvd (including 0s): $supersegmentsRecvd")
 
         for (i in 0 until commSize) {
             compositor.totalSupersegmentsFrom[i] = colorCounts[i] / (4 * 4)
-            logger.info("Rank $rank: totalSupersegmentsFrom $i: ${colorCounts[i] / (4 * 4)}")
+            logger.debug("Rank $rank: totalSupersegmentsFrom $i: ${colorCounts[i] / (4 * 4)}")
         }
 
-
-        logger.info("Dumping to file in the composite function")
-        SystemHelpers.dumpToFile(vdiSetColour, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_col_rle")
-        SystemHelpers.dumpToFile(vdiSetDepth, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_depth_rle")
-        SystemHelpers.dumpToFile(prefixSet, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_prefix")
-        logger.info("File dumped")
-        cnt_distr++
+        if(!benchmarking) {
+            logger.info("Dumping to file in the composite function")
+            SystemHelpers.dumpToFile(vdiSetColour, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_col_rle")
+            SystemHelpers.dumpToFile(vdiSetDepth, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_depth_rle")
+            SystemHelpers.dumpToFile(prefixSet, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_prefix")
+            logger.info("File dumped")
+            cnt_distr++
+        }
 
         compositor.material().textures["VDIsColor"] = Texture(Vector3i(512, 512, ceil((supersegmentsRecvd / (512*512)).toDouble()).toInt()), 4, contents = vdiSetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
             type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
@@ -1077,6 +1222,10 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         compositor.material().textures["VDIsPrefix"] = Texture(Vector3i(windowHeight, windowWidth, 1), 1, contents = prefixSet, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
             type = IntType(), mipmap = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour
         )
+
+        val view = cam.spatial().getTransformation()
+        compositor.ViewOriginal = view
+        compositor.invViewOriginal = Matrix4f(view).invert()
 
         vdisDistributed.incrementAndGet()
 
@@ -1111,13 +1260,13 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 //            file.close()
 //        }
 
-//        if(!benchmarking) {
+        if(!benchmarking) {
             logger.info("Dumping to file in the composite function")
             SystemHelpers.dumpToFile(vdiSetColour, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_col")
             SystemHelpers.dumpToFile(vdiSetDepth, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_depth")
             logger.info("File dumped")
             cnt_distr++
-//        }
+        }
 //        }
 
         if(generateVDIs) {
@@ -1133,6 +1282,10 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             compositor.material().textures["VDIsDepth"] = Texture(Vector3i(windowHeight, windowWidth, 1), 4, contents = vdiSetDepth, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
         }
 //        logger.info("Updated the textures to be composited")
+
+        val view = cam.spatial().getTransformation()
+        compositor.ViewOriginal = view
+        compositor.invViewOriginal = Matrix4f(view).invert()
 
         vdisDistributed.incrementAndGet()
 
