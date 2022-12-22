@@ -906,7 +906,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
 
             if(saveFinal && (rank == 0)) {
-                val file = FileOutputStream(File(basePath + "${dataset}vdi_${windowWidth}_${windowHeight}_${maxSupersegments}_${vo}_dump$vdisGathered"))
+                val file = FileOutputStream(File(basePath + "${dataset}vdi_${windowWidth}_${windowHeight}_${maxSupersegments}_${vo.toInt()}_dump$vdisGathered"))
                 VDIDataIO.write(vdiData, file)
                 logger.debug("written the dump $vdisGathered")
                 file.close()
