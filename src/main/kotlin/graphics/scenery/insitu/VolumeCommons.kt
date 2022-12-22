@@ -150,8 +150,11 @@ class VolumeCommons (val windowWidth: Int, val windowHeight: Int, val dataset: S
                     position = Vector3f( 1.897E+0f, -5.994E-1f, -1.899E+0f) //V1 for Boneplug
                     rotation = Quaternionf( 5.867E-5,  9.998E-1,  1.919E-2,  4.404E-3)
                 } else if (dataset == "Rotstrat") {
-                    position = Vector3f(4.908E+0f, -4.931E-1f, -2.563E+0f) //V1 for Simulation
-                    rotation = Quaternionf( 3.887E-2, -9.470E-1, -1.255E-1,  2.931E-1)
+                    position = Vector3f( 2.799E+0f, -6.156E+0f, -2.641E+0f) //V1 for Rotstrat
+                    rotation = Quaternionf(-3.585E-2, -9.257E-1,  3.656E-1,  9.076E-2)
+                } else if (dataset == "Isotropic") {
+                    position = Vector3f( 2.799E+0f, -6.156E+0f, -2.641E+0f) //V1 for Isotropic
+                    rotation = Quaternionf(-3.585E-2, -9.257E-1,  3.656E-1,  9.076E-2)
                 }
 
 //                position = Vector3f( 3.183E+0f, -5.973E-1f, -1.475E+0f) //V2 for Beechnut
@@ -221,6 +224,22 @@ class VolumeCommons (val windowWidth: Int, val windowHeight: Int, val dataset: S
             }
         }
         return tf
+    }
+
+    fun setColorMap(volume: BufferedVolume) {
+        volume.name = "volume"
+        volume.colormap = Colormap.get("hot")
+        if(dataset == "Rotstrat") {
+            volume.colormap = Colormap.get("jet")
+            volume.converterSetups[0].setDisplayRange(25000.0, 50000.0)
+        } else if(dataset == "Beechnut") {
+            volume.converterSetups[0].setDisplayRange(0.0, 33465.0)
+        } else if(dataset == "Simulation") {
+            volume.colormap = Colormap.get("rb")
+            volume.converterSetups[0].setDisplayRange(50.0, 205.0)
+        } else if(dataset == "Rayleigh_Taylor") {
+            volume.colormap = Colormap.get("rbdarker")
+        }
     }
 
     fun setupVolumes(volumeList: ArrayList<BufferedVolume>, tf: TransferFunction, hub: Hub): RichNode {
