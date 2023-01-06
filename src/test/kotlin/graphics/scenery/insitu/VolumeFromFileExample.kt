@@ -135,6 +135,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
             scene.addChild(light)
         }
 
+        settings.set("VideoEncoder.Format", "HEVC")
+        settings.set("VideoEncoder.Bitrate", 2000000)
+
 //        thread {
 //            while (!sceneInitialized()) {
 //                Thread.sleep(200)
@@ -212,12 +215,77 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 //            camFlyThrough()
 //        }
 
+//        thread {
+//            dynamicRunBenchmark()
+//        }
+
     }
 //    override fun inputSetup() {
 //        super.inputSetup()
 //
 //
 //    }
+
+    fun dynamicRunBenchmark() {
+        val r = (hub.get(SceneryElement.Renderer) as Renderer)
+
+        Thread.sleep(5000)
+
+        var frameCount = 0
+        var frameEnd: Long
+
+        var frameTime: Float
+        var avgFrameTime = 0f
+
+        val frameTimeList = mutableListOf<Float>()
+
+        var frameStart = System.nanoTime()
+        var firstFrame = true
+
+//        r.recordMovie("trial.mp4")
+
+        (r as VulkanRenderer).postRenderLambdas.add {
+            if(frameCount%10 == 0) {
+                rotateCamera(1f, dataset=="Simulation")
+            }
+        }
+
+        (r as VulkanRenderer).postRenderLambdas.add {
+
+            if(firstFrame) {
+                firstFrame = false
+            } else {
+
+                frameEnd = System.nanoTime()
+                frameTime = (frameEnd - frameStart) / 1e9f
+
+                logger.info("Frame time was: $frameTime")
+
+                frameCount++
+                frameTimeList.add(frameTime)
+
+
+                if (frameCount == 500) {
+                    val fw = FileWriter("/datapot/aryaman/owncloud/VDI_Benchmarks/${dataset}_volume_frame_times.csv", false)
+                    val bw = BufferedWriter(fw)
+
+                    frameTimeList.forEach {
+                        bw.append("${it}, ")
+                    }
+
+                    bw.flush()
+
+                    logger.warn("The file has been written!")
+
+//                    renderer!!.recordMovie()
+                    Thread.sleep(1000)
+
+                    renderer!!.shouldClose = true
+                }
+            }
+            frameStart = System.nanoTime()
+        }
+    }
 
     fun camFlyThrough() {
         val r = (hub.get(SceneryElement.Renderer) as Renderer)
@@ -529,7 +597,142 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
         val compressor = VDICompressor()
         val compressionTool = VDICompressor.CompressionTool.LZ4
 
-        while (true) {
+        var firstFrame = true
+
+        if(transmitVDIs) {
+
+
+            (renderer as? VulkanRenderer)?.postRenderLambdas?.add {
+                if (!firstFrame) {
+
+
+                    subVDIColorBuffer = subVDIColor.contents
+                    subVDIDepthBuffer = subVDIDepth!!.contents
+                    gridCellsBuff = gridCells.contents
+
+                    val camera = cam
+
+                    val model = volumeList.first().spatial().world
+
+                    val vdiData = VDIData(
+                        VDIBufferSizes(),
+                        VDIMetadata(
+                            index = cnt,
+                            projection = camera.spatial().projection,
+                            view = camera.spatial().getTransformation(),
+                            volumeDimensions = volumeCommons.volumeDims,
+                            model = model,
+                            nw = volumeList.first().volumeManager.shaderProperties["nw"] as Float,
+                            windowDimensions = Vector2i(camera.width, camera.height)
+                        )
+                    )
+
+                    val colorSize = windowHeight * windowWidth * maxSupersegments * 4 * 4
+                    val depthSize = windowWidth * windowHeight * maxSupersegments * 4 * 2
+
+                    if (subVDIColorBuffer!!.remaining() != colorSize || subVDIDepthBuffer!!.remaining() != depthSize) {
+                        logger.warn("Skipping transmission this frame due to inconsistency in buffer size")
+                    }
+
+                    val compressionTime = measureNanoTime {
+                        if (compressedColor == null) {
+                            compressedColor =
+                                MemoryUtil.memAlloc(compressor.returnCompressBound(colorSize.toLong(), compressionTool))
+                        }
+                        val compressedColorLength =
+                            compressor.compress(compressedColor!!, subVDIColorBuffer!!, 3, compressionTool)
+                        compressedColor!!.limit(compressedColorLength.toInt())
+
+                        vdiData.bufferSizes.colorSize = compressedColorLength
+
+                        if (separateDepth) {
+                            if (compressedDepth == null) {
+                                compressedDepth =
+                                    MemoryUtil.memAlloc(
+                                        compressor.returnCompressBound(
+                                            depthSize.toLong(),
+                                            compressionTool
+                                        )
+                                    )
+                            }
+                            val compressedDepthLength =
+                                compressor.compress(compressedDepth!!, subVDIDepthBuffer!!, 3, compressionTool)
+                            compressedDepth!!.limit(compressedDepthLength.toInt())
+
+                            vdiData.bufferSizes.depthSize = compressedDepthLength
+                        }
+                    }
+
+                    logger.info("Time taken in compressing VDI: ${compressionTime / 1e9}")
+
+                    val publishTime = measureNanoTime {
+                        val metadataOut = ByteArrayOutputStream()
+                        VDIDataIO.write(vdiData, metadataOut)
+
+
+                        val metadataBytes = metadataOut.toByteArray()
+
+                        logger.info("Size of VDI data is: ${metadataBytes.size}")
+
+                        val vdiDataSize = metadataBytes.size.toString().toByteArray(Charsets.US_ASCII)
+
+                        var messageLength = vdiDataSize.size + metadataBytes.size + compressedColor!!.remaining()
+
+                        if (separateDepth) {
+                            messageLength += compressedDepth!!.remaining()
+                        }
+
+                        val message = ByteArray(messageLength)
+
+                        vdiDataSize.copyInto(message)
+
+                        metadataBytes.copyInto(message, vdiDataSize.size)
+
+                        compressedColor!!.slice()
+                            .get(message, vdiDataSize.size + metadataBytes.size, compressedColor!!.remaining())
+
+                        if (separateDepth) {
+                            compressedDepth!!.slice().get(
+                                message,
+                                vdiDataSize.size + metadataBytes.size + compressedColor!!.remaining(),
+                                compressedDepth!!.remaining()
+                            )
+
+                            compressedDepth!!.limit(compressedDepth!!.capacity())
+
+                        }
+
+                        compressedColor!!.limit(compressedColor!!.capacity())
+
+                        val sent = publisher.send(message)
+
+                        if (!sent) {
+                            logger.warn("There was a ZeroMQ error in queuing the message to send")
+                        }
+
+                    }
+
+                    logger.info("Whole publishing process took: ${publishTime / 1e9}")
+                }
+                firstFrame = false
+            }
+
+
+            (renderer as? VulkanRenderer)?.postRenderLambdas?.add {
+                logger.info("rendering is running!")
+                val payload = subscriber.recv(0)
+
+                if (payload != null) {
+                    val deserialized: List<Any> =
+                        objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
+
+                    cam.spatial().rotation = stringToQuaternion(deserialized[0].toString())
+                    cam.spatial().position = stringToVector3f(deserialized[1].toString())
+                }
+            }
+        }
+
+        while (true) { //TODO: convert VDI storage also to postRenderLambda
             tGeneration.start = System.nanoTime()
             while(colorCnt.get() == prevColor || depthCnt.get() == prevDepth) {
                 Thread.sleep(5)
@@ -589,88 +792,6 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
             )
 
             if(transmitVDIs) {
-
-                val colorSize = windowHeight * windowWidth * maxSupersegments * 4 * 4
-                val depthSize = windowWidth * windowHeight * maxSupersegments * 4 * 2
-
-                if(subVDIColorBuffer!!.remaining() != colorSize || subVDIDepthBuffer!!.remaining() != depthSize) {
-                    logger.warn("Skipping transmission this frame due to inconsistency in buffer size")
-                }
-
-                val compressionTime = measureNanoTime {
-                    if(compressedColor == null) {
-                        compressedColor = MemoryUtil.memAlloc(compressor.returnCompressBound(colorSize.toLong(), compressionTool))
-                    }
-                    val compressedColorLength = compressor.compress(compressedColor!!, subVDIColorBuffer!!, 3, compressionTool)
-                    compressedColor!!.limit(compressedColorLength.toInt())
-
-                    vdiData.bufferSizes.colorSize = compressedColorLength
-
-                    if(separateDepth) {
-                        if(compressedDepth == null) {
-                            compressedDepth = MemoryUtil.memAlloc(compressor.returnCompressBound(depthSize.toLong(), compressionTool))
-                        }
-                        val compressedDepthLength = compressor.compress(compressedDepth!!, subVDIDepthBuffer!!, 3, compressionTool)
-                        compressedDepth!!.limit(compressedDepthLength.toInt())
-
-                        vdiData.bufferSizes.depthSize = compressedDepthLength
-                    }
-                }
-
-                logger.info("Time taken in compressing VDI: ${compressionTime/1e9}")
-
-                val publishTime = measureNanoTime {
-                    val metadataOut = ByteArrayOutputStream()
-                    VDIDataIO.write(vdiData, metadataOut)
-
-                    val metadataBytes = metadataOut.toByteArray()
-
-                    logger.info("Size of VDI data is: ${metadataBytes.size}")
-
-                    val vdiDataSize = metadataBytes.size.toString().toByteArray(Charsets.US_ASCII)
-
-                    var messageLength = vdiDataSize.size + metadataBytes.size + compressedColor!!.remaining()
-
-                    if(separateDepth) {
-                        messageLength += compressedDepth!!.remaining()
-                    }
-
-                    val message = ByteArray(messageLength)
-
-                    vdiDataSize.copyInto(message)
-
-                    metadataBytes.copyInto(message, vdiDataSize.size)
-
-                    compressedColor!!.slice().get(message, vdiDataSize.size + metadataBytes.size, compressedColor!!.remaining())
-
-                    if(separateDepth) {
-                        compressedDepth!!.slice().get(message, vdiDataSize.size + metadataBytes.size + compressedColor!!.remaining(), compressedDepth!!.remaining())
-
-                        compressedDepth!!.limit(compressedDepth!!.capacity())
-
-                    }
-
-                    compressedColor!!.limit(compressedColor!!.capacity())
-
-                    val sent = publisher.send(message)
-
-                    if(!sent) {
-                        logger.warn("There was a ZeroMQ error in queuing the message to send")
-                    }
-
-                }
-
-                logger.info("Whole publishing process took: ${publishTime/1e9}")
-
-                val payload = subscriber.recv(0)
-
-                if(payload != null) {
-                    val deserialized: List<Any> = objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
-
-                    cam.spatial().rotation = stringToQuaternion(deserialized[0].toString())
-                    cam.spatial().position = stringToVector3f(deserialized[1].toString())
-                }
-
             }
 
             if(storeVDIs) {
