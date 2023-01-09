@@ -5,22 +5,15 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import graphics.scenery.*
 import graphics.scenery.backends.Renderer
 import graphics.scenery.controls.TrackedStereoGlasses
-import graphics.scenery.backends.Shaders
 import graphics.scenery.backends.vulkan.VulkanRenderer
 import graphics.scenery.backends.vulkan.VulkanTexture
-import graphics.scenery.compute.ComputeMetadata
-import graphics.scenery.compute.InvocationType
 import graphics.scenery.textures.Texture
-import graphics.scenery.utils.Image
 import graphics.scenery.utils.SystemHelpers
 import graphics.scenery.utils.extensions.minus
 import graphics.scenery.utils.extensions.plus
 import graphics.scenery.utils.extensions.times
 import graphics.scenery.volumes.*
 import graphics.scenery.volumes.vdi.*
-import net.imglib2.type.numeric.integer.IntType
-import net.imglib2.type.numeric.integer.UnsignedIntType
-import net.imglib2.type.numeric.real.FloatType
 import org.joml.*
 import org.lwjgl.system.MemoryUtil
 import org.msgpack.jackson.dataformat.MessagePackFactory
@@ -29,8 +22,6 @@ import org.zeromq.SocketType
 import org.zeromq.ZContext
 import org.zeromq.ZMQ
 import org.zeromq.ZMQException
-import tpietzsch.shadergen.generate.SegmentTemplate
-import tpietzsch.shadergen.generate.SegmentType
 import java.io.*
 import java.lang.Math
 import java.nio.ByteBuffer
@@ -48,7 +39,7 @@ import kotlin.system.measureNanoTime
 
 data class Timer(var start: Long, var end: Long)
 
-class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty("VolumeBenchmark.WindowWidth")?.toInt()?: 1280, System.getProperty("VolumeBenchmark.WindowHeight")?.toInt() ?: 720, wantREPL = false) {
+class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty("VolumeBenchmark.WindowWidth")?.toInt()?: 700, System.getProperty("VolumeBenchmark.WindowHeight")?.toInt() ?: 700, wantREPL = false) {
     var hmd: TrackedStereoGlasses? = null
 
     val context: ZContext = ZContext(4)
@@ -56,8 +47,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
     lateinit var volumeManager: VolumeManager
     lateinit var volumeCommons: VolumeCommons
     val generateVDIs = System.getProperty("VolumeBenchmark.GenerateVDI")?.toBoolean() ?: true
-    val storeVDIs = System.getProperty("VolumeBenchmark.StoreVDIs")?.toBoolean()?: true
-    val transmitVDIs = System.getProperty("VolumeBenchmark.TransmitVDIs")?.toBoolean()?: false
+    val storeVDIs = System.getProperty("VolumeBenchmark.StoreVDIs")?.toBoolean()?: false
+    val transmitVDIs = System.getProperty("VolumeBenchmark.TransmitVDIs")?.toBoolean()?: true
     val vo = System.getProperty("VolumeBenchmark.Vo")?.toFloat()?.toInt() ?: 0
     val separateDepth = true
     val colors32bit = true
@@ -581,7 +572,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
         val subscriber: ZMQ.Socket = context.createSocket(SocketType.SUB)
         subscriber.isConflate = true
 //        val address = "tcp://localhost:6655"
-        val address = "tcp://10.1.31.61:6655"
+        val address = "tcp://10.1.36.78:6655"
+        //IPADDRESS
         try {
             subscriber.connect(address)
         } catch (e: ZMQException) {
@@ -630,7 +622,9 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                     val colorSize = windowHeight * windowWidth * maxSupersegments * 4 * 4
                     val depthSize = windowWidth * windowHeight * maxSupersegments * 4 * 2
 
-                    if (subVDIColorBuffer!!.remaining() != colorSize || subVDIDepthBuffer!!.remaining() != depthSize) {
+                    val accelSize = (windowWidth / 8) * (windowHeight / 8) * maxSupersegments * 4
+
+                    if (subVDIColorBuffer!!.remaining() != colorSize || subVDIDepthBuffer!!.remaining() != depthSize || gridCellsBuff!!.remaining() != accelSize) {
                         logger.warn("Skipping transmission this frame due to inconsistency in buffer size")
                     }
 
@@ -682,6 +676,8 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                             messageLength += compressedDepth!!.remaining()
                         }
 
+                        messageLength += accelSize
+
                         val message = ByteArray(messageLength)
 
                         vdiDataSize.copyInto(message)
@@ -697,6 +693,11 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                                 vdiDataSize.size + metadataBytes.size + compressedColor!!.remaining(),
                                 compressedDepth!!.remaining()
                             )
+
+                            vdiData.bufferSizes.accelGridSize = accelSize.toLong()
+
+                            gridCellsBuff!!.get(message, vdiDataSize.size + metadataBytes.size + compressedColor!!.remaining() +
+                                    compressedDepth!!.remaining(), gridCellsBuff!!.remaining())
 
                             compressedDepth!!.limit(compressedDepth!!.capacity())
 
