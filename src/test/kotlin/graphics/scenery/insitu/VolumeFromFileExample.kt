@@ -21,9 +21,11 @@ import org.scijava.ui.behaviour.ClickBehaviour
 import org.zeromq.SocketType
 import org.zeromq.ZContext
 import org.zeromq.ZMQ
+import org.zeromq.ZMQ.DONTWAIT
 import org.zeromq.ZMQException
 import java.io.*
 import java.lang.Math
+import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -39,15 +41,15 @@ import kotlin.system.measureNanoTime
 
 data class Timer(var start: Long, var end: Long)
 
-class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty("VolumeBenchmark.WindowWidth")?.toInt()?: 800, System.getProperty("VolumeBenchmark.WindowHeight")?.toInt() ?: 800, wantREPL = false) {
+class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty("VolumeBenchmark.WindowWidth")?.toInt()?: 400, System.getProperty("VolumeBenchmark.WindowHeight")?.toInt() ?: 400, wantREPL = false) {
     var hmd: TrackedStereoGlasses? = null
 
     val context: ZContext = ZContext(4)
 
     lateinit var volumeManager: VolumeManager
     lateinit var volumeCommons: VolumeCommons
-    val generateVDIs = System.getProperty("VolumeBenchmark.GenerateVDI")?.toBoolean() ?: true
-    val storeVDIs = System.getProperty("VolumeBenchmark.StoreVDIs")?.toBoolean()?: false
+    val generateVDIs = System.getProperty("VolumeBenchmark.GenerateVDI")?.toBoolean() ?: false
+    val storeVDIs = System.getProperty("VolumeBenchmark.StoreVDIs")?.toBoolean()?: true
     val transmitVDIs = System.getProperty("VolumeBenchmark.TransmitVDIs")?.toBoolean()?: true
     val vo = System.getProperty("VolumeBenchmark.Vo")?.toFloat()?.toInt() ?: 0
     val separateDepth = true
@@ -126,8 +128,43 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
             scene.addChild(light)
         }
 
-        settings.set("VideoEncoder.Format", "HEVC")
-        settings.set("VideoEncoder.Bitrate", 2000000)
+//        settings.set("VideoEncoder.Format", "HEVC")
+//        settings.set("VideoEncoder.Bitrate", 2000000)
+
+        if(transmitVDIs) {
+            if(!generateVDIs) {
+                //transmit a regular video stream
+                settings.set("VideoEncoder.StreamVideo", true)
+                renderer?.recordMovie()
+            }
+            val subscriber: ZMQ.Socket = context.createSocket(SocketType.SUB)
+            subscriber.isConflate = true
+//        val address = "tcp://localhost:6655"
+            val address = "tcp://10.1.36.78:6655"
+            //IPADDRESS
+            try {
+                subscriber.connect(address)
+            } catch (e: ZMQException) {
+                logger.warn("ZMQ Binding failed.")
+            }
+            subscriber.subscribe(ZMQ.SUBSCRIPTION_ALL)
+
+            val objectMapper = ObjectMapper(MessagePackFactory())
+
+            (renderer as? VulkanRenderer)?.postRenderLambdas?.add {
+                logger.info("rendering is running!")
+                val payload = subscriber.recv(DONTWAIT)
+
+                if (payload != null) {
+                    val deserialized: List<Any> =
+                        objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
+
+                    cam.spatial().rotation = stringToQuaternion(deserialized[0].toString())
+                    cam.spatial().position = stringToVector3f(deserialized[1].toString())
+                }
+            }
+        }
+
 
 //        thread {
 //            while (!sceneInitialized()) {
@@ -569,18 +606,6 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 
         val publisher = createPublisher()
 
-        val subscriber: ZMQ.Socket = context.createSocket(SocketType.SUB)
-        subscriber.isConflate = true
-//        val address = "tcp://localhost:6655"
-        val address = "tcp://10.1.36.78:6655"
-        //IPADDRESS
-        try {
-            subscriber.connect(address)
-        } catch (e: ZMQException) {
-            logger.warn("ZMQ Binding failed.")
-        }
-        subscriber.subscribe(ZMQ.SUBSCRIPTION_ALL)
-
         val objectMapper = ObjectMapper(MessagePackFactory())
 
         var compressedColor:  ByteBuffer? = null
@@ -717,20 +742,6 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                     logger.info("Whole publishing process took: ${publishTime / 1e9}")
                 }
                 firstFrame = false
-            }
-
-
-            (renderer as? VulkanRenderer)?.postRenderLambdas?.add {
-                logger.info("rendering is running!")
-                val payload = subscriber.recv(0)
-
-                if (payload != null) {
-                    val deserialized: List<Any> =
-                        objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
-
-                    cam.spatial().rotation = stringToQuaternion(deserialized[0].toString())
-                    cam.spatial().position = stringToVector3f(deserialized[1].toString())
-                }
             }
         }
 
