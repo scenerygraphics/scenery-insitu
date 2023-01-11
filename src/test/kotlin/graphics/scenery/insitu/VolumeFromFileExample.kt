@@ -158,11 +158,16 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                 if(generateVDIs) {
                     logger.info("rendering is running!")
                 }
+
+                val start = System.nanoTime()
                 val payload = if(frameCount < 100) {
                     subscriber.recv(DONTWAIT)
                 } else {
                     subscriber.recv(0)
                 }
+                val end = System.nanoTime()
+
+                logger.info("Time waiting for message: ${(start-end)/1e9}")
 
                 if (payload != null) {
                     val deserialized: List<Any> =
