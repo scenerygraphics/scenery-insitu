@@ -41,22 +41,22 @@ import kotlin.system.measureNanoTime
 
 data class Timer(var start: Long, var end: Long)
 
-class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty("VolumeBenchmark.WindowWidth")?.toInt()?: 600, System.getProperty("VolumeBenchmark.WindowHeight")?.toInt() ?: 600, wantREPL = false) {
+class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty("VolumeBenchmark.WindowWidth")?.toInt()?: 1920, System.getProperty("VolumeBenchmark.WindowHeight")?.toInt() ?: 1080, wantREPL = false) {
     var hmd: TrackedStereoGlasses? = null
 
     val context: ZContext = ZContext(4)
 
     lateinit var volumeManager: VolumeManager
     lateinit var volumeCommons: VolumeCommons
-    val generateVDIs = System.getProperty("VolumeBenchmark.GenerateVDI")?.toBoolean() ?: false
-    val storeVDIs = System.getProperty("VolumeBenchmark.StoreVDIs")?.toBoolean()?: true
+    val generateVDIs = System.getProperty("VolumeBenchmark.GenerateVDI")?.toBoolean() ?: true
+    val storeVDIs = System.getProperty("VolumeBenchmark.StoreVDIs")?.toBoolean()?: false
     val transmitVDIs = System.getProperty("VolumeBenchmark.TransmitVDIs")?.toBoolean()?: true
     val vo = System.getProperty("VolumeBenchmark.Vo")?.toFloat()?.toInt() ?: 0
     val separateDepth = true
     val colors32bit = true
     val world_abs = false
     val rleInfo = false
-    val dataset = System.getProperty("VolumeBenchmark.Dataset")?.toString()?: "Kingsnake"
+    val dataset = System.getProperty("VolumeBenchmark.Dataset")?.toString()?: "Simulation"
 
     val VDIsGenerated = AtomicInteger(0)
 
@@ -160,14 +160,14 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                 }
 
                 val start = System.nanoTime()
-                val payload = if(frameCount < 100) {
+                val payload = if(frameCount < 100 && !generateVDIs) {
                     subscriber.recv(DONTWAIT)
                 } else {
                     subscriber.recv(0)
                 }
                 val end = System.nanoTime()
 
-                logger.info("Time waiting for message: ${(start-end)/1e9}")
+                logger.info("Time waiting for message: ${(end-start)/1e9}")
 
                 if (payload != null) {
                     val deserialized: List<Any> =
@@ -181,41 +181,6 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                 frameCount++
             }
         }
-
-
-//        thread {
-//            while (!sceneInitialized()) {
-//                Thread.sleep(200)
-//            }
-//            while (true) {
-//                val dummyVolume = scene.find("DummyVolume") as? DummyVolume
-//                val clientCam = scene.find("ClientCamera") as? DetachedHeadCamera
-//                if (dummyVolume != null && clientCam != null) {
-//                    volumeList.first().networkCallback += {  //TODO: needs to be repeated for all volume slices
-//                        if (volumeList.first().transferFunction != dummyVolume.transferFunction) {
-//                            volumeList.first().transferFunction = dummyVolume.transferFunction
-//                        }
-//                        /*
-//                    if(volume.colormap != dummyVolume.colormap) {
-//                        volume.colormap = dummyVolume.colormap
-//                    }
-//                    if(volume.slicingMode != dummyVolume.slicingMode) {
-//                        volume.slicingMode = dummyVolume.slicingMode
-//                    }*/
-//                    }
-//                    cam.update += {
-//                        cam.spatial().position = clientCam.spatial().position
-//                        cam.spatial().rotation = clientCam.spatial().rotation
-//                    }
-//                    break;
-//                }
-//            }
-//
-//            settings.set("VideoEncoder.StreamVideo", true)
-//            settings.set("VideoEncoder.StreamingAddress", "udp://${InetAddress.getLocalHost().hostAddress}:3337")
-////            settings.set("VideoEncoder.StreamingAddress", "udp://10.1.224.71:3337")
-//            renderer?.recordMovie()
-//        }
 
         thread {
             if (generateVDIs) {
@@ -233,24 +198,6 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 //            dynamicSubsampling()
 //        }
 
-//        thread {
-//            while (true) {
-//                Thread.sleep(2000)
-//                logger.info("Assigning transfer fn")
-//                volumeList[0].transferFunction = volumeList[1].transferFunction
-//            }
-//        }
-
-//        thread {
-//            while(true)
-//            {
-//                Thread.sleep(2000)
-//                println("${cam.spatial().position}")
-//                println("${cam.spatial().rotation}")
-//
-//                logger.info("near plane: ${cam.nearPlaneDistance} and far: ${cam.farPlaneDistance}")
-//            }
-//        }
         thread {
             Thread.sleep(closeAfter)
             renderer?.shouldClose = true
@@ -265,11 +212,6 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 //        }
 
     }
-//    override fun inputSetup() {
-//        super.inputSetup()
-//
-//
-//    }
 
     fun dynamicRunBenchmark() {
         val r = (hub.get(SceneryElement.Renderer) as Renderer)
@@ -762,7 +704,7 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
             }
         }
 
-        while (true) { //TODO: convert VDI storage also to postRenderLambda
+        while (storeVDIs) { //TODO: convert VDI storage also to postRenderLambda
             tGeneration.start = System.nanoTime()
             while(colorCnt.get() == prevColor || depthCnt.get() == prevDepth) {
                 Thread.sleep(5)
@@ -820,9 +762,6 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
                     windowDimensions = Vector2i(camera.width, camera.height)
                 )
             )
-
-            if(transmitVDIs) {
-            }
 
             if(storeVDIs) {
                 if(cnt == 4) { //store the 4th VDI
