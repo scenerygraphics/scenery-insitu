@@ -135,12 +135,13 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
             if(!generateVDIs) {
                 //transmit a regular video stream
                 settings.set("VideoEncoder.StreamVideo", true)
+                settings.set("VideoEncoder.StreamingAddress", "rtp://10.1.33.211:5004")
                 renderer?.recordMovie()
             }
             val subscriber: ZMQ.Socket = context.createSocket(SocketType.SUB)
             subscriber.isConflate = true
 //        val address = "tcp://localhost:6655"
-            val address = "tcp://10.1.36.78:6655"
+            val address = "tcp://10.1.33.211:6655"
             //IPADDRESS
             try {
                 subscriber.connect(address)
@@ -151,19 +152,28 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 
             val objectMapper = ObjectMapper(MessagePackFactory())
 
+            var frameCount = 0
+
             (renderer as? VulkanRenderer)?.postRenderLambdas?.add {
                 if(generateVDIs) {
                     logger.info("rendering is running!")
                 }
-                val payload = subscriber.recv(DONTWAIT)
+                val payload = if(frameCount < 100) {
+                    subscriber.recv(DONTWAIT)
+                } else {
+                    subscriber.recv(0)
+                }
 
                 if (payload != null) {
                     val deserialized: List<Any> =
                         objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
 
+                    logger.info("Applying the camera change: $frameCount!")
+
                     cam.spatial().rotation = stringToQuaternion(deserialized[0].toString())
                     cam.spatial().position = stringToVector3f(deserialized[1].toString())
                 }
+                frameCount++
             }
         }
 
