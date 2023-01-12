@@ -131,6 +131,15 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 //        settings.set("VideoEncoder.Format", "HEVC")
 //        settings.set("VideoEncoder.Bitrate", 2000000)
 
+        if(!generateVDIs && transmitVDIs) {
+            //transmit a regular video stream
+            settings.set("VideoEncoder.StreamVideo", true)
+            settings.set("VideoEncoder.StreamingAddress", "rtp://10.1.33.211:5004")
+            renderer?.recordMovie()
+            setupSubscription()
+        }
+
+
         thread {
             if (generateVDIs) {
                 manageVDIGeneration()
@@ -458,6 +467,54 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
         return Vector3f(mElements[0], mElements[1], mElements[2])
     }
 
+    fun setupSubscription() {
+        val subscriber: ZMQ.Socket = context.createSocket(SocketType.SUB)
+        subscriber.isConflate = true
+//        val address = "tcp://localhost:6655"
+        val address = "tcp://10.1.33.211:6655"
+        //IPADDRESS
+        try {
+            subscriber.connect(address)
+        } catch (e: ZMQException) {
+            logger.warn("ZMQ Binding failed.")
+        }
+        subscriber.subscribe(ZMQ.SUBSCRIPTION_ALL)
+
+        val objectMapper = ObjectMapper(MessagePackFactory())
+
+        var frameCount = 0
+
+        var firstFrame = true
+
+        (renderer as? VulkanRenderer)?.postRenderLambdas?.add {
+            if(!firstFrame) {
+
+                if(generateVDIs) {
+                    logger.info("rendering is running!")
+                }
+
+                val start = System.nanoTime()
+                val payload = subscriber.recv(0)
+
+                val end = System.nanoTime()
+
+                logger.info("Time waiting for message: ${(end-start)/1e9}")
+
+                if (payload != null) {
+                    val deserialized: List<Any> =
+                        objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
+
+                    logger.info("Applying the camera change: $frameCount!")
+
+                    cam.spatial().rotation = stringToQuaternion(deserialized[0].toString())
+                    cam.spatial().position = stringToVector3f(deserialized[1].toString())
+                }
+                frameCount++
+            }
+            firstFrame = false
+        }
+    }
+
     private fun manageVDIGeneration() {
         var subVDIDepthBuffer: ByteBuffer? = null
         var subVDIColorBuffer: ByteBuffer?
@@ -649,60 +706,10 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 
                     logger.info("Whole publishing process took: ${publishTime / 1e9}")
                 }
-            }
-
-            if(!generateVDIs) {
-                //transmit a regular video stream
-                settings.set("VideoEncoder.StreamVideo", true)
-                settings.set("VideoEncoder.StreamingAddress", "rtp://10.1.33.211:5004")
-                renderer?.recordMovie()
-            }
-            val subscriber: ZMQ.Socket = context.createSocket(SocketType.SUB)
-            subscriber.isConflate = true
-//        val address = "tcp://localhost:6655"
-            val address = "tcp://10.1.33.211:6655"
-            //IPADDRESS
-            try {
-                subscriber.connect(address)
-            } catch (e: ZMQException) {
-                logger.warn("ZMQ Binding failed.")
-            }
-            subscriber.subscribe(ZMQ.SUBSCRIPTION_ALL)
-
-            val objectMapper = ObjectMapper(MessagePackFactory())
-
-            var frameCount = 0
-
-            (renderer as? VulkanRenderer)?.postRenderLambdas?.add {
-                if(!firstFrame) {
-
-                    if(generateVDIs) {
-                        logger.info("rendering is running!")
-                    }
-
-                    val start = System.nanoTime()
-                    val payload = if(frameCount < 100 && !generateVDIs) {
-                        subscriber.recv(DONTWAIT)
-                    } else {
-                        subscriber.recv(0)
-                    }
-                    val end = System.nanoTime()
-
-                    logger.info("Time waiting for message: ${(end-start)/1e9}")
-
-                    if (payload != null) {
-                        val deserialized: List<Any> =
-                            objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
-
-                        logger.info("Applying the camera change: $frameCount!")
-
-                        cam.spatial().rotation = stringToQuaternion(deserialized[0].toString())
-                        cam.spatial().position = stringToVector3f(deserialized[1].toString())
-                    }
-                    frameCount++
-                }
                 firstFrame = false
             }
+
+            setupSubscription()
         }
 
         while (storeVDIs) { //TODO: convert VDI storage also to postRenderLambda
