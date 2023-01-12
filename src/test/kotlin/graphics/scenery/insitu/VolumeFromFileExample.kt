@@ -649,7 +649,6 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
 
                     logger.info("Whole publishing process took: ${publishTime / 1e9}")
                 }
-                firstFrame = false
             }
 
             if(!generateVDIs) {
@@ -675,32 +674,35 @@ class VolumeFromFileExample: SceneryBase("Volume Rendering", System.getProperty(
             var frameCount = 0
 
             (renderer as? VulkanRenderer)?.postRenderLambdas?.add {
-                if(generateVDIs) {
-                    logger.info("rendering is running!")
+                if(!firstFrame) {
+
+                    if(generateVDIs) {
+                        logger.info("rendering is running!")
+                    }
+
+                    val start = System.nanoTime()
+                    val payload = if(frameCount < 100 && !generateVDIs) {
+                        subscriber.recv(DONTWAIT)
+                    } else {
+                        subscriber.recv(0)
+                    }
+                    val end = System.nanoTime()
+
+                    logger.info("Time waiting for message: ${(end-start)/1e9}")
+
+                    if (payload != null) {
+                        val deserialized: List<Any> =
+                            objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
+
+                        logger.info("Applying the camera change: $frameCount!")
+
+                        cam.spatial().rotation = stringToQuaternion(deserialized[0].toString())
+                        cam.spatial().position = stringToVector3f(deserialized[1].toString())
+                    }
+                    frameCount++
                 }
-
-                val start = System.nanoTime()
-                val payload = if(frameCount < 100 && !generateVDIs) {
-                    subscriber.recv(DONTWAIT)
-                } else {
-                    subscriber.recv(0)
-                }
-                val end = System.nanoTime()
-
-                logger.info("Time waiting for message: ${(end-start)/1e9}")
-
-                if (payload != null) {
-                    val deserialized: List<Any> =
-                        objectMapper.readValue(payload, object : TypeReference<List<Any>>() {})
-
-                    logger.info("Applying the camera change: $frameCount!")
-
-                    cam.spatial().rotation = stringToQuaternion(deserialized[0].toString())
-                    cam.spatial().position = stringToVector3f(deserialized[1].toString())
-                }
-                frameCount++
+                firstFrame = false
             }
-
         }
 
         while (storeVDIs) { //TODO: convert VDI storage also to postRenderLambda
