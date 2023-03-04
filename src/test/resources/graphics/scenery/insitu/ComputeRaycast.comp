@@ -244,7 +244,9 @@ void main()
                 wprev = wpos;
         }
 
+        #if !PREMULTIPLIED_ALPHA
         v.xyz = pow(v.xyz, vec3(1/2.2)); //TODO: remove
+        #endif
         FragColor = v;
         }
 
