@@ -38,7 +38,9 @@ layout(push_constant) uniform currentEye_t {
 } currentEye;
 
 #define USE_PRINTF 1
-#define AMBIENT_OCCLUSION 1
+#define AMBIENT_OCCLUSION 0
+
+#define PREMULTIPLIED_ALPHA 1
 
 #if USE_PRINTF
 #extension GL_EXT_debug_printf : enable
@@ -51,7 +53,7 @@ layout(set = 3, binding = 0, rgba8) uniform image2D OutputRender;
 
 #pragma scenery endverbatim
 
-ivec2 debug_pixel = ivec2(685, 366);
+ivec2 debug_pixel = ivec2(640, 360);
 ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
 
 // intersect ray with a box
@@ -242,15 +244,25 @@ void main()
                 wprev = wpos;
         }
 
-        #if USE_PRINTF
-        if(gl_GlobalInvocationID.xy == debug_pixel) {
-            debugPrintfEXT("Final composited color is: (%f, %f, %f, %f)", v.rgba);
-        }
-        #endif
-
         v.xyz = pow(v.xyz, vec3(1/2.2)); //TODO: remove
         FragColor = v;
         }
+
+    #if USE_PRINTF
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("Final color before premultiplication: (%f, %f, %f, %f)", FragColor.rgba);
+    }
+    #endif
+
+    #if PREMULTIPLIED_ALPHA
+        FragColor.rgb *= FragColor.a;
+    #endif
+
+    #if USE_PRINTF
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("Premultiplied final color: (%f, %f, %f, %f)", FragColor.rgba);
+    }
+    #endif
 
         imageStore(OutputRender, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), FragColor);
 }

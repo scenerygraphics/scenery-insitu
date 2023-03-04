@@ -236,7 +236,7 @@ class VDIVolumeManager (val windowWidth: Int, val windowHeight: Int, val dataset
             }
         }
 
-        fun create(windowWidth: Int, windowHeight: Int, scene: Scene, hub: Hub): VolumeManager {
+        fun create(windowWidth: Int, windowHeight: Int, scene: Scene, hub: Hub, setupPlane: Boolean = true): VolumeManager {
             val volumeManager = VolumeManager(hub,
                 useCompute = true,
                 customSegments = hashMapOf(
@@ -256,9 +256,11 @@ class VDIVolumeManager (val windowWidth: Int, val windowHeight: Int, val dataset
 
             hub.add(volumeManager)
 
-            val plane = FullscreenObject()
-            scene.addChild(plane)
-            plane.material().textures["diffuse"] = volumeManager.material().textures["OutputRender"]!!
+            if(setupPlane) {
+                val plane = FullscreenObject()
+                scene.addChild(plane)
+                plane.material().textures["diffuse"] = volumeManager.material().textures["OutputRender"]!!
+            }
 
             return volumeManager
         }

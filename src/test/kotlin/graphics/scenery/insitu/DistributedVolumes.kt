@@ -28,6 +28,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.lang.Math
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.IntBuffer
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
@@ -69,7 +70,7 @@ class CompositorNode : RichNode() {
     var totalSupersegmentsFrom = IntArray(50); // the total supersegments received from a given PE
 }
 
-class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth = 1920, windowHeight = 1080, wantREPL = false) {
+class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth = 1280, windowHeight = 720, wantREPL = false) {
 
     private val vulkanProjectionFix =
         Matrix4f(
@@ -92,6 +93,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     lateinit var volumeManager: VolumeManager
     lateinit var volumeCommons: VolumeCommons
     val compositor = CompositorNode()
+    val plane = FullscreenObject()
 
     val generateVDIs = true
     val denseVDIs = true
@@ -107,8 +109,8 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
     var vo = 0f
 
-    val maxSupersegments = 25
-    var maxOutputSupersegments = 25
+    val maxSupersegments = 20
+    var maxOutputSupersegments = 20
 
     data class Timer(var start: Long, var end: Long)
 
@@ -138,6 +140,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     var allToAllPrefixPointer = 0L
     var gatherColorPointer = 0L
     var gatherDepthPointer = 0L
+    var imagePointer = 0L
 
     var volumesCreated = false
     var volumeManagerInitialized = false
@@ -164,6 +167,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                                         colPointer: Long, depthPointer: Long, prefixPointer: Long, mpiPointer: Long)
     private external fun gatherCompositedVDIs(compositedVDIColor: ByteBuffer, compositedVDIDepth: ByteBuffer, compositedVDILen: Int, root: Int, myRank: Int, commSize: Int,
         colPointer: Long, depthPointer: Long, vo: Int, mpiPointer: Long)
+    private external fun compositeImages(subImage: ByteBuffer, myRank: Int, commSize: Int, imagePointer: Long)
     private external fun reduceAcrossPEs(value: Double) : Double
 
     @Suppress("unused")
@@ -362,7 +366,15 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             setupCompositor("VDICompositor.comp", denseVDIs)
 
         } else {
-            volumeManager = VDIVolumeManager.create(windowWidth, windowHeight, scene, hub)
+            volumeManager = VDIVolumeManager.create(windowWidth, windowHeight, scene, hub, setupPlane = false)
+
+            scene.addChild(plane)
+
+            val emptyBB = MemoryUtil.memCalloc(windowHeight * windowWidth * 4)
+
+            plane.material().textures["diffuse"] = Texture(Vector3i(windowHeight, windowWidth, 1), 4, contents = emptyBB, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+                type = UnsignedByteType(), mipmap = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour
+            )
 
             hub.add(volumeManager)
         }
@@ -451,7 +463,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 }
 
             } else {
-                dvrBenchmarks()
+                manageDVR()
             }
         }
     }
@@ -614,6 +626,48 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
             r.screenshot(basePath + "${dataset}_${rank}_${view.toInt()}.png")
         }
+    }
+
+    fun manageDVR() {
+
+        setupMetadata()
+
+        while(renderer?.firstImageReady == false) {
+            Thread.sleep(50)
+        }
+
+        while(!rendererConfigured) {
+            Thread.sleep(50)
+        }
+
+        val colorTexture = volumes[0]?.volumeManager?.material()?.textures?.get("OutputRender")!!
+
+        rotateCamera(90f)
+
+        (renderer as VulkanRenderer).postRenderLambdas.add {
+            rotateCamera(1f)
+            val textureFetched = fetchTexture(colorTexture)
+
+            if(textureFetched < 0) {
+                logger.error("Error fetching DVR texture. return value: $textureFetched")
+            }
+
+            val imageBuffer = colorTexture.contents!!
+
+            if (imageBuffer.remaining() == windowWidth * windowHeight * 4) {
+                compositeImages(imageBuffer, rank, commSize, imagePointer) //this function will call a java fn that will place the image on the screen
+            } else {
+                logger.error("Not compositing because image size: ${imageBuffer.remaining()} expected: ${windowHeight * windowWidth * 4}")
+            }
+
+        }
+    }
+
+    @Suppress("unused")
+    fun displayComposited(compositedImage: ByteBuffer) {
+
+        val bufferLE = compositedImage.order(ByteOrder.LITTLE_ENDIAN)
+        plane.material().textures["diffuse"] = Texture(Vector3i(windowWidth, windowHeight, 1), 4, contents = bufferLE, mipmap = true)
     }
 
     private fun saveScreenshots() {
@@ -822,10 +876,10 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 vdisComposited.incrementAndGet()
                 runCompositing = false
 
-                if(vdisGathered % 10 == 0) {
-                    rotateCamera(10f)
-                    vdiData.metadata.view = cam.spatial().getTransformation()
-                }
+//                if(vdisGathered % 5 == 0) {
+//                    rotateCamera(10f)
+//                    vdiData.metadata.view = cam.spatial().getTransformation()
+//                }
 
                 runThreshSearch = true
                 viewUsedForGeneration = cam.spatial().getTransformation()
