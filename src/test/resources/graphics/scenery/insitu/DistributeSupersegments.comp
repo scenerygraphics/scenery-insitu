@@ -1,0 +1,35 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 0, r32f) uniform readonly image2D QuantizationErrors;
+layout(set = 1, binding = 0, r32i) uniform iimage2D SupersegmentNumbers;
+
+ivec2 debug_pixel = ivec2(640, 360);
+
+void main() {
+
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("Hello world, from DistributeSupsegs!");
+    }
+
+    int my_x = int(gl_GlobalInvocationID.x);
+    int my_y = int(gl_GlobalInvocationID.y);
+
+    int windowWidth = imageSize(QuantizationErrors).x;
+    int windowHeight = imageSize(QuantizationErrors).y;
+
+    float totalError = 2368201.8;
+    int totalSupsegs = 1280 * 720 * 20; //TODO: these need to be uniforms
+
+    float error = imageLoad(QuantizationErrors, ivec2(gl_GlobalInvocationID.xy)).x;
+
+    int numSupsegs = int((error/totalError) * totalSupsegs);
+
+    if(gl_GlobalInvocationID.xy == debug_pixel) {
+        debugPrintfEXT("num supsegs: %d, error was: %f, and totalError: %f!", numSupsegs, error, totalError);
+    }
+
+    imageStore(SupersegmentNumbers, ivec2(gl_GlobalInvocationID.xy), ivec4(numSupsegs, 0, 0, 0));
+}

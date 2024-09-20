@@ -11,6 +11,7 @@ import graphics.scenery.utils.SystemHelpers
 import graphics.scenery.volumes.vdi.VDIData
 import graphics.scenery.volumes.vdi.VDIDataIO
 import graphics.scenery.volumes.vdi.VDIMetadata
+import net.imglib2.type.numeric.integer.IntType
 import net.imglib2.type.numeric.real.FloatType
 import org.joml.Matrix4f
 import org.joml.Vector2i
@@ -24,6 +25,7 @@ import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
+import kotlin.math.ceil
 import kotlin.system.measureNanoTime
 
 class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
@@ -45,19 +47,15 @@ class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
     val closeAfter = 25000L
 
     val separateDepth = true
+    val denseVDI = true
 
     val compute = CompositorNode()
     var dataset = "Kingsnake"
+    val maxSupersegments = 20
 
     override fun init() {
         renderer = hub.add(SceneryElement.Renderer,
                 Renderer.createRenderer(hub, applicationName, scene, windowWidth, windowHeight))
-
-        val maxSupersegments = 20
-
-        var buff = ByteArray(windowHeight*windowWidth*maxSupersegments)
-        var depthBuff = ByteArray(windowHeight*windowWidth*2*maxSupersegments)
-
 
         val commSize = 1
         val rank = 0
@@ -69,19 +67,28 @@ class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
         val basePath = "/home/aryaman/TestingData/"
 //        val basePath = "/home/aryaman/TestingData/FromCluster/"
 
-        val file = FileInputStream(File(basePath + "${dataset}vdi_1280_720_20_0_dump4"))
+        val file = FileInputStream(File(basePath + "${dataset}vdi_${windowWidth}_${windowHeight}_${maxSupersegments}_0_dump4"))
 
         val vdiData = VDIDataIO.read(file)
 
-        buff = File(basePath + "${dataset}SetOfVDI4_ndc_col").readBytes()
-        depthBuff = File(basePath + "${dataset}SetOfVDI4_ndc_depth").readBytes()
+        val buff = if(denseVDI) {
+            File(basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_4_ndc_col_rle").readBytes()
+        } else {
+            File(basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_4_ndc_col").readBytes()
+        }
+
+        val depthBuff = if(denseVDI) {
+            File(basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_4_ndc_depth_rle").readBytes()
+        } else {
+            File(basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_4_ndc_depth").readBytes()
+        }
 
         var colBuffer: ByteBuffer
         var depthBuffer: ByteBuffer
 //        colBuffer = ByteBuffer.wrap(buff)
 //        depthBuffer = ByteBuffer.wrap(depthBuff)
-        colBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * maxSupersegments * 4 * 4)
-        depthBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * maxSupersegments * 4 * 2)
+        colBuffer = MemoryUtil.memCalloc(buff.size)
+        depthBuffer = MemoryUtil.memCalloc(depthBuff.size)
 
         logger.info("Length of color buffer is ${buff.size} and associated bytebuffer capacity is ${colBuffer.capacity()} it has remaining: ${colBuffer.remaining()}")
         logger.info("Length of depth buffer is ${depthBuff.size} and associated bytebuffer capacity is ${depthBuffer.capacity()} it has remianing ${depthBuffer.remaining()}")
@@ -117,12 +124,46 @@ class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
         compute.invProjectionOriginal = Matrix4f(vdiData.metadata.projection).applyVulkanCoordinateSystem().invert()
         compute.doComposite = true
         compute.numProcesses = commSize
+        compute.windowHeight = windowHeight
+        compute.windowWidth = windowWidth
+        compute.isDense = denseVDI
 
-        compute.material().textures["VDIsColor"] = Texture(Vector3i(maxSupersegments, windowHeight, windowWidth), 4, contents = colBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
-            type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+        if(denseVDI) {
 
-        compute.material().textures["VDIsDepth"] = Texture(Vector3i(2*maxSupersegments, windowHeight, windowWidth),  channels = 1, contents = depthBuffer, usageType = hashSetOf(
-            Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+            val totalMaxSupersegments = buff.size / (4*4).toFloat()
+
+            logger.info("total max supsegs (including padding): $totalMaxSupersegments")
+
+            compute.material().textures["VDIsColor"] = Texture(Vector3i(512, 512, ceil((totalMaxSupersegments / (512*512)).toDouble()).toInt()), 4, contents = colBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+                type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+
+            compute.material().textures["VDIsDepth"] = Texture(Vector3i(2*512, 512, ceil((totalMaxSupersegments / (512*512)).toDouble()).toInt()),  channels = 1, contents = depthBuffer, usageType = hashSetOf(
+                Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+
+            for (i in 0 until commSize) {
+                compute.totalSupersegmentsFrom[i] = 2433894
+            }
+
+        } else {
+
+            compute.material().textures["VDIsColor"] = Texture(Vector3i(maxSupersegments, windowHeight, windowWidth), 4, contents = colBuffer, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+                type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+
+            compute.material().textures["VDIsDepth"] = Texture(Vector3i(2*maxSupersegments, windowHeight, windowWidth),  channels = 1, contents = depthBuffer, usageType = hashSetOf(
+                Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+        }
+
+        if(denseVDI) {
+            val prefixArray: ByteArray = File(basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_4_ndc_prefix").readBytes()
+
+            val prefixBuffer = MemoryUtil.memCalloc(windowHeight * windowWidth * 4)
+
+            prefixBuffer.put(prefixArray).flip()
+
+            compute.material().textures["VDIsPrefix"] = Texture(Vector3i(windowHeight, windowWidth, 1), 1, contents = prefixBuffer, usageType = hashSetOf(
+                Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = IntType(), mipmap = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+        }
+
 
         logger.info("Updated the ip textured")
 
@@ -199,10 +240,10 @@ class VDICompositingExample:SceneryBase("VDIComposite", 1280, 720) {
 
             logger.info("Time taken for generation (only correct if VDIs were not being written to disk): ${timeTaken}")
 
-            if(cnt < 20) {
+            if(cnt == 4) {
 
                 var fileName = ""
-                fileName = "${dataset}CompositedVDI${cnt}_ndc"
+                fileName = "${dataset}CompositedVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt}_ndc"
                 if(separateDepth) {
                     SystemHelpers.dumpToFile(compositedVDIColorBuffer!!, "/home/aryaman/TestingData/${fileName}_col")
                     SystemHelpers.dumpToFile(compositedVDIDepthBuffer!!, "/home/aryaman/TestingData/${fileName}_depth")

@@ -80,16 +80,9 @@ class VDICompositingTest: SceneryBase("VDICompositingTest", windowWidth = 1280, 
 
         val cam: Camera = DetachedHeadCamera()
 
-        with(cam) {
-            spatial {
-                position = Vector3f( 4.622E+0f, -9.060E-1f, -1.047E+0f)
-                rotation = Quaternionf( 5.288E-2, -9.096E-1, -1.222E-1,  3.936E-1)
-            }
-            perspectiveCamera(50.0f, windowWidth, windowHeight)
-            cam.farPlaneDistance = 20.0f
+        val commons = VolumeCommons(windowWidth, windowHeight, dataset, logger)
 
-            scene.addChild(this)
-        }
+        commons.positionCamera(cam)
 
         val lights = (0 until 3).map {
             PointLight(radius = 15.0f)

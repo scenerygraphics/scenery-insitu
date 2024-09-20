@@ -6,7 +6,6 @@ import graphics.scenery.backends.Shaders
 import graphics.scenery.backends.vulkan.VulkanRenderer
 import graphics.scenery.backends.vulkan.VulkanTexture
 import graphics.scenery.compute.ComputeMetadata
-import graphics.scenery.compute.InvocationType
 import graphics.scenery.controls.TrackedStereoGlasses
 import graphics.scenery.textures.Texture
 import graphics.scenery.utils.Image
@@ -19,25 +18,22 @@ import graphics.scenery.volumes.vdi.VDIBufferSizes
 import graphics.scenery.volumes.vdi.VDIData
 import graphics.scenery.volumes.vdi.VDIDataIO
 import graphics.scenery.volumes.vdi.VDIMetadata
+import net.imglib2.type.numeric.integer.IntType
 import net.imglib2.type.numeric.integer.UnsignedByteType
-import net.imglib2.type.numeric.integer.UnsignedIntType
 import net.imglib2.type.numeric.integer.UnsignedShortType
 import net.imglib2.type.numeric.real.FloatType
 import org.joml.*
 import org.lwjgl.system.MemoryUtil
-import tpietzsch.shadergen.generate.SegmentTemplate
-import tpietzsch.shadergen.generate.SegmentType
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.lang.Math
 import java.nio.ByteBuffer
-import java.nio.file.Files
-import java.nio.file.Path
-import java.util.concurrent.CopyOnWriteArrayList
+import java.nio.ByteOrder
+import java.nio.IntBuffer
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
-import kotlin.streams.toList
+import kotlin.math.ceil
+import kotlin.system.measureNanoTime
 
 class CompositorNode : RichNode() {
     @ShaderProperty
@@ -60,6 +56,18 @@ class CompositorNode : RichNode() {
 
     @ShaderProperty
     var numProcesses = 0
+
+    @ShaderProperty
+    var isDense = true
+
+    @ShaderProperty
+    var windowWidth = 0
+
+    @ShaderProperty
+    var windowHeight = 0
+
+    @ShaderProperty
+    var totalSupersegmentsFrom = IntArray(50); // the total supersegments received from a given PE
 }
 
 class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth = 1280, windowHeight = 720, wantREPL = false) {
@@ -83,9 +91,12 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     var hmd: TrackedStereoGlasses? = null
 
     lateinit var volumeManager: VolumeManager
+    lateinit var volumeCommons: VolumeCommons
     val compositor = CompositorNode()
+    val plane = FullscreenObject()
 
     val generateVDIs = true
+    val denseVDIs = true
     val separateDepth = true
     val colors32bit = true
     val saveFinal = true
@@ -96,9 +107,22 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     val cam: Camera = DetachedHeadCamera(hmd)
     var camTarget = Vector3f(0f)
 
+    var vo = 0f
+
     val maxSupersegments = 20
     var maxOutputSupersegments = 20
-    var numLayers = 0
+
+    data class Timer(var start: Long, var end: Long)
+
+    val tRend = Timer(0,0)
+    val tComposite = Timer(0,0)
+
+    var totalComposite: Double = 0.0
+    var totalRender: Double = 0.0
+
+    var numIterations: Int = 0
+
+    val warmUpIterations = 20
 
     var commSize = 1
     var rank = 0
@@ -113,8 +137,10 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     var mpiPointer = 0L
     var allToAllColorPointer = 0L
     var allToAllDepthPointer = 0L
+    var allToAllPrefixPointer = 0L
     var gatherColorPointer = 0L
     var gatherDepthPointer = 0L
+    var imagePointer = 0L
 
     var volumesCreated = false
     var volumeManagerInitialized = false
@@ -126,6 +152,8 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
     @Volatile
     var runGeneration = true
     @Volatile
+    var runThreshSearch = true
+    @Volatile
     var runCompositing = false
 
     val singleGPUBenchmarks = false
@@ -135,8 +163,12 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
     private external fun distributeVDIs(subVDIColor: ByteBuffer, subVDIDepth: ByteBuffer, sizePerProcess: Int, commSize: Int,
         colPointer: Long, depthPointer: Long, mpiPointer: Long)
+    private external fun distributeDenseVDIs(subVDIColor: ByteBuffer, subVDIDepth: ByteBuffer, prefixSums: ByteBuffer, supersegmentCounts: IntArray, commSize: Int,
+                                        colPointer: Long, depthPointer: Long, prefixPointer: Long, mpiPointer: Long)
     private external fun gatherCompositedVDIs(compositedVDIColor: ByteBuffer, compositedVDIDepth: ByteBuffer, compositedVDILen: Int, root: Int, myRank: Int, commSize: Int,
-        colPointer: Long, depthPointer: Long, mpiPointer: Long)
+        colPointer: Long, depthPointer: Long, vo: Int, mpiPointer: Long)
+    private external fun compositeImages(subImage: ByteBuffer, myRank: Int, commSize: Int, imagePointer: Long)
+    private external fun reduceAcrossPEs(value: Double) : Double
 
     @Suppress("unused")
     fun setVolumeDims(dims: IntArray) {
@@ -163,19 +195,8 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         volume.spatial().needsUpdate = true
         volume.colormap = colorMap
         volume.pixelToWorldRatio = pixelToWorld
-//        volume.pixelToWorldRatio = pixelToWorld
 
-//        with(volume.transferFunction) {
-//            this.addControlPoint(0.0f, 0.0f)
-//            this.addControlPoint(0.2f, 0.1f)
-//            this.addControlPoint(0.4f, 0.4f)
-//            this.addControlPoint(0.8f, 0.6f)
-//            this.addControlPoint(1.0f, 0.75f)
-//        }
-
-//        val tf = TransferFunction()
-        val tf = TransferFunction.ramp(0.25f, 0.02f, 0.7f)
-
+        val tf = TransferFunction()
         with(tf) {
             if(dataset == "Stagbeetle" || dataset == "Stagbeetle_divided") {
                 addControlPoint(0.0f, 0.0f)
@@ -183,52 +204,83 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 addControlPoint(0.01f, 0.3f)
             } else if (dataset == "Kingsnake") {
                 addControlPoint(0.0f, 0.0f)
-                addControlPoint(0.4f, 0.0f)
+                addControlPoint(0.43f, 0.0f)
                 addControlPoint(0.5f, 0.5f)
             } else if (dataset == "Beechnut") {
                 addControlPoint(0.0f, 0.0f)
-                addControlPoint(0.20f, 0.0f)
-                addControlPoint(0.25f, 0.2f)
-                addControlPoint(0.35f, 0.0f)
-            } else if (dataset == "Simulation") {
-                addControlPoint(0.0f, 0.0f)
-                addControlPoint(0.2f, 0.0f)
-                addControlPoint(0.4f, 0.0f)
-                addControlPoint(0.45f, 0.1f)
-                addControlPoint(0.5f, 0.10f)
-                addControlPoint(0.55f, 0.1f)
-                addControlPoint(0.83f, 0.1f)
-                addControlPoint(0.86f, 0.4f)
-                addControlPoint(0.88f, 0.7f)
-//                addControlPoint(0.87f, 0.05f)
-                addControlPoint(0.9f, 0.00f)
-                addControlPoint(0.91f, 0.0f)
+                addControlPoint(0.43f, 0.0f)
+                addControlPoint(0.457f, 0.321f)
+                addControlPoint(0.494f, 0.0f)
                 addControlPoint(1.0f, 0.0f)
-            } else if (dataset.contains("BonePlug")) {
-                addControlPoint(0f, 0f)
-                addControlPoint(0.01f, 0f)
-                addControlPoint(0.11f, 0.01f)
+            } else if (dataset == "Simulation") {
+                addControlPoint(0.0f, 0f)
+                addControlPoint(0.1f, 0.0f)
+                addControlPoint(0.15f, 0.65f)
+                addControlPoint(0.22f, 0.15f)
+                addControlPoint(0.28f, 0.0f)
+                addControlPoint(0.49f, 0.0f)
+                addControlPoint(0.7f, 0.95f)
+                addControlPoint(0.75f, 0.8f)
+                addControlPoint(0.8f, 0.0f)
+                addControlPoint(0.9f, 0.0f)
+                addControlPoint(1.0f, 0.0f)
+            } else if (dataset == "Rayleigh_Taylor") {
+                addControlPoint(0.0f, 0.95f)
+                addControlPoint(0.15f, 0.0f)
+                addControlPoint(0.45f, 0.0f)
+                addControlPoint(0.5f, 0.35f)
+                addControlPoint(0.55f, 0.0f)
+                addControlPoint(0.80f, 0.0f)
+                addControlPoint(1.0f, 0.378f)
+            } else if (dataset == "Microscopy") {
+                addControlPoint(0.0f, 0.0f)
+                addControlPoint(0.5f, 0.0f)
+                addControlPoint(0.65f, 0.0f)
+                addControlPoint(0.80f, 0.2f)
+                addControlPoint(0.85f, 0.0f)
             } else if (dataset == "Rotstrat") {
-                logger.info("Using rotstrat transfer function")
-                TransferFunction.ramp(0.0025f, 0.005f, 0.7f)
-            }
-            else {
-                logger.info("Using a standard transfer function. Value of dataset: $dataset")
-                TransferFunction.ramp(0.1f, 0.5f)
+                addControlPoint(0.0f, 0.0f)
+                addControlPoint(0.4f, 0.0f)
+                addControlPoint(0.6f, 0.01f)
+                addControlPoint(1.0f, 0.05f)
+            } else if (dataset == "Isotropic") {
+                addControlPoint(0.0f, 0.01f)
+                addControlPoint(0.1f, 0.01f)
+                addControlPoint(0.5f, 0.0f)
+                addControlPoint(0.6f, 0.0f)
+                addControlPoint(0.65f, 0.0f)
+                addControlPoint(0.7f, 0.0f)
+                addControlPoint(0.8f, 0.5f)
+            } else {
+                logger.info("Using a standard transfer function")
+                addControlPoint(0.0f, 0.0f)
+                addControlPoint(1.0f, 1.0f)
+
             }
         }
 
+        volume.name = "volume"
+        volume.colormap = Colormap.get("hot")
+        if(dataset == "Rotstrat") {
+            volume.colormap = Colormap.get("viridis")
+            volume.converterSetups[0].setDisplayRange(13000.0, 57000.0)
+        } else if(dataset == "Beechnut") {
+            volume.converterSetups[0].setDisplayRange(0.0, 33465.0)
+        } else if(dataset == "Simulation") {
+            volume.colormap = Colormap.get("rb")
+            volume.converterSetups[0].setDisplayRange(50.0, 205.0)
+        } else if(dataset == "Rayleigh_Taylor") {
+            volume.colormap = Colormap.get("rbdarker")
+        } else  if(dataset == "Isotropic") {
+            volume.colormap = Colormap.get("rb")
+            volume.converterSetups[0].setDisplayRange(32000.0, 60000.0)
+        }
 
         volume.transferFunction = tf
 
         if(dataset.contains("BonePlug")) {
             volume.converterSetups[0].setDisplayRange(200.0, 12500.0)
             volume.colormap = Colormap.get("viridis")
-        }
-
-        if(dataset == "Rotstrat") {
-            volume.colormap = Colormap.get("jet")
-            volume.converterSetups[0].setDisplayRange(25000.0, 50000.0)
         }
 
         scene.addChild(volume)
@@ -249,174 +301,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         volumes[volumeID]?.goToLastTimepoint()
     }
 
-    fun bufferFromPath(file: Path): ByteBuffer {
-
-        val infoFile: Path
-        val volumeFiles: List<Path>
-
-        if(Files.isDirectory(file)) {
-            volumeFiles = Files.list(file).filter { it.toString().endsWith(".raw") && Files.isRegularFile(it) && Files.isReadable(it) }.toList()
-            infoFile = file.resolve("stacks.info")
-        } else {
-            volumeFiles = listOf(file)
-            infoFile = file.resolveSibling("stacks.info")
-        }
-
-        val lines = Files.lines(infoFile).toList()
-
-        logger.debug("reading stacks.info (${lines.joinToString()}) (${lines.size} lines)")
-        val dimensions = Vector3i(lines.get(0).split(",").map { it.toInt() }.toIntArray())
-        dims = dimensions
-        logger.debug("setting dim to ${dimensions.x}/${dimensions.y}/${dimensions.z}")
-        logger.debug("Got ${volumeFiles.size} volumes")
-
-
-        val volumes = CopyOnWriteArrayList<BufferedVolume.Timepoint>()
-        val v = volumeFiles.first()
-        val id = v.fileName.toString()
-        val buffer: ByteBuffer by lazy {
-
-            logger.debug("Loading $id from disk")
-            val buffer = ByteArray(1024 * 1024)
-            val stream = FileInputStream(v.toFile())
-            val imageData: ByteBuffer = MemoryUtil.memAlloc((2 * dimensions.x * dimensions.y * dimensions.z))
-
-            logger.debug("${v.fileName}: Allocated ${imageData.capacity()} bytes for UINT16 image of $dimensions")
-
-            val start = System.nanoTime()
-            var bytesRead = stream.read(buffer, 0, buffer.size)
-            while (bytesRead > -1) {
-                imageData.put(buffer, 0, bytesRead)
-                bytesRead = stream.read(buffer, 0, buffer.size)
-            }
-            val duration = (System.nanoTime() - start) / 10e5
-            logger.debug("Reading took $duration ms")
-
-            imageData.flip()
-            imageData
-        }
-        return buffer
-    }
-
-    fun setupVolumeManager() {
-        val raycastShader: String
-        val accumulateShader: String
-        val compositeShader: String
-
-        if(generateVDIs) {
-            raycastShader = "VDIGenerator.comp"
-            accumulateShader = "AccumulateVDI.comp"
-            compositeShader = "VDICompositor.comp"
-            numLayers = if(separateDepth) {
-                1
-            } else {
-                3         // VDI supersegments require both front and back depth values, along with color
-            }
-
-            volumeManager = VolumeManager(
-                hub, useCompute = true, customSegments = hashMapOf(
-                    SegmentType.FragmentShader to SegmentTemplate(
-                        this.javaClass,
-                        raycastShader,
-                        "intersectBoundingBox", "vis", "localNear", "localFar", "SampleVolume", "Convert", "Accumulate",
-                    ),
-                    SegmentType.Accumulator to SegmentTemplate(
-//                                this.javaClass,
-                        accumulateShader,
-                        "vis", "localNear", "localFar", "sampleVolume", "convert",
-                    ),
-                ),
-            )
-
-            val colorBuffer = if(colors32bit) {
-                MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*numLayers * 4)
-            } else {
-                MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*numLayers)
-            }
-            val depthBuffer = if(separateDepth) {
-                MemoryUtil.memCalloc(windowHeight*windowWidth*4*maxSupersegments*2)
-            } else {
-                MemoryUtil.memCalloc(0)
-            }
-
-            val numGridCells = Vector3f(windowWidth.toFloat() / 8f, windowHeight.toFloat() / 8f, maxSupersegments.toFloat())
-            val lowestLevel = MemoryUtil.memCalloc(numGridCells.x.toInt() * numGridCells.y.toInt() * numGridCells.z.toInt() * 4)
-
-            val colorTexture: Texture
-            val depthTexture: Texture
-            val gridCells: Texture
-
-            colorTexture = if(colors32bit) {
-                Texture.fromImage(
-                    Image(colorBuffer, numLayers * maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(
-                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 4, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
-            } else {
-                Texture.fromImage(
-                    Image(colorBuffer, numLayers * maxSupersegments, windowHeight, windowWidth), usage = hashSetOf(
-                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-            }
-
-            volumeManager.customTextures.add("OutputSubVDIColor")
-            volumeManager.material().textures["OutputSubVDIColor"] = colorTexture
-
-            if(separateDepth) {
-                depthTexture = Texture.fromImage(
-                    Image(depthBuffer, 2*maxSupersegments, windowHeight, windowWidth),  usage = hashSetOf(
-                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture), type = FloatType(), channels = 1, mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
-                volumeManager.customTextures.add("OutputSubVDIDepth")
-                volumeManager.material().textures["OutputSubVDIDepth"] = depthTexture
-            }
-
-            gridCells = Texture.fromImage(
-                Image(lowestLevel, numGridCells.x.toInt(), numGridCells.y.toInt(), numGridCells.z.toInt()), channels = 1, type = UnsignedIntType(),
-                usage = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-            volumeManager.customTextures.add("OctreeCells")
-            volumeManager.material().textures["OctreeCells"] = gridCells
-            volumeManager.customUniforms.add("doGeneration")
-            volumeManager.shaderProperties["doGeneration"] = true
-
-            hub.add(volumeManager)
-
-            val compute = RichNode()
-            compute.setMaterial(ShaderMaterial(Shaders.ShadersFromFiles(arrayOf("GridCellsToZero.comp"), this@DistributedVolumes::class.java)))
-
-            compute.metadata["ComputeMetadata"] = ComputeMetadata(
-                workSizes = Vector3i(numGridCells.x.toInt(), numGridCells.y.toInt(), 1),
-                invocationType = InvocationType.Permanent
-            )
-
-            compute.material().textures["GridCells"] = gridCells
-
-            compute.visible = false
-//            scene.addChild(compute)
-
-        } else {
-            raycastShader = "VDIGenerator.comp"
-            accumulateShader = "AccumulateVDI.comp"
-            compositeShader = "AlphaCompositor.comp"
-            volumeManager = VolumeManager(hub,
-                useCompute = true,
-                customSegments = hashMapOf(
-                    SegmentType.FragmentShader to SegmentTemplate(
-                        this.javaClass,
-                        "ComputeRaycast.comp",
-                        "intersectBoundingBox", "vis", "localNear", "localFar", "SampleVolume", "Convert", "Accumulate"),
-                ))
-            volumeManager.customTextures.add("OutputRender") //TODO: attach depth texture required for compositing
-            volumeManager.shaderProperties["doGeneration"] = true
-
-            val outputBuffer = MemoryUtil.memCalloc(windowWidth*windowHeight*4)
-            val outputTexture = Texture.fromImage(
-                Image(outputBuffer, windowWidth, windowHeight), usage = hashSetOf(
-                    Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
-            volumeManager.material().textures["OutputRender"] = outputTexture
-
-            hub.add(volumeManager)
-
-            val plane = FullscreenObject()
-            scene.addChild(plane)
-            plane.material().textures["diffuse"] = volumeManager.material().textures["OutputRender"]!!
-        }
+    fun setupCompositor(compositeShader: String, dense: Boolean = false) {
 
         compositor.name = "compositor node"
         compositor.setMaterial(ShaderMaterial(Shaders.ShadersFromFiles(arrayOf(compositeShader), this@DistributedVolumes::class.java)))
@@ -437,6 +322,17 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         compositor.metadata["ComputeMetadata"] = ComputeMetadata(
             workSizes = Vector3i(windowWidth/commSize, windowHeight, 1)
         )
+        compositor.windowWidth = windowWidth
+        compositor.windowHeight = windowHeight
+        compositor.isDense = dense
+
+        if(!dense) {
+            val prefixPlaceHolder = MemoryUtil.memCalloc(1 * 1 * 4)
+            compositor.material().textures["VDIsPrefix"] = Texture(Vector3i(1, 1, 1), 1, contents = prefixPlaceHolder, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
+                , type = IntType(), mipmap = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour
+            )
+        }
+
         if(!singleGPUBenchmarks) {
             compositor.visible = true
             scene.addChild(compositor)
@@ -452,29 +348,74 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
         renderer = hub.add(Renderer.createRenderer(hub, applicationName, scene, windowWidth, windowHeight))
 
-        setupVolumeManager()
+        if(generateVDIs) {
+            //set up volume manager
+
+            volumeManager = VDIVolumeManager.create(windowWidth, windowHeight, maxSupersegments, scene, hub, denseVDIs)
+
+            hub.add(volumeManager)
+
+            if(denseVDIs) {
+                runThreshSearch = true
+                runGeneration = false
+
+            } else {
+                runGeneration = true
+            }
+
+            setupCompositor("VDICompositor.comp", denseVDIs)
+
+        } else {
+            volumeManager = VDIVolumeManager.create(windowWidth, windowHeight, scene, hub, setupPlane = false)
+
+            scene.addChild(plane)
+
+            val emptyBB = MemoryUtil.memCalloc(windowHeight * windowWidth * 4)
+
+            plane.material().textures["diffuse"] = Texture(Vector3i(windowHeight, windowWidth, 1), 4, contents = emptyBB, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+                type = UnsignedByteType(), mipmap = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour
+            )
+
+            hub.add(volumeManager)
+        }
+
+
         volumeManagerInitialized = true
+
+        volumeCommons = VolumeCommons(windowWidth, windowHeight, dataset, logger)
 
         with(cam) {
             spatial {
-//                position = Vector3f(3.174E+0f, -1.326E+0f, -2.554E+0f)
-//                rotation = Quaternionf(-1.276E-2,  9.791E-1,  6.503E-2, -1.921E-1)
+                if(dataset == "Kingsnake") {
+                    position = Vector3f( 4.622E+0f, -9.060E-1f, -1.047E+0f) //V1 for kingsnake
+                    rotation = Quaternionf( 5.288E-2, -9.096E-1, -1.222E-1,  3.936E-1)
+                } else if (dataset == "Beechnut") {
+                    position = Vector3f(-2.607E+0f, -5.973E-1f,  2.415E+0f) // V1 for Beechnut
+                    rotation = Quaternionf(-9.418E-2, -7.363E-1, -1.048E-1, -6.618E-1)
+                } else if (dataset == "Simulation") {
+                    logger.info("Using simulation camera coordinates")
+                    position = Vector3f(2.041E-1f, -5.253E+0f, -1.321E+0f) //V1 for Simulation
+                    rotation = Quaternionf(9.134E-2, -9.009E-1,  3.558E-1, -2.313E-1)
+                } else if (dataset == "Rayleigh_Taylor") {
+                    position = Vector3f( -2.300E+0f, -6.402E+0f,  1.100E+0f) //V1 for Rayleigh_Taylor
+                    rotation = Quaternionf(2.495E-1, -7.098E-1,  3.027E-1, -5.851E-1)
+                } else if (dataset == "BonePlug") {
+                    position = Vector3f( 1.897E+0f, -5.994E-1f, -1.899E+0f) //V1 for Boneplug
+                    rotation = Quaternionf( 5.867E-5,  9.998E-1,  1.919E-2,  4.404E-3)
+                } else if (dataset == "Rotstrat") {
+                    position = Vector3f( 2.799E+0f, -6.156E+0f, -2.641E+0f) //V1 for Rotstrat
+                    rotation = Quaternionf(-3.585E-2, -9.257E-1,  3.656E-1,  9.076E-2)
+                } else if (dataset == "Isotropic") {
+                    position = Vector3f( 2.799E+0f, -6.156E+0f, -2.641E+0f) //V1 for Isotropic
+                    rotation = Quaternionf(-3.585E-2, -9.257E-1,  3.656E-1,  9.076E-2)
 
-                position = Vector3f( 4.622E+0f, -9.060E-1f, -1.047E+0f) //V1 for kingsnake
-                rotation = Quaternionf( 5.288E-2, -9.096E-1, -1.222E-1,  3.936E-1)
-//
-//                position = Vector3f(-2.607E+0f, -5.973E-1f,  2.415E+0f) // V1 for Beechnut
-//                rotation = Quaternionf(-9.418E-2, -7.363E-1, -1.048E-1, -6.618E-1)
+//                    position = Vector3f(6.361E+0f, -6.156E+0f,  2.679E+0f) //V2
+//                    rotation = Quaternionf(-2.839E-1, -5.904E-1,  2.332E-1,  7.187E-1)
+                }
 
-                position = Vector3f(4.908E+0f, -4.931E-1f, -2.563E+0f) //V1 for Simulation
-                rotation = Quaternionf( 3.887E-2, -9.470E-1, -1.255E-1,  2.931E-1)
-
-//                position = Vector3f( 1.897E+0f, -5.994E-1f, -1.899E+0f) //V1 for Boneplug
-//                rotation = Quaternionf( 5.867E-5,  9.998E-1,  1.919E-2,  4.404E-3)
-//
 //                position = Vector3f( 3.183E+0f, -5.973E-1f, -1.475E+0f) //V2 for Beechnut
 //                rotation = Quaternionf( 1.974E-2, -9.803E-1, -1.395E-1,  1.386E-1)
-
+//
 //                position = Vector3f( 4.458E+0f, -9.057E-1f,  4.193E+0f) //V2 for Kingsnake
 //                rotation = Quaternionf( 1.238E-1, -3.649E-1,-4.902E-2,  9.215E-1)
 
@@ -483,9 +424,8 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             }
             perspectiveCamera(50.0f, windowWidth, windowHeight)
             cam.farPlaneDistance = 20.0f
-
-            scene.addChild(this)
         }
+        scene.addChild(cam)
 
         val lights = (0 until 3).map {
             PointLight(radius = 15.0f)
@@ -505,7 +445,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         logger.info("Exiting init function!")
 
         basePath = if(isCluster) {
-            "/scratch/ws/1/argupta-vdi_generation/vdi_dumps/"
+            "/beegfs/ws/1/argupta-vdi_generation/vdi_dumps/"
         } else {
             "/home/aryaman/TestingData/"
         }
@@ -515,11 +455,15 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 if(singleGPUBenchmarks) {
                     doBenchmarks()
                 } else {
-                    manageVDIGeneration()
+                    if(denseVDIs) {
+                        manageDenseVDIs()
+                    } else {
+                        manageVDIGeneration()
+                    }
                 }
 
             } else {
-                saveScreenshots()
+                manageDVR()
             }
         }
     }
@@ -622,20 +566,108 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
     }
 
-    private fun rotateCamera(degrees: Float) {
+    fun rotateCamera(degrees: Float, pitch: Boolean = false) {
         cam.targeted = true
-        val frameYaw = degrees / 180.0f * Math.PI.toFloat()
-        val framePitch = 0f
+        val frameYaw: Float
+        val framePitch: Float
+
+        if(pitch) {
+            framePitch = degrees / 180.0f * Math.PI.toFloat()
+            frameYaw = 0f
+        } else {
+            frameYaw = degrees / 180.0f * Math.PI.toFloat()
+            framePitch = 0f
+        }
 
         // first calculate the total rotation quaternion to be applied to the camera
         val yawQ = Quaternionf().rotateXYZ(0.0f, frameYaw, 0.0f).normalize()
         val pitchQ = Quaternionf().rotateXYZ(framePitch, 0.0f, 0.0f).normalize()
 
-//        logger.info("Applying the rotation! camtarget is: $camTarget")
-
         val distance = (camTarget - cam.spatial().position).length()
         cam.spatial().rotation = pitchQ.mul(cam.spatial().rotation).mul(yawQ).normalize()
         cam.spatial().position = camTarget + cam.forward * distance * (-1.0f)
+    }
+
+    private fun dvrBenchmarks() {
+        val r = (hub.get(SceneryElement.Renderer) as Renderer)
+
+        while(!r.firstImageReady) {
+            Thread.sleep(200)
+        }
+
+        Thread.sleep(5000)
+
+        setupMetadata()
+
+        val viewpoints = listOf(0, 5, 10, 20, 30, 90, 95, 100, 110, 120)
+
+        var vo = 0
+
+        for(view in viewpoints) {
+            rotateCamera(view.toFloat()-vo.toFloat())
+            vo = view
+
+            Thread.sleep(1000) // allow the change to take place
+            stats.clear("Renderer.fps")
+
+            Thread.sleep(2500) //collect some data
+            val fps = stats.get("Renderer.fps")!!
+
+            val global_min = reduceAcrossPEs(fps.avg().toDouble())
+            if(fps.avg()<0.00001f) {
+                logger.error("Error! Process: $rank has fps: ${fps.avg()} at view: $view. The max: ${fps.max()} and min: ${fps.min()}")
+            }
+
+            logger.debug("At view: $vo, rank: $rank had: ${fps.avg()}")
+
+            if(rank == 0) {
+                logger.error("At view: $vo, global min: $global_min")
+            }
+
+            r.screenshot(basePath + "${dataset}_${rank}_${view.toInt()}.png")
+        }
+    }
+
+    fun manageDVR() {
+
+        setupMetadata()
+
+        while(renderer?.firstImageReady == false) {
+            Thread.sleep(50)
+        }
+
+        while(!rendererConfigured) {
+            Thread.sleep(50)
+        }
+
+        val colorTexture = volumes[0]?.volumeManager?.material()?.textures?.get("OutputRender")!!
+
+        rotateCamera(90f)
+
+        (renderer as VulkanRenderer).postRenderLambdas.add {
+            rotateCamera(1f)
+            val textureFetched = fetchTexture(colorTexture)
+
+            if(textureFetched < 0) {
+                logger.error("Error fetching DVR texture. return value: $textureFetched")
+            }
+
+            val imageBuffer = colorTexture.contents!!
+
+            if (imageBuffer.remaining() == windowWidth * windowHeight * 4) {
+                compositeImages(imageBuffer, rank, commSize, imagePointer) //this function will call a java fn that will place the image on the screen
+            } else {
+                logger.error("Not compositing because image size: ${imageBuffer.remaining()} expected: ${windowHeight * windowWidth * 4}")
+            }
+
+        }
+    }
+
+    @Suppress("unused")
+    fun displayComposited(compositedImage: ByteBuffer) {
+
+        val bufferLE = compositedImage.order(ByteOrder.LITTLE_ENDIAN)
+        plane.material().textures["diffuse"] = Texture(Vector3i(windowWidth, windowHeight, 1), 4, contents = bufferLE, mipmap = true)
     }
 
     private fun saveScreenshots() {
@@ -680,28 +712,41 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
         return 0
     }
 
-    private fun manageVDIGeneration() {
-
-        while(renderer?.firstImageReady == false) {
-            Thread.sleep(50)
-        }
-
-        while(!rendererConfigured) {
-            Thread.sleep(50)
-        }
-
+    private fun setupMetadata(): VDIData {
         basePath = if(isCluster) {
-            "/scratch/ws/1/argupta-vdi_generation/vdi_dumps/"
+            "/beegfs/ws/1/argupta-vdi_generation/vdi_dumps/"
         } else {
             "/home/aryaman/TestingData/"
         }
 
-//        camTarget = Vector3f(1.920E+0f, -1.920E+0f,  1.800E+0f)
-//        camTarget = Vector3f(1.920E+0f, -6.986E-1f,  6.855E-1f) //BonePlug
-//        camTarget = Vector3f(1.920E+0f, -6.986E-1f,  6.855E-1f) //BonePlug
-        camTarget = Vector3f(1.920E+0f, -1.920E+0f,  1.800E+0f) //Rotstrat
+        camTarget = when (dataset) {
+            "Kingsnake" -> {
+                Vector3f(1.920E+0f, -1.920E+0f,  1.491E+0f)
+            }
+            "Beechnut" -> {
+                Vector3f(1.920E+0f, -1.920E+0f,  2.899E+0f)
+            }
+            "Simulation" -> {
+                Vector3f(1.920E+0f, -1.920E+0f,  1.800E+0f)
+            }
+            "Rayleigh_Taylor" -> {
+                Vector3f(1.920E+0f, -1.920E+0f,  1.920E+0f)
+            }
+            "BonePlug" -> {
+                Vector3f(1.920E+0f, -6.986E-1f,  6.855E-1f)
+            }
+            "Rotstrat" -> {
+                Vector3f( 1.920E+0f, -1.920E+0f,  1.800E+0f)
+            }
+            "Isotropic" -> {
+                Vector3f( 1.920E+0f, -1.920E+0f,  1.800E+0f)
+            }
+            else -> {
+                Vector3f(0f)
+            }
+        }
 
-         val model = volumes[0]?.spatial()?.world
+        val model = volumes[0]?.spatial()?.world
 
         val vdiData = VDIData(
             VDIBufferSizes(),
@@ -714,6 +759,278 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 windowDimensions = Vector2i(cam.width, cam.height)
             )
         )
+
+        return vdiData
+    }
+
+    private fun manageDenseVDIs() {
+        while(renderer?.firstImageReady == false) {
+            Thread.sleep(50)
+        }
+
+        while(!rendererConfigured) {
+            Thread.sleep(50)
+        }
+        val vdiData = setupMetadata()
+        rotateCamera(vo)
+        Thread.sleep(5000)
+        vdiData.metadata.view = cam.spatial().getTransformation()
+
+        compositor.nw = vdiData.metadata.nw
+        compositor.ViewOriginal = vdiData.metadata.view
+        compositor.invViewOriginal = Matrix4f(vdiData.metadata.view).invert()
+        compositor.ProjectionOriginal = Matrix4f(vdiData.metadata.projection).applyVulkanCoordinateSystem()
+        compositor.invProjectionOriginal = Matrix4f(vdiData.metadata.projection).applyVulkanCoordinateSystem().invert()
+        compositor.numProcesses = commSize
+
+        var colorTexture = volumes[0]?.volumeManager?.material()?.textures?.get("OutputSubVDIColor")!!
+        var depthTexture = volumes[0]?.volumeManager?.material()?.textures?.get("OutputSubVDIDepth")!!
+        val numGeneratedTexture = volumeManager.material().textures["SupersegmentsGenerated"]!!
+
+        var compositedColor = compositor.material().textures["CompositedVDIColor"]!!
+        var compositedDepth = compositor.material().textures["CompositedVDIDepth"]!!
+
+        var prefixBuffer: ByteBuffer? = null
+        var prefixIntBuff: IntBuffer? = null
+        var totalSupersegmentsGenerated = 0
+
+        var viewUsedForGeneration = cam.spatial().getTransformation()
+
+        (renderer as VulkanRenderer).postRenderLambdas.add {
+            if(runThreshSearch) {
+                //fetch numgenerated, calculate and upload prefixsums
+
+                val generated = fetchTexture(numGeneratedTexture)
+
+                if(generated < 0) {
+                    logger.error("Error fetching texture. generated: $generated")
+                }
+
+                val numGeneratedBuff = numGeneratedTexture.contents
+                val numGeneratedIntBuffer = numGeneratedBuff!!.asIntBuffer()
+
+                //todo: check for errors in numGeneratedIntBuffer buffer
+
+                val prefixTime = measureNanoTime {
+                    prefixBuffer = MemoryUtil.memAlloc(windowWidth * windowHeight * 4)
+                    prefixIntBuff = prefixBuffer!!.asIntBuffer()
+
+                    prefixIntBuff!!.put(0, 0)
+
+                    for(i in 1 until windowWidth * windowHeight) {
+                        prefixIntBuff!!.put(i, prefixIntBuff!!.get(i-1) + numGeneratedIntBuffer.get(i-1))
+                    }
+
+                    totalSupersegmentsGenerated = prefixIntBuff!!.get(windowWidth*windowHeight-1) + numGeneratedIntBuffer.get(windowWidth*windowHeight-1)
+                }
+                logger.debug("Prefix sum took ${prefixTime/1e9} to compute")
+
+
+                volumes[0]!!.volumeManager.material().textures["PrefixSums"] = Texture(
+                    Vector3i(windowHeight, windowWidth, 1), 1, contents = prefixBuffer, usageType = hashSetOf(
+                        Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture)
+                    , type = IntType(),
+                    mipmap = false,
+                    minFilter = Texture.FilteringMode.NearestNeighbour,
+                    maxFilter = Texture.FilteringMode.NearestNeighbour
+                )
+
+                runThreshSearch = false
+                if(cam.spatial().getTransformation() != viewUsedForGeneration) {
+                    logger.error("This is an error!! A different view has been used!!")
+                }
+                runGeneration = true
+            } else if(runGeneration) {
+
+                colorTexture = volumes[0]?.volumeManager?.material()?.textures?.get("OutputSubVDIColor")!!
+                depthTexture = volumes[0]?.volumeManager?.material()?.textures?.get("OutputSubVDIDepth")!!
+
+                val col = fetchTexture(colorTexture)
+                val depth = fetchTexture(depthTexture)
+
+                if(col < 0) {
+                    logger.error("Error fetching the color subVDI!!")
+                }
+                if(depth < 0) {
+                    logger.error("Error fetching the depth subVDI!!")
+                }
+
+                vdisGenerated.incrementAndGet()
+                runGeneration = false
+            }
+
+            if(runCompositing) {
+                compositedColor = compositor.material().textures["CompositedVDIColor"]!!
+                compositedDepth = compositor.material().textures["CompositedVDIDepth"]!!
+
+                val col = fetchTexture(compositedColor)
+                val depth = fetchTexture(compositedDepth)
+
+                if(col < 0) {
+                    logger.error("Error fetching the color compositedVDI!!")
+                }
+                if(depth < 0) {
+                    logger.error("Error fetching the depth compositedVDI!!")
+                }
+
+                vdisComposited.incrementAndGet()
+                runCompositing = false
+
+//                if(vdisGathered % 5 == 0) {
+//                    rotateCamera(10f)
+//                    vdiData.metadata.view = cam.spatial().getTransformation()
+//                }
+
+                runThreshSearch = true
+                viewUsedForGeneration = cam.spatial().getTransformation()
+            }
+
+//            logger.info("distributed: ${vdisDistributed.get()} and composited: ${vdisComposited.get()}")
+            if(vdisDistributed.get() > vdisComposited.get()) {
+                runCompositing = true
+            }
+        }
+
+        (renderer as VulkanRenderer).postRenderLambdas.add {
+            compositor.doComposite = runCompositing
+
+            if(runCompositing) {
+                logger.debug("doComposite has been set to true!")
+            }
+
+            volumes[0]?.volumeManager?.shaderProperties?.set("doGeneration", runGeneration)
+            volumes[0]?.volumeManager?.shaderProperties?.set("doThreshSearch", runThreshSearch)
+        }
+
+        var generatedSoFar = 0
+        var compositedSoFar = 0
+
+        dataset += "_${commSize}_${rank}"
+
+        var start = 0L
+        var end = 0L
+
+        var start_complete = 0L
+        var end_complete = 0L
+
+        while(true) {
+
+            start_complete = System.nanoTime()
+
+            var subVDIDepthBuffer: ByteBuffer? = null
+            var subVDIColorBuffer: ByteBuffer?
+            var bufferToSend: ByteBuffer? = null
+
+            var compositedVDIDepthBuffer: ByteBuffer?
+            var compositedVDIColorBuffer: ByteBuffer?
+
+            start = System.nanoTime()
+            while((vdisGenerated.get() <= generatedSoFar)) {
+                Thread.sleep(5)
+            }
+            end = System.nanoTime() - start
+
+            logger.debug("Waiting for VDI generation took: ${end/1e9}")
+
+            generatedSoFar = vdisGenerated.get()
+
+            subVDIColorBuffer = colorTexture.contents
+            subVDIDepthBuffer = depthTexture.contents
+
+            subVDIColorBuffer!!.limit(totalSupersegmentsGenerated * 4 * 4)
+            subVDIDepthBuffer!!.limit(2 * totalSupersegmentsGenerated * 4)
+
+            compositedVDIColorBuffer = compositedColor.contents
+            compositedVDIDepthBuffer = compositedDepth.contents
+
+
+            if(!benchmarking) {
+                logger.info("Dumping sub VDI files")
+                SystemHelpers.dumpToFile(subVDIColorBuffer!!, basePath + "${dataset}SubVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_col_rle")
+                SystemHelpers.dumpToFile(subVDIDepthBuffer!!, basePath + "${dataset}SubVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_depth_rle")
+                SystemHelpers.dumpToFile(prefixBuffer!!, basePath + "${dataset}SubVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_prefix")
+                logger.info("File dumped")
+                cnt_sub++
+            }
+            val supersegmentCounts = IntArray(commSize)
+
+            val totalLists = windowHeight * windowWidth
+
+            var supersegmentsSoFar = 0
+
+            for(i in 0 until (commSize-1)) {
+                supersegmentCounts[i] = prefixIntBuff!!.get((totalLists / commSize) * (i + 1)) - supersegmentsSoFar
+                logger.debug("Rank: $rank will send ${supersegmentCounts[i]} supersegments to process $i")
+                supersegmentsSoFar += supersegmentCounts[i];
+            }
+
+            supersegmentCounts[commSize-1] = totalSupersegmentsGenerated - supersegmentsSoFar
+            logger.debug("Rank: $rank will send ${supersegmentCounts[commSize-1]} supersegments to process ${commSize-1}")
+
+            logger.debug("Total supersegments generated by rank $rank: $totalSupersegmentsGenerated")
+
+            start = System.nanoTime()
+            distributeDenseVDIs(subVDIColorBuffer!!, subVDIDepthBuffer!!, prefixBuffer!!, supersegmentCounts, commSize, allToAllColorPointer,
+                allToAllDepthPointer, allToAllPrefixPointer, mpiPointer)
+            end = System.nanoTime() - start
+
+            logger.info("Distributing VDIs took: ${end/1e9}")
+            logger.debug("Back in the management function")
+
+            start = System.nanoTime()
+            while(vdisComposited.get() <= compositedSoFar) {
+                Thread.sleep(5)
+            }
+            end = System.nanoTime() - start
+
+            compositedSoFar = vdisComposited.get()
+
+            //fetch the composited VDI
+
+            if(!benchmarking) {
+                logger.info("Dumping composited VDI files")
+                SystemHelpers.dumpToFile(compositedVDIColorBuffer!!, basePath + "${dataset}CompositedVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_col")
+                SystemHelpers.dumpToFile(compositedVDIDepthBuffer!!, basePath + "${dataset}CompositedVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_depth")
+                logger.info("File dumped")
+
+                logger.debug("Cam position: ${cam.spatial().position}")
+                logger.debug("Cam rotation: ${cam.spatial().rotation}")
+            }
+
+            start = System.nanoTime()
+            gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, windowHeight * windowWidth * maxOutputSupersegments * 4 / commSize, 0,
+                rank, commSize, gatherColorPointer, gatherDepthPointer, vo.toInt(), mpiPointer) //3 * commSize because the supersegments here contain only 1 element
+            end = System.nanoTime() - start
+
+            logger.debug("Gather took: ${end/1e9}")
+
+
+            vdiData.metadata.view = viewUsedForGeneration
+            if(saveFinal && (rank == 0)) {
+                val file = FileOutputStream(File(basePath + "${dataset}vdi_${windowWidth}_${windowHeight}_${maxSupersegments}_${vo.toInt()}_dump$vdisGathered"))
+                VDIDataIO.write(vdiData, file)
+                logger.debug("written the dump $vdisGathered")
+                file.close()
+            }
+
+            vdisGathered++
+            end_complete = System.nanoTime() - start_complete
+            logger.debug("Whole iteration took: ${end_complete/1e9}")
+        }
+
+    }
+
+    private fun manageVDIGeneration() {
+
+        while(renderer?.firstImageReady == false) {
+            Thread.sleep(50)
+        }
+
+        while(!rendererConfigured) {
+            Thread.sleep(50)
+        }
+
+        val vdiData = setupMetadata()
 
         compositor.nw = vdiData.metadata.nw
         compositor.ViewOriginal = vdiData.metadata.view
@@ -776,9 +1093,11 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
                 vdisComposited.incrementAndGet()
                 runCompositing = false
-                rotateCamera(10f)
-                vdiData.metadata.projection = cam.spatial().projection
-                vdiData.metadata.view = cam.spatial().getTransformation()
+
+                logger.info("The camera is not rotating!")
+//                rotateCamera(10f)
+//                vdiData.metadata.projection = cam.spatial().projection
+//                vdiData.metadata.view = cam.spatial().getTransformation()
                 runGeneration = true
             }
 
@@ -823,7 +1142,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             }
             end = System.nanoTime() - start
 
-//            logger.info("Waiting for VDI generation took: ${end/1e9}")
+            logger.debug("Waiting for VDI generation took: ${end/1e9}")
 
 
 //            logger.warn("C1: vdis generated so far: $generatedSoFar and the new value of vdisgenerated: ${vdisGenerated.get()}")
@@ -845,8 +1164,8 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
             if(!benchmarking) {
                 logger.info("Dumping sub VDI files")
-                SystemHelpers.dumpToFile(subVDIColorBuffer!!, basePath + "${dataset}SubVDI${cnt_sub}_ndc_col")
-                SystemHelpers.dumpToFile(subVDIDepthBuffer!!, basePath + "${dataset}SubVDI${cnt_sub}_ndc_depth")
+                SystemHelpers.dumpToFile(subVDIColorBuffer!!, basePath + "${dataset}SubVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_col")
+                SystemHelpers.dumpToFile(subVDIDepthBuffer!!, basePath + "${dataset}SubVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_sub}_ndc_depth")
                 logger.info("File dumped")
             }
 
@@ -861,7 +1180,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             allToAllDepthPointer, mpiPointer)
             end = System.nanoTime() - start
 
-//            logger.info("Distributing VDIs took: ${end/1e9}")
+            logger.info("Distributing VDIs took: ${end/1e9}")
 
 
 //            logger.info("Back in the management function")
@@ -894,17 +1213,21 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
                 SystemHelpers.dumpToFile(compositedVDIColorBuffer!!, basePath + "${dataset}CompositedVDI${cnt_sub}_ndc_col")
                 SystemHelpers.dumpToFile(compositedVDIDepthBuffer!!, basePath + "${dataset}CompositedVDI${cnt_sub}_ndc_depth")
                 logger.info("File dumped")
+
+                logger.info("Cam position: ${cam.spatial().position}")
+                logger.info("Cam rotation: ${cam.spatial().rotation}")
+
                 cnt_sub++
             }
 
 //            logger.info("For gather the color buffer isdirect: ${compositedVDIColorBuffer!!.isDirect()} and depthbuffer: ${compositedVDIDepthBuffer!!.isDirect()}")
 
             start = System.nanoTime()
-            gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, windowHeight * windowWidth * maxOutputSupersegments * 4 * numLayers/ commSize, 0,
-                rank, commSize, gatherColorPointer, gatherDepthPointer, mpiPointer) //3 * commSize because the supersegments here contain only 1 element
+            gatherCompositedVDIs(compositedVDIColorBuffer!!, compositedVDIDepthBuffer!!, windowHeight * windowWidth * maxOutputSupersegments * 4 / commSize, 0,
+                rank, commSize, gatherColorPointer, gatherDepthPointer, vo.toInt(), mpiPointer) //3 * commSize because the supersegments here contain only 1 element
             end = System.nanoTime() - start
 
-//            logger.info("Gather took: ${end/1e9}")
+            logger.debug("Gather took: ${end/1e9}")
 
 
             if(saveFinal && (rank == 0)) {
@@ -928,7 +1251,7 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
             end_complete = System.nanoTime() - start_complete
 
-//            logger.info("Whole iteration took: ${end_complete/1e9}")
+            logger.debug("Whole iteration took: ${end_complete/1e9}")
         }
     }
 
@@ -940,6 +1263,75 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 //        })
 //        inputHandler?.addKeyBinding("rotate_camera", "R")
     }
+
+    @Suppress("unused")
+    fun uploadForCompositingDense(vdiSetColour: ByteBuffer, vdiSetDepth: ByteBuffer, prefixSet: ByteBuffer, colorCounts: IntArray, depthCounts: IntArray) {
+
+//        val prefixIntBuff = prefixSet.order(ByteOrder.LITTLE_ENDIAN).asIntBuffer()
+//
+//        var error = false
+//
+//        for(i in 0 until windowWidth * windowHeight) {
+//            if(prefixIntBuff.get(i) < 0) {
+//                logger.info("This is an error after distribute! value is ${prefixIntBuff.get(i)} at loc: $i")
+//                error = true
+//            }
+//        }
+//
+//        if(error) {
+//            logger.info("encountered error in prefix sum at iteration: $cnt_distr")
+//        }
+//
+//        var prefixAdded = 0
+//        for(i in 1 until commSize) {
+//            val numSupsegs = colorCounts[i-1] / (4*4)
+//            prefixAdded += numSupsegs
+//            for (j in (i * ((windowWidth * windowHeight)/commSize)) until ((i+1) * (windowWidth*windowHeight)/commSize)) {
+////                if(j % 100 == 0) {
+////                    logger.info("prefix was: ${prefixIntBuffer.get(j)}")
+////                }
+//                prefixIntBuff.put(j, prefixIntBuff.get(j) + prefixAdded)
+////                if(j % 100 == 0) {
+////                    logger.info("updated to: ${prefixIntBuffer.get(j)}")
+////                }
+//            }
+//        }
+        val supersegmentsRecvd = (vdiSetColour.remaining() / (4*4)).toFloat() //including potential 0 supersegments that were padded
+
+        logger.debug("Rank: $rank: total supsegs recvd (including 0s): $supersegmentsRecvd")
+
+        for (i in 0 until commSize) {
+            compositor.totalSupersegmentsFrom[i] = colorCounts[i] / (4 * 4)
+            logger.debug("Rank $rank: totalSupersegmentsFrom $i: ${colorCounts[i] / (4 * 4)}")
+        }
+
+        if(!benchmarking) {
+            logger.info("Dumping to file in the composite function")
+            SystemHelpers.dumpToFile(vdiSetColour, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_col_rle")
+            SystemHelpers.dumpToFile(vdiSetDepth, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_depth_rle")
+            SystemHelpers.dumpToFile(prefixSet, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_prefix")
+            logger.info("File dumped")
+            cnt_distr++
+        }
+
+        compositor.material().textures["VDIsColor"] = Texture(Vector3i(512, 512, ceil((supersegmentsRecvd / (512*512)).toDouble()).toInt()), 4, contents = vdiSetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+            type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+
+        compositor.material().textures["VDIsDepth"] = Texture(Vector3i(2 * 512, 512, ceil((supersegmentsRecvd / (512*512)).toDouble()).toInt()), 1, contents = vdiSetDepth, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+            type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
+
+        compositor.material().textures["VDIsPrefix"] = Texture(Vector3i(windowHeight, windowWidth, 1), 1, contents = prefixSet, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+            type = IntType(), mipmap = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour
+        )
+
+        val view = cam.spatial().getTransformation()
+        compositor.ViewOriginal = view
+        compositor.invViewOriginal = Matrix4f(view).invert()
+
+        vdisDistributed.incrementAndGet()
+
+    }
+
 
     @Suppress("unused")
     fun uploadForCompositing(vdiSetColour: ByteBuffer, vdiSetDepth: ByteBuffer) {
@@ -971,15 +1363,15 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
 
         if(!benchmarking) {
             logger.info("Dumping to file in the composite function")
-            SystemHelpers.dumpToFile(vdiSetColour, basePath + "${dataset}SetOfVDI${cnt_distr}_ndc_col")
-            SystemHelpers.dumpToFile(vdiSetDepth, basePath + "${dataset}SetOfVDI${cnt_distr}_ndc_depth")
+            SystemHelpers.dumpToFile(vdiSetColour, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_col")
+            SystemHelpers.dumpToFile(vdiSetDepth, basePath + "${dataset}SetOfVDI_${windowWidth}_${windowHeight}_${maxSupersegments}_0_${cnt_distr}_ndc_depth")
             logger.info("File dumped")
             cnt_distr++
         }
 //        }
 
         if(generateVDIs) {
-            compositor.material().textures["VDIsColor"] = Texture(Vector3i(maxSupersegments * numLayers, windowHeight, windowWidth), 4, contents = vdiSetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
+            compositor.material().textures["VDIsColor"] = Texture(Vector3i(maxSupersegments, windowHeight, windowWidth), 4, contents = vdiSetColour, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture),
                     type = FloatType(), mipmap = false, normalized = false, minFilter = Texture.FilteringMode.NearestNeighbour, maxFilter = Texture.FilteringMode.NearestNeighbour)
 
             if(separateDepth) {
@@ -991,6 +1383,10 @@ class DistributedVolumes: SceneryBase("DistributedVolumeRenderer", windowWidth =
             compositor.material().textures["VDIsDepth"] = Texture(Vector3i(windowHeight, windowWidth, 1), 4, contents = vdiSetDepth, usageType = hashSetOf(Texture.UsageType.LoadStoreImage, Texture.UsageType.Texture))
         }
 //        logger.info("Updated the textures to be composited")
+
+        val view = cam.spatial().getTransformation()
+        compositor.ViewOriginal = view
+        compositor.invViewOriginal = Matrix4f(view).invert()
 
         vdisDistributed.incrementAndGet()
 
